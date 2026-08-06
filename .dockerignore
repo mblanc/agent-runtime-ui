@@ -1,0 +1,9 @@
+node_modules
+.next
+.git
+.env*
+auth.db
+auth.db-journal
+README.md
+docs
+tasks
