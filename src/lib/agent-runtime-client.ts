@@ -35,6 +35,12 @@ export class AgentRuntimeClient {
     }
 
     try {
+      // Instant zero-latency handshake event for immediate UI feedback
+      yield {
+        event_type: "thought",
+        thought: `Connecting to Agent Runtime (${this.location}) and analyzing prompt...`,
+      };
+
       const client = await this.auth.getClient();
       const accessToken = await client.getAccessToken();
 

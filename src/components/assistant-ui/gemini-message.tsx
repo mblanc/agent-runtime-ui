@@ -5,6 +5,9 @@ import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import { Copy, RotateCw, Check } from "lucide-react";
 import { useState } from "react";
 import { GeminiToolCall } from "./gemini-tools";
+import { GeminiThinkingIndicator } from "./gemini-thinking-indicator";
+import { GeminiReasoningAccordion } from "./gemini-reasoning";
+import { GeminiMessageTiming } from "./gemini-message-timing";
 
 export function ChatMessage() {
   const [copied, setCopied] = useState(false);
@@ -23,11 +26,21 @@ export function ChatMessage() {
       {/* Assistant Message */}
       <MessagePrimitive.If assistant>
         <div className="flex w-full flex-col space-y-2 text-[#1f1f1f] dark:text-[#e3e3e3]">
-          {/* Full-width avatar-free Markdown Content */}
+          {/* Full-width avatar-free Content with Reasoning & Tools */}
           <div className="prose prose-neutral dark:prose-invert max-w-none text-[15px] leading-relaxed">
             <MessagePrimitive.Content
               components={{
-                Text: () => <MarkdownTextPrimitive />,
+                Empty: () => (
+                  <GeminiThinkingIndicator statusText="Deliberating with Agent Runtime..." />
+                ),
+                Reasoning: ({ text, status }) => (
+                  <GeminiReasoningAccordion
+                    thoughtText={text}
+                    isStreaming={status?.type === "running"}
+                    durationSeconds={2.4}
+                  />
+                ),
+                Text: () => <MarkdownTextPrimitive smooth />,
                 tools: {
                   by_name: {
                     custom_tool: ({ args, result, status }) => (
@@ -52,26 +65,30 @@ export function ChatMessage() {
             />
           </div>
 
-          {/* Action Bar revealed on hover */}
-          <div className="flex items-center gap-1 pt-1 opacity-0 transition-opacity group-hover:opacity-100">
-            <ActionBarPrimitive.Root>
-              <ActionBarPrimitive.Copy
-                className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                onClick={() => {
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 2000);
-                }}
-              >
-                {copied ? (
-                  <Check className="h-4 w-4 text-emerald-500" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
-              </ActionBarPrimitive.Copy>
-              <ActionBarPrimitive.Reload className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-                <RotateCw className="h-4 w-4" />
-              </ActionBarPrimitive.Reload>
-            </ActionBarPrimitive.Root>
+          {/* Footer: Timing stats + Action Bar */}
+          <div className="flex items-center justify-between pt-1">
+            <GeminiMessageTiming />
+
+            <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+              <ActionBarPrimitive.Root>
+                <ActionBarPrimitive.Copy
+                  className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  onClick={() => {
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  }}
+                >
+                  {copied ? (
+                    <Check className="h-4 w-4 text-emerald-500" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                </ActionBarPrimitive.Copy>
+                <ActionBarPrimitive.Reload className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                  <RotateCw className="h-4 w-4" />
+                </ActionBarPrimitive.Reload>
+              </ActionBarPrimitive.Root>
+            </div>
           </div>
         </div>
       </MessagePrimitive.If>

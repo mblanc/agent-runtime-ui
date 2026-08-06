@@ -41,6 +41,7 @@ export const geminiChatAdapter: ChatModelAdapter = {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let accumulatedText = "";
+    let accumulatedReasoning = "";
     let buffer = "";
 
     while (true) {
@@ -60,10 +61,36 @@ export const geminiChatAdapter: ChatModelAdapter = {
 
         try {
           const parsed = JSON.parse(dataStr);
-          if (parsed.event_type === "content" && parsed.content) {
+
+          if (parsed.event_type === "thought" && parsed.thought) {
+            accumulatedReasoning += (accumulatedReasoning ? "\n" : "") + parsed.thought;
+            yield {
+              content: [
+                { type: "reasoning", text: accumulatedReasoning },
+                ...(accumulatedText
+                  ? [{ type: "text" as const, text: accumulatedText }]
+                  : []),
+              ],
+            };
+          } else if (parsed.event_type === "content" && parsed.content) {
             accumulatedText += parsed.content;
             yield {
-              content: [{ type: "text", text: accumulatedText }],
+              content: [
+                ...(accumulatedReasoning
+                  ? [{ type: "reasoning" as const, text: accumulatedReasoning }]
+                  : []),
+                { type: "text", text: accumulatedText },
+              ],
+            };
+          } else if (parsed.event_type === "tool_call" && parsed.tool_call) {
+            accumulatedReasoning += `\n[Tool Executed]: ${parsed.tool_call.name || "agent_tool"}`;
+            yield {
+              content: [
+                { type: "reasoning", text: accumulatedReasoning },
+                ...(accumulatedText
+                  ? [{ type: "text" as const, text: accumulatedText }]
+                  : []),
+              ],
             };
           } else if (parsed.event_type === "error" && parsed.error) {
             throw new Error(parsed.error);
