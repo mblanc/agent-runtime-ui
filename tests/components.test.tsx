@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { AssistantRuntimeProvider, useLocalRuntime } from "@assistant-ui/react";
 import { Button } from "@/components/ui/button";
 import { GeminiThinkingIndicator } from "@/components/assistant-ui/gemini-thinking-indicator";
 import {
@@ -14,7 +15,19 @@ import {
   ToolGroupTrigger,
   ToolGroupContent,
 } from "@/components/assistant-ui/tool-group";
+import { SyntaxHighlighter } from "@/components/assistant-ui/shiki-highlighter";
 import { GeminiMessageTiming } from "@/components/assistant-ui/gemini-message-timing";
+
+function TestWrapper({ children }: { children: React.ReactNode }) {
+  const runtime = useLocalRuntime({
+    async *run() {
+      yield { content: [{ type: "text", text: "ok" }] };
+    },
+  });
+  return (
+    <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>
+  );
+}
 
 describe("UI Components", () => {
   it("renders Gemini button variant correctly", () => {
@@ -83,6 +96,20 @@ describe("UI Components", () => {
     expect(screen.getByText("tool_1")).toBeDefined();
     expect(screen.getByText("tool_2")).toBeDefined();
     expect(screen.getByText("tool_3")).toBeDefined();
+  });
+
+  it("renders SyntaxHighlighter code container", () => {
+    render(
+      <TestWrapper>
+        <SyntaxHighlighter
+          code="const greet = () => 'Hello Gemini';"
+          language="typescript"
+        />
+      </TestWrapper>
+    );
+
+    expect(screen.getByTestId("shiki-container")).toBeDefined();
+    expect(screen.getByText(/typescript/i)).toBeDefined();
   });
 
   it("renders GeminiMessageTiming badge", () => {

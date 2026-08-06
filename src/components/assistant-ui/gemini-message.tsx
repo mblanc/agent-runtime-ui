@@ -5,7 +5,6 @@ import {
   ActionBarPrimitive,
   groupPartByType,
 } from "@assistant-ui/react";
-import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import { Copy, RotateCw, Check } from "lucide-react";
 import { useState } from "react";
 import {
@@ -16,6 +15,7 @@ import {
 } from "./reasoning";
 import { ToolFallback } from "./tool-fallback";
 import { ToolGroupRoot, ToolGroupTrigger, ToolGroupContent } from "./tool-group";
+import { MarkdownText } from "./markdown-text";
 import { GeminiMessageTiming } from "./gemini-message-timing";
 
 export function ChatMessage() {
@@ -35,7 +35,7 @@ export function ChatMessage() {
       {/* Assistant Message */}
       <MessagePrimitive.If assistant>
         <div className="flex w-full flex-col space-y-2 text-[#1f1f1f] dark:text-[#e3e3e3]">
-          {/* Full-width avatar-free Content with GroupedParts */}
+          {/* Full-width avatar-free Content with GroupedParts & MarkdownText */}
           <div className="prose prose-neutral dark:prose-invert max-w-none text-[15px] leading-relaxed">
             <MessagePrimitive.GroupedParts
               groupBy={groupPartByType({
@@ -66,7 +66,7 @@ export function ChatMessage() {
                     );
                   }
                   case "text":
-                    return <MarkdownTextPrimitive smooth />;
+                    return <MarkdownText />;
                   case "reasoning":
                     return (
                       <div className="whitespace-pre-wrap font-mono text-[11.5px] leading-5">
