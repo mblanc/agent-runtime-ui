@@ -24,18 +24,23 @@ describe("UI Components", () => {
         thoughtText="Detailed reasoning trace for LLM Council deliberation"
         durationSeconds={3.2}
         stepsCount={3}
+        isStreaming={true}
       />
     );
 
-    const toggleButton = screen.getByRole("button", { name: /thinking process/i });
-    expect(toggleButton).toBeDefined();
-
-    // Toggle open
-    fireEvent.click(toggleButton);
+    expect(screen.getByText("Agent is working...")).toBeDefined();
     expect(
       screen.getByText("Detailed reasoning trace for LLM Council deliberation")
     ).toBeDefined();
-    expect(screen.getByText("Consensus Synthesis")).toBeDefined();
+
+    const toggleButton = screen.getByRole("button", { name: /thinking/i });
+    expect(toggleButton).toBeDefined();
+
+    // Toggle close
+    fireEvent.click(toggleButton);
+    expect(
+      screen.queryByText("Detailed reasoning trace for LLM Council deliberation")
+    ).toBeNull();
   });
 
   it("renders GeminiMessageTiming badge", () => {

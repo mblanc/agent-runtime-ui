@@ -65,25 +65,26 @@ export function GeminiReasoningAccordion({
       {/* Expandable Reasoning Content */}
       {isOpen && (
         <div className="border-t border-[#e3e3e3] px-4 py-3 text-xs leading-relaxed text-[#444746] dark:border-[#333537] dark:text-[#c4c7c5]">
-          {/* Multi-step progression chips */}
-          <div className="mb-3 flex flex-wrap gap-2">
-            <div className="flex items-center gap-1 rounded-md bg-[#eaf2fd] px-2 py-1 text-[11px] font-medium text-[#0b57d0] dark:bg-[#1e2a4a] dark:text-[#a8c7fa]">
-              <CheckCircle2 className="h-3 w-3" />
-              <span>Prompt Deconstruction</span>
+          {/* Animated moving dots indicating active agent working */}
+          {isStreaming ? (
+            <div className="mb-2.5 flex items-center gap-2 text-xs font-medium text-[#1a73e8] dark:text-[#8ab4f8]">
+              <span className="flex items-center gap-1">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#1a73e8] dark:bg-[#8ab4f8] animate-bounce [animation-delay:-0.3s]" />
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#1a73e8] dark:bg-[#8ab4f8] animate-bounce [animation-delay:-0.15s]" />
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#1a73e8] dark:bg-[#8ab4f8] animate-bounce" />
+              </span>
+              <span>Agent is working...</span>
             </div>
-            <div className="flex items-center gap-1 rounded-md bg-[#eaf2fd] px-2 py-1 text-[11px] font-medium text-[#0b57d0] dark:bg-[#1e2a4a] dark:text-[#a8c7fa]">
-              <CheckCircle2 className="h-3 w-3" />
-              <span>Council Deliberation & Verification</span>
+          ) : (
+            <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+              <span>Reasoning complete</span>
             </div>
-            <div className="flex items-center gap-1 rounded-md bg-[#eaf2fd] px-2 py-1 text-[11px] font-medium text-[#0b57d0] dark:bg-[#1e2a4a] dark:text-[#a8c7fa]">
-              <CheckCircle2 className="h-3 w-3" />
-              <span>Consensus Synthesis</span>
-            </div>
-          </div>
+          )}
 
           {/* Detailed Thought Content */}
           <div className="whitespace-pre-wrap font-mono text-[11.5px] leading-5 text-[#575b5f] dark:text-[#9aa0a6]">
-            {thoughtText || "Deliberating across LLM Council and reasoning engines..."}
+            {thoughtText || "Deliberating across agent graph and reasoning engines..."}
           </div>
         </div>
       )}
