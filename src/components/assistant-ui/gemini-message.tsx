@@ -1,12 +1,21 @@
 "use client";
 
-import { MessagePrimitive, ActionBarPrimitive } from "@assistant-ui/react";
+import {
+  MessagePrimitive,
+  ActionBarPrimitive,
+  groupPartByType,
+} from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import { Copy, RotateCw, Check } from "lucide-react";
 import { useState } from "react";
-import { GeminiToolCall } from "./gemini-tools";
-import { GeminiThinkingIndicator } from "./gemini-thinking-indicator";
-import { GeminiReasoningAccordion } from "./gemini-reasoning";
+import {
+  ReasoningRoot,
+  ReasoningTrigger,
+  ReasoningContent,
+  ReasoningText,
+} from "./reasoning";
+import { ToolFallback } from "./tool-fallback";
+import { ToolGroupRoot, ToolGroupTrigger, ToolGroupContent } from "./tool-group";
 import { GeminiMessageTiming } from "./gemini-message-timing";
 
 export function ChatMessage() {
@@ -26,43 +35,51 @@ export function ChatMessage() {
       {/* Assistant Message */}
       <MessagePrimitive.If assistant>
         <div className="flex w-full flex-col space-y-2 text-[#1f1f1f] dark:text-[#e3e3e3]">
-          {/* Full-width avatar-free Content with Reasoning & Tools */}
+          {/* Full-width avatar-free Content with GroupedParts */}
           <div className="prose prose-neutral dark:prose-invert max-w-none text-[15px] leading-relaxed">
-            <MessagePrimitive.Content
-              components={{
-                Empty: () => (
-                  <GeminiThinkingIndicator statusText="Deliberating with Agent Runtime..." />
-                ),
-                Reasoning: ({ text, status }) => (
-                  <GeminiReasoningAccordion
-                    thoughtText={text}
-                    isStreaming={status?.type === "running"}
-                    durationSeconds={2.4}
-                  />
-                ),
-                Text: () => <MarkdownTextPrimitive smooth />,
-                tools: {
-                  by_name: {
-                    custom_tool: ({ args, result, status }) => (
-                      <GeminiToolCall
-                        toolName="agent_tool"
-                        args={args as Record<string, unknown>}
-                        result={result}
-                        status={status?.type === "running" ? "running" : "complete"}
-                      />
-                    ),
-                  },
-                  Fallback: ({ toolName, args, result, status }) => (
-                    <GeminiToolCall
-                      toolName={toolName}
-                      args={args as Record<string, unknown>}
-                      result={result}
-                      status={status?.type === "running" ? "running" : "complete"}
-                    />
-                  ),
-                },
+            <MessagePrimitive.GroupedParts
+              groupBy={groupPartByType({
+                reasoning: ["group-reasoning"],
+                "tool-call": ["group-tool"],
+              })}
+            >
+              {({ part, children }) => {
+                switch (part.type) {
+                  case "group-reasoning": {
+                    const running = part.status.type === "running";
+                    return (
+                      <ReasoningRoot streaming={running}>
+                        <ReasoningTrigger active={running} />
+                        <ReasoningContent aria-busy={running}>
+                          <ReasoningText>{children}</ReasoningText>
+                        </ReasoningContent>
+                      </ReasoningRoot>
+                    );
+                  }
+                  case "group-tool": {
+                    const running = part.status.type === "running";
+                    return (
+                      <ToolGroupRoot>
+                        <ToolGroupTrigger count={part.indices.length} active={running} />
+                        <ToolGroupContent>{children}</ToolGroupContent>
+                      </ToolGroupRoot>
+                    );
+                  }
+                  case "text":
+                    return <MarkdownTextPrimitive smooth />;
+                  case "reasoning":
+                    return (
+                      <div className="whitespace-pre-wrap font-mono text-[11.5px] leading-5">
+                        {part.text}
+                      </div>
+                    );
+                  case "tool-call":
+                    return part.toolUI ?? <ToolFallback {...part} />;
+                  default:
+                    return null;
+                }
               }}
-            />
+            </MessagePrimitive.GroupedParts>
           </div>
 
           {/* Footer: Timing stats + Action Bar */}

@@ -2,7 +2,18 @@ import { describe, expect, it } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { Button } from "@/components/ui/button";
 import { GeminiThinkingIndicator } from "@/components/assistant-ui/gemini-thinking-indicator";
-import { GeminiReasoningAccordion } from "@/components/assistant-ui/gemini-reasoning";
+import {
+  ReasoningRoot,
+  ReasoningTrigger,
+  ReasoningContent,
+  ReasoningText,
+} from "@/components/assistant-ui/reasoning";
+import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
+import {
+  ToolGroupRoot,
+  ToolGroupTrigger,
+  ToolGroupContent,
+} from "@/components/assistant-ui/tool-group";
 import { GeminiMessageTiming } from "@/components/assistant-ui/gemini-message-timing";
 
 describe("UI Components", () => {
@@ -18,29 +29,60 @@ describe("UI Components", () => {
     expect(screen.getByText("Consulting Council members...")).toBeDefined();
   });
 
-  it("renders GeminiReasoningAccordion and toggles expansion", () => {
+  it("renders ReasoningRoot and expands with animated dots during streaming", () => {
     render(
-      <GeminiReasoningAccordion
-        thoughtText="Detailed reasoning trace for LLM Council deliberation"
-        durationSeconds={3.2}
-        stepsCount={3}
-        isStreaming={true}
-      />
+      <ReasoningRoot streaming={true}>
+        <ReasoningTrigger active={true} />
+        <ReasoningContent aria-busy={true}>
+          <ReasoningText>Detailed Council Deliberation Trace</ReasoningText>
+        </ReasoningContent>
+      </ReasoningRoot>
     );
 
     expect(screen.getByText("Agent is working...")).toBeDefined();
-    expect(
-      screen.getByText("Detailed reasoning trace for LLM Council deliberation")
-    ).toBeDefined();
+    expect(screen.getByText("Detailed Council Deliberation Trace")).toBeDefined();
 
-    const toggleButton = screen.getByRole("button", { name: /thinking/i });
-    expect(toggleButton).toBeDefined();
+    const trigger = screen.getByRole("button", { name: /thinking/i });
+    fireEvent.click(trigger);
+    expect(screen.queryByText("Detailed Council Deliberation Trace")).toBeNull();
+  });
 
-    // Toggle close
-    fireEvent.click(toggleButton);
-    expect(
-      screen.queryByText("Detailed reasoning trace for LLM Council deliberation")
-    ).toBeNull();
+  it("renders ToolFallback with arguments and result inspection", () => {
+    render(
+      <ToolFallback
+        toolName="fetch_company_disclosures"
+        args={{ ticker: "NVDA", limit: 5 }}
+        result={{ status: "200 OK", count: 5 }}
+        status={{ type: "complete" }}
+      />
+    );
+
+    expect(screen.getByText("fetch_company_disclosures")).toBeDefined();
+    expect(screen.getByText("Executed")).toBeDefined();
+
+    const trigger = screen.getByRole("button", { name: /fetch_company_disclosures/i });
+    fireEvent.click(trigger);
+
+    expect(screen.getByText(/NVDA/)).toBeDefined();
+    expect(screen.getByText(/200 OK/)).toBeDefined();
+  });
+
+  it("renders ToolGroup with multiple tool counts", () => {
+    render(
+      <ToolGroupRoot defaultOpen={true}>
+        <ToolGroupTrigger count={3} active={false} />
+        <ToolGroupContent>
+          <ToolFallback toolName="tool_1" />
+          <ToolFallback toolName="tool_2" />
+          <ToolFallback toolName="tool_3" />
+        </ToolGroupContent>
+      </ToolGroupRoot>
+    );
+
+    expect(screen.getByText("Executed 3 tools")).toBeDefined();
+    expect(screen.getByText("tool_1")).toBeDefined();
+    expect(screen.getByText("tool_2")).toBeDefined();
+    expect(screen.getByText("tool_3")).toBeDefined();
   });
 
   it("renders GeminiMessageTiming badge", () => {
