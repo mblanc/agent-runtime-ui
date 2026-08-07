@@ -26,6 +26,20 @@ export function GeminiComposer() {
 
   return (
     <ComposerPrimitive.Root className="mx-auto flex w-full max-w-3xl flex-col rounded-4xl bg-white p-2.5 shadow-[0_2px_14px_-2px_rgba(0,0,0,0.12)] transition-shadow hover:shadow-[0_4px_20px_-2px_rgba(0,0,0,0.16)] dark:bg-[#1e1f20] dark:shadow-[0_2px_14px_-2px_rgba(0,0,0,0.5)]">
+      {/* Queued Messages List */}
+      <ComposerPrimitive.Queue>
+        {({ queueItem }) => (
+          <div className="mb-2 flex items-center justify-between rounded-2xl bg-amber-50 px-3.5 py-1.5 text-xs text-amber-800 dark:bg-amber-950/50 dark:text-amber-200 border border-amber-200 dark:border-amber-900/50">
+            <div className="flex items-center gap-1.5 truncate">
+              <span className="font-semibold uppercase tracking-wider text-[10px]">
+                Queued
+              </span>
+              <span className="truncate">{queueItem.prompt}</span>
+            </div>
+          </div>
+        )}
+      </ComposerPrimitive.Queue>
+
       <div className="flex items-center gap-1.5">
         {/* Plus / Tools Menu */}
         <PlusMenu />
@@ -50,21 +64,18 @@ export function GeminiComposer() {
           <Mic className="h-5 w-5" />
         </button>
 
-        {/* Send / Stop Buttons */}
-        <AuiIf
-          condition={(s: { thread?: { isRunning?: boolean } }) => !s.thread?.isRunning}
-        >
-          <ComposerPrimitive.Send className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#d3e3fd] text-[#062e6f] transition-all hover:bg-[#c2d7fc] active:scale-95 disabled:bg-[#e8eaed] disabled:text-[#1f1f1f]/30 disabled:hover:scale-100 dark:bg-[#1b2f9c] dark:text-[#d3e3fd] dark:hover:bg-[#233bbd] dark:disabled:bg-[#282a2c] dark:disabled:text-[#e3e3e3]/20">
-            <ArrowUp className="h-5 w-5" />
-          </ComposerPrimitive.Send>
-        </AuiIf>
+        {/* Send Button */}
+        <ComposerPrimitive.Send className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#d3e3fd] text-[#062e6f] transition-all hover:bg-[#c2d7fc] active:scale-95 disabled:bg-[#e8eaed] disabled:text-[#1f1f1f]/30 disabled:hover:scale-100 dark:bg-[#1b2f9c] dark:text-[#d3e3fd] dark:hover:bg-[#233bbd] dark:disabled:bg-[#282a2c] dark:disabled:text-[#e3e3e3]/20">
+          <ArrowUp className="h-5 w-5" />
+        </ComposerPrimitive.Send>
 
+        {/* Stop Button (When Thread is Running) */}
         <AuiIf
           condition={(s: { thread?: { isRunning?: boolean } }) =>
             Boolean(s.thread?.isRunning)
           }
         >
-          <ComposerPrimitive.Cancel className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#d3e3fd] text-[#062e6f] transition-transform hover:scale-105 active:scale-95 dark:bg-[#1b2f9c] dark:text-[#d3e3fd]">
+          <ComposerPrimitive.Cancel className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-700 transition-transform hover:scale-105 active:scale-95 dark:bg-rose-950 dark:text-rose-300">
             <Square className="h-3.5 w-3.5 fill-current" />
           </ComposerPrimitive.Cancel>
         </AuiIf>

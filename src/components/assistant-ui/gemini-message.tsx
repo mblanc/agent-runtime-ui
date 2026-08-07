@@ -3,9 +3,10 @@
 import {
   MessagePrimitive,
   ActionBarPrimitive,
+  SelectionToolbarPrimitive,
   groupPartByType,
 } from "@assistant-ui/react";
-import { Copy, RotateCw, Check } from "lucide-react";
+import { Copy, RotateCw, Check, Quote } from "lucide-react";
 import { useState, memo } from "react";
 import {
   ReasoningRoot,
@@ -40,6 +41,13 @@ function ChatMessageImpl() {
       {/* Assistant Message */}
       <MessagePrimitive.If assistant>
         <div className="flex w-full flex-col space-y-2 text-[#1f1f1f] dark:text-[#e3e3e3]">
+          {/* Floating Text Selection Toolbar */}
+          <SelectionToolbarPrimitive.Root className="flex items-center gap-1 rounded-full bg-white px-2 py-1 shadow-xl border border-[#e3e3e3] text-xs dark:bg-[#1e1f20] dark:border-[#333537]">
+            <SelectionToolbarPrimitive.Quote className="flex items-center gap-1 rounded-full px-2 py-1 font-medium text-foreground hover:bg-muted transition-colors">
+              <Quote className="h-3.5 w-3.5 text-[#1a73e8] dark:text-[#8ab4f8]" />
+              <span>Quote selection</span>
+            </SelectionToolbarPrimitive.Quote>
+          </SelectionToolbarPrimitive.Root>
           {/* Full-width avatar-free Content with GroupedParts & MarkdownText */}
           <div className="prose prose-neutral dark:prose-invert max-w-none text-[15px] leading-relaxed">
             <MessagePrimitive.GroupedParts groupBy={MESSAGE_GROUP_BY}>
