@@ -111,6 +111,8 @@ describe("Sessions API Routes", () => {
       expect(data.session.id).toBe("1");
       expect(Array.isArray(data.events)).toBe(true);
       expect(data.events.length).toBeGreaterThanOrEqual(2);
+      expect(Array.isArray(data.messages)).toBe(true);
+      expect(data.messages.length).toBeGreaterThanOrEqual(2);
     });
 
     it("returns 404 for non-existent session", async () => {

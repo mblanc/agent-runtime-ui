@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { AgentRuntimeClient } from "@/lib/agent-runtime-client";
+import {
+  AgentRuntimeClient,
+  formatSessionEventsToThreadMessages,
+} from "@/lib/agent-runtime-client";
 
 export const runtime = "nodejs";
 
@@ -74,10 +77,13 @@ export async function GET(req: NextRequest, context: RouteContext) {
       }
     }
 
+    const messages = formatSessionEventsToThreadMessages(events);
+
     return NextResponse.json(
       {
         session: sessionDetails,
         events,
+        messages,
       },
       {
         headers: {

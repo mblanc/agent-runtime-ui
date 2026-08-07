@@ -27,15 +27,6 @@ interface SessionApiItem {
   updateTime: string;
 }
 
-interface SessionEventApiItem {
-  id: string;
-  sessionId: string;
-  role: "user" | "assistant" | "model" | "system";
-  content: string;
-  thought?: string;
-  createTime: string;
-}
-
 export function useSessionThreadHistoryAdapter(): ThreadHistoryAdapter {
   const aui = useAui();
   const auiRef = useRef(aui);
@@ -69,100 +60,31 @@ export function useSessionThreadHistoryAdapter(): ThreadHistoryAdapter {
           }
 
           const data = await res.json();
-          const events: SessionEventApiItem[] = data.events || [];
+          const remoteMessages: ThreadMessageLike[] = data.messages || [];
 
-          // If the remote session has 0 events (e.g. freshly initialized),
+          // If the remote session has 0 messages (e.g. freshly initialized),
           // but the thread is currently generating or has local in-memory messages,
           // preserve the local messages so we don't wipe out the active stream!
           const threadState = auiRef.current?.thread?.getState?.();
           const localMessages = threadState?.messages || [];
           const isRunning = threadState?.isRunning || false;
 
-          if (events.length === 0 && (isRunning || localMessages.length > 0)) {
+          if (remoteMessages.length === 0 && (isRunning || localMessages.length > 0)) {
             return ExportedMessageRepository.fromArray(
               localMessages as unknown as ThreadMessageLike[]
             );
           }
 
-          if (events.length === 0) {
-            return { messages: [] };
-          }
-
-          const threadMessages: ThreadMessageLike[] = [];
-          let accumulatedThoughts: string[] = [];
-
-          for (let i = 0; i < events.length; i++) {
-            const e = events[i];
-            const content = (e.content || "").trim();
-            const thought = (e.thought || "").trim();
-
-            if (thought) {
-              accumulatedThoughts.push(thought);
-            }
-
-            // User turn
-            if (e.role === "user") {
-              if (content) {
-                threadMessages.push({
-                  id: e.id || `msg-${i}`,
-                  role: "user",
-                  content,
-                  createdAt: e.createTime ? new Date(e.createTime) : new Date(),
-                });
-              }
-              continue;
-            }
-
-            // Assistant turn with content
-            if (content) {
-              const parts: Array<
-                { type: "reasoning"; text: string } | { type: "text"; text: string }
-              > = [];
-
-              if (accumulatedThoughts.length > 0) {
-                parts.push({
-                  type: "reasoning",
-                  text: accumulatedThoughts.join("\n\n"),
-                });
-                accumulatedThoughts = [];
-              }
-
-              parts.push({ type: "text", text: content });
-
-              threadMessages.push({
-                id: e.id || `msg-${i}`,
-                role: "assistant",
-                content: parts,
-                createdAt: e.createTime ? new Date(e.createTime) : new Date(),
-              });
-            }
-          }
-
-          if (accumulatedThoughts.length > 0) {
-            threadMessages.push({
-              id: `msg-trailing-reasoning`,
-              role: "assistant",
-              content: [
-                {
-                  type: "reasoning",
-                  text: accumulatedThoughts.join("\n\n"),
-                },
-              ],
-              createdAt: new Date(),
-            });
-          }
-
-          return ExportedMessageRepository.fromArray(threadMessages);
+          return ExportedMessageRepository.fromArray(remoteMessages);
         } catch (err) {
           console.error(`Failed to load history for session ${remoteId}:`, err);
           const threadState = auiRef.current?.thread?.getState?.();
           const localMessages = threadState?.messages || [];
-          if (localMessages.length > 0) {
-            return ExportedMessageRepository.fromArray(
-              localMessages as unknown as ThreadMessageLike[]
-            );
-          }
-          return { messages: [] };
+          return localMessages.length > 0
+            ? ExportedMessageRepository.fromArray(
+                localMessages as unknown as ThreadMessageLike[]
+              )
+            : { messages: [] };
         }
       },
       append: async () => {},

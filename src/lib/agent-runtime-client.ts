@@ -440,6 +440,88 @@ export function groupTurnSessionEvents(
   return result;
 }
 
+export interface FormattedSessionThreadMessage {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content:
+    string | Array<{ type: "reasoning"; text: string } | { type: "text"; text: string }>;
+  createdAt?: string;
+}
+
+/**
+ * Converts unified AgentSessionEvent entries into standardized thread message structures
+ * for assistant-ui history loading.
+ */
+export function formatSessionEventsToThreadMessages(
+  events: AgentSessionEvent[]
+): FormattedSessionThreadMessage[] {
+  const threadMessages: FormattedSessionThreadMessage[] = [];
+  let accumulatedThoughts: string[] = [];
+
+  for (let i = 0; i < events.length; i++) {
+    const e = events[i];
+    const content = (e.content || "").trim();
+    const thought = (e.thought || "").trim();
+
+    if (thought) {
+      accumulatedThoughts.push(thought);
+    }
+
+    // User turn
+    if (e.role === "user") {
+      if (content) {
+        threadMessages.push({
+          id: e.id || `msg-${i}`,
+          role: "user",
+          content,
+          createdAt: e.createTime,
+        });
+      }
+      continue;
+    }
+
+    // Assistant turn with content
+    if (content) {
+      const parts: Array<
+        { type: "reasoning"; text: string } | { type: "text"; text: string }
+      > = [];
+
+      if (accumulatedThoughts.length > 0) {
+        parts.push({
+          type: "reasoning",
+          text: accumulatedThoughts.join("\n\n"),
+        });
+        accumulatedThoughts = [];
+      }
+
+      parts.push({ type: "text", text: content });
+
+      threadMessages.push({
+        id: e.id || `msg-${i}`,
+        role: "assistant",
+        content: parts,
+        createdAt: e.createTime,
+      });
+    }
+  }
+
+  if (accumulatedThoughts.length > 0) {
+    threadMessages.push({
+      id: "msg-trailing-reasoning",
+      role: "assistant",
+      content: [
+        {
+          type: "reasoning",
+          text: accumulatedThoughts.join("\n\n"),
+        },
+      ],
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  return threadMessages;
+}
+
 export function parseRawSessionEvent(
   rawEvt: unknown,
   sessionId: string,

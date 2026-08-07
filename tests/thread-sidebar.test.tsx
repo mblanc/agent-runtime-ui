@@ -113,6 +113,27 @@ describe("ThreadSidebar Component", () => {
                 createTime: new Date().toISOString(),
               },
             ],
+            messages: [
+              {
+                id: "evt-1",
+                role: "user",
+                content: "How does ADK multi-agent orchestration work?",
+              },
+              {
+                id: "evt-2",
+                role: "assistant",
+                content: [
+                  {
+                    type: "reasoning",
+                    text: "Analyzing ADK architecture...",
+                  },
+                  {
+                    type: "text",
+                    text: "ADK provides hierarchical agent orchestration.",
+                  },
+                ],
+              },
+            ],
           }),
         } as Response);
       }
