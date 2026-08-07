@@ -11,6 +11,18 @@ export async function POST(req: NextRequest) {
       headers: req.headers,
     });
 
+    if (!session?.user?.id) {
+      return new Response(
+        JSON.stringify({
+          error: "Unauthorized. Please sign in to use Agent Runtime UI.",
+        }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
     const body: ChatRequestBody = await req.json();
 
     if (!body.messages || !Array.isArray(body.messages)) {
@@ -20,27 +32,37 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const userId = session?.user?.id || "anonymous-dev-user";
+    const userId = session.user.id;
     const agentClient = new AgentRuntimeClient();
 
     const stream = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
+        console.log(
+          "[/api/chat] Starting stream for sessionId:",
+          body.sessionId,
+          "user:",
+          userId
+        );
 
         try {
           for await (const event of agentClient.streamQuery(body, userId)) {
+            console.log("[/api/chat] Yielding event:", event.event_type);
             const chunk = `data: ${JSON.stringify(event)}\n\n`;
             controller.enqueue(encoder.encode(chunk));
           }
+          console.log("[/api/chat] Completed streamQuery loop normally");
         } catch (err: unknown) {
           const errorMessage =
             err instanceof Error ? err.message : "Streaming error occurred";
+          console.error("[/api/chat] Stream error:", errorMessage);
           const errChunk = `data: ${JSON.stringify({
             event_type: "error",
             error: errorMessage,
           })}\n\n`;
           controller.enqueue(encoder.encode(errChunk));
         } finally {
+          console.log("[/api/chat] Controller closing stream");
           controller.close();
         }
       },

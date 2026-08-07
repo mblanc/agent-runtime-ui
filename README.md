@@ -1,4 +1,4 @@
-# LLM Council UI (Gemini Clone for Google Cloud Agent Runtime)
+# Agent Runtime UI (Gemini Interface for Google Cloud Agent Runtime)
 
 A modern, production-grade web application styled after Google Gemini that connects authenticated users to an ADK (Agent Development Kit) agent running on **Google Cloud Agent Runtime** (Vertex AI Reasoning Engines).
 
@@ -13,8 +13,8 @@ A modern, production-grade web application styled after Google Gemini that conne
   - Right-aligned rounded warm-grey user bubbles.
   - Collapsible multi-thread history sidebar.
 - **Authentication**:
-  - `better-auth` integration with **Google Identity (OAuth 2.0)** for Google Workspace and Gmail accounts.
-  - Secure session handling stored in SQLite (ready for PostgreSQL / Cloud SQL).
+  - **Stateless Google Identity (OAuth 2.0)** for Google Workspace and Gmail accounts.
+  - 100% Serverless & Cloud Run native: cryptographic signed session cookies (`HttpOnly`, `SameSite=Lax`) with **zero database required** and zero session state mismatch during multi-instance auto-scaling.
 - **Backend-For-Frontend (BFF)**:
   - Next.js server route `/api/chat` using Google Cloud Application Default Credentials (`google-auth-library`).
   - Real-time Server-Sent Events (SSE) streaming connecting directly to Vertex AI Reasoning Engine `:streamQuery`.
@@ -74,11 +74,11 @@ Build and deploy directly using Google Cloud Build and Cloud Run:
 
 ```bash
 # Build container image in Artifact Registry
-gcloud builds submit --tag gcr.io/YOUR_PROJECT_ID/llm-council-ui
+gcloud builds submit --tag gcr.io/YOUR_PROJECT_ID/agent-runtime-ui
 
 # Deploy to Cloud Run
-gcloud run deploy llm-council-ui \
-  --image gcr.io/YOUR_PROJECT_ID/llm-council-ui \
+gcloud run deploy agent-runtime-ui \
+  --image gcr.io/YOUR_PROJECT_ID/agent-runtime-ui \
   --platform managed \
   --region us-central1 \
   --allow-unauthenticated \

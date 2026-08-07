@@ -1,4 +1,4 @@
-# Spec: LLM Council UI (Gemini-Themed Webapp for Google Cloud Agent Runtime)
+# Spec: Agent Runtime UI (Gemini-Themed Webapp for Google Cloud Agent Runtime)
 
 ## Objective
 
@@ -17,23 +17,23 @@ Build a production-ready, high-fidelity web application styled after Google Gemi
 flowchart LR
     subgraph Client ["Browser (Next.js Client)"]
         UI["Gemini UI (assistant-ui)"]
-        AuthUI["Google Sign-In (better-auth client)"]
+        AuthUI["Google Sign-In (Stateless Auth Client)"]
     end
 
-    subgraph BFF ["Next.js Server (BFF)"]
-        AuthAPI["/api/auth/* (better-auth)"]
+    subgraph BFF ["Next.js Server on Cloud Run (BFF)"]
+        AuthAPI["/api/auth/* (PKCE & Signed Session Cookie)"]
         ChatAPI["/api/chat (SSE Proxy & Event Translator)"]
-        DB[(Auth DB / SQLite / PostgreSQL)]
     end
 
     subgraph GCP ["Google Cloud Platform"]
+        GoogleIdentity["Google Identity (OAuth 2.0)"]
         GCPAuth["Google Cloud ADC / IAM Auth"]
         AgentRuntime["Vertex AI Agent Runtime (Reasoning Engine / ADK Agent)"]
     end
 
     UI -->|Stream Chat Request| ChatAPI
-    AuthUI -->|Auth Handshake| AuthAPI
-    AuthAPI <--> DB
+    AuthUI -->|OAuth PKCE Redirect| AuthAPI
+    AuthAPI <-->|OAuth Handshake| GoogleIdentity
     ChatAPI -->|IAM Token| GCPAuth
     GCPAuth -->|:streamQuery / /run_sse| AgentRuntime
     AgentRuntime -->|ADK SSE Stream| ChatAPI
@@ -52,8 +52,8 @@ flowchart LR
   - `shadcn/ui` (Radix UI primitives, Lucide icons, dropdowns, tooltips, dialogs)
   - `lucide-react`
 - **Authentication**:
-  - `better-auth` with Google OAuth Provider (Google Identity)
-  - `better-sqlite3` / Drizzle ORM (lightweight local DB, scalable to Cloud SQL / Postgres)
+  - **100% Stateless Google OAuth 2.0 with PKCE**: Cryptographic signed session cookies (`HttpOnly`, `SameSite=Lax`, Web Crypto HMAC-SHA256).
+  - **Zero Database Required**: No SQLite, no Cloud SQL, completely serverless and multi-instance Cloud Run ready.
 - **Google Cloud Backend Integration**:
   - `google-auth-library` (Application Default Credentials & GCP Access Token generation)
   - Custom streaming SSE proxy connecting to Vertex AI Reasoning Engine `:streamQuery` or Agent Runtime HTTP `/run_sse` passthrough.
@@ -86,8 +86,8 @@ bun run build
 bun run start
 
 # Docker (Cloud Run ready)
-docker build -t llm-council-ui .
-docker run -p 3000:3000 --env-file .env.local llm-council-ui
+docker build -t agent-runtime-ui .
+docker run -p 3000:3000 --env-file .env.local agent-runtime-ui
 ```
 
 ---
@@ -95,7 +95,7 @@ docker run -p 3000:3000 --env-file .env.local llm-council-ui
 ## Project Structure
 
 ```
-llm-council-ui/
+agent-runtime-ui/
 ├── src/
 │   ├── app/
 │   │   ├── api/
