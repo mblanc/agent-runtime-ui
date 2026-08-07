@@ -31,7 +31,7 @@ export default function LoginPage() {
         </div>
 
         <h1 className="mb-2 text-3xl font-semibold tracking-tight text-[#1f1f1f] dark:text-white">
-          Welcome to LLM Council
+          Welcome to Agent Runtime UI
         </h1>
         <p className="mb-8 text-sm text-[#444746] dark:text-[#c4c7c5]">
           Sign in with your Google identity to access your ADK agent powered by Google
