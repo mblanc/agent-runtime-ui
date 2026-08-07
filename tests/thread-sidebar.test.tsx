@@ -149,14 +149,26 @@ describe("ThreadSidebar Component", () => {
       render(<TestSidebarWrapper />);
 
       // Wait for thread items to render
-      const item = await screen.findByText("ADK Agent Architecture");
-      expect(item).toBeDefined();
+      const item1 = await screen.findByText("ADK Agent Architecture");
+      const item2 = await screen.findByText("Architecture Review");
+      expect(item1).toBeDefined();
+      expect(item2).toBeDefined();
 
-      // Click on the session
-      fireEvent.click(item);
+      // Click on session 1
+      fireEvent.click(item1);
+
+      // Click on session 2
+      fireEvent.click(item2);
     } finally {
       fetchSpy.mockRestore();
     }
+  });
+
+  it("exports unstable_Provider in useSessionThreadListAdapter", async () => {
+    const { renderHook } = await import("@testing-library/react");
+    const { result } = renderHook(() => useSessionThreadListAdapter("test-user"));
+    expect(result.current.unstable_Provider).toBeDefined();
+    expect(typeof result.current.unstable_Provider).toBe("function");
   });
 });
 

@@ -12,10 +12,7 @@ import {
   createWebSpeechDictationAdapter,
   createWebSpeechSynthesisAdapter,
 } from "@/lib/gemini-runtime-adapter";
-import {
-  useSessionThreadListAdapter,
-  createSessionHistoryAdapter,
-} from "@/lib/session-adapter";
+import { useSessionThreadListAdapter } from "@/lib/session-adapter";
 import { ThreadSidebar } from "@/components/assistant-ui/thread-sidebar";
 import { GeminiThread } from "@/components/assistant-ui/gemini-thread";
 import { useSession } from "@/lib/auth-client";
@@ -45,11 +42,6 @@ export default function ChatPage() {
     []
   );
 
-  const historyAdapter = useMemo(
-    () => createSessionHistoryAdapter(() => activeThreadIdRef.current),
-    []
-  );
-
   const attachmentAdapter = useMemo(() => createGcsAttachmentAdapter(), []);
 
   const dictationAdapter = useMemo(() => createWebSpeechDictationAdapter(), []);
@@ -64,7 +56,6 @@ export default function ChatPage() {
     runtimeHook: function useRuntimeHook() {
       return useLocalRuntime(chatAdapter, {
         adapters: {
-          history: historyAdapter,
           attachments: attachmentAdapter,
           feedback: feedbackAdapter,
           dictation: dictationAdapter,

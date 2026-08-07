@@ -1,6 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
+import {
+  type FC,
+  type PropsWithChildren,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import {
   ExportedMessageRepository,
   type RemoteThreadListAdapter,
@@ -8,7 +15,9 @@ import {
   type ThreadMessage,
   type ThreadMessageLike,
 } from "@assistant-ui/core";
+import { RuntimeAdapterProvider } from "@assistant-ui/react";
 import { createAssistantStream } from "assistant-stream";
+import { useAui } from "@assistant-ui/store";
 
 interface SessionApiItem {
   id: string;
@@ -27,110 +36,138 @@ interface SessionEventApiItem {
   createTime: string;
 }
 
-export function createSessionHistoryAdapter(
-  getSessionId: () => string | undefined
-): ThreadHistoryAdapter {
-  return {
-    load: async () => {
-      const remoteId = getSessionId();
+export function useSessionThreadHistoryAdapter(): ThreadHistoryAdapter {
+  const aui = useAui();
+  const auiRef = useRef(aui);
+  useEffect(() => {
+    auiRef.current = aui;
+  });
 
-      if (
-        !remoteId ||
-        remoteId.startsWith("__LOCALID_") ||
-        remoteId.startsWith("local-")
-      ) {
-        return { messages: [] };
-      }
+  return useMemo<ThreadHistoryAdapter>(() => {
+    return {
+      load: async () => {
+        const state = auiRef.current?.threadListItem?.getState?.();
+        const remoteId = state?.remoteId;
 
-      try {
-        const res = await fetch(
-          getApiUrl(`/api/sessions/${encodeURIComponent(remoteId)}`),
-          {
-            cache: "no-store",
-          }
-        );
-        if (!res.ok) {
+        if (
+          !remoteId ||
+          remoteId.startsWith("__LOCALID_") ||
+          remoteId.startsWith("local-")
+        ) {
           return { messages: [] };
         }
 
-        const data = await res.json();
-        const events: SessionEventApiItem[] = data.events || [];
-        if (events.length === 0) {
-          return { messages: [] };
-        }
-
-        const threadMessages: ThreadMessageLike[] = [];
-        let accumulatedThoughts: string[] = [];
-
-        for (let i = 0; i < events.length; i++) {
-          const e = events[i];
-          const content = (e.content || "").trim();
-          const thought = (e.thought || "").trim();
-
-          if (thought) {
-            accumulatedThoughts.push(thought);
+        try {
+          const res = await fetch(
+            getApiUrl(`/api/sessions/${encodeURIComponent(remoteId)}`),
+            {
+              cache: "no-store",
+            }
+          );
+          if (!res.ok) {
+            return { messages: [] };
           }
 
-          // User turn
-          if (e.role === "user") {
+          const data = await res.json();
+          const events: SessionEventApiItem[] = data.events || [];
+
+          // If the remote session has 0 events (e.g. freshly initialized),
+          // but the thread is currently generating or has local in-memory messages,
+          // preserve the local messages so we don't wipe out the active stream!
+          const threadState = auiRef.current?.thread?.getState?.();
+          const localMessages = threadState?.messages || [];
+          const isRunning = threadState?.isRunning || false;
+
+          if (events.length === 0 && (isRunning || localMessages.length > 0)) {
+            return ExportedMessageRepository.fromArray(
+              localMessages as unknown as ThreadMessageLike[]
+            );
+          }
+
+          if (events.length === 0) {
+            return { messages: [] };
+          }
+
+          const threadMessages: ThreadMessageLike[] = [];
+          let accumulatedThoughts: string[] = [];
+
+          for (let i = 0; i < events.length; i++) {
+            const e = events[i];
+            const content = (e.content || "").trim();
+            const thought = (e.thought || "").trim();
+
+            if (thought) {
+              accumulatedThoughts.push(thought);
+            }
+
+            // User turn
+            if (e.role === "user") {
+              if (content) {
+                threadMessages.push({
+                  id: e.id || `msg-${i}`,
+                  role: "user",
+                  content,
+                  createdAt: e.createTime ? new Date(e.createTime) : new Date(),
+                });
+              }
+              continue;
+            }
+
+            // Assistant turn with content
             if (content) {
+              const parts: Array<
+                { type: "reasoning"; text: string } | { type: "text"; text: string }
+              > = [];
+
+              if (accumulatedThoughts.length > 0) {
+                parts.push({
+                  type: "reasoning",
+                  text: accumulatedThoughts.join("\n\n"),
+                });
+                accumulatedThoughts = [];
+              }
+
+              parts.push({ type: "text", text: content });
+
               threadMessages.push({
                 id: e.id || `msg-${i}`,
-                role: "user",
-                content,
+                role: "assistant",
+                content: parts,
                 createdAt: e.createTime ? new Date(e.createTime) : new Date(),
               });
             }
-            continue;
           }
 
-          // Assistant turn with content
-          if (content) {
-            const parts: Array<
-              { type: "reasoning"; text: string } | { type: "text"; text: string }
-            > = [];
-
-            if (accumulatedThoughts.length > 0) {
-              parts.push({
-                type: "reasoning",
-                text: accumulatedThoughts.join("\n\n"),
-              });
-              accumulatedThoughts = [];
-            }
-
-            parts.push({ type: "text", text: content });
-
+          if (accumulatedThoughts.length > 0) {
             threadMessages.push({
-              id: e.id || `msg-${i}`,
+              id: `msg-trailing-reasoning`,
               role: "assistant",
-              content: parts,
-              createdAt: e.createTime ? new Date(e.createTime) : new Date(),
+              content: [
+                {
+                  type: "reasoning",
+                  text: accumulatedThoughts.join("\n\n"),
+                },
+              ],
+              createdAt: new Date(),
             });
           }
-        }
 
-        if (accumulatedThoughts.length > 0) {
-          threadMessages.push({
-            id: `msg-trailing-reasoning`,
-            role: "assistant",
-            content: [
-              {
-                type: "reasoning",
-                text: accumulatedThoughts.join("\n\n"),
-              },
-            ],
-            createdAt: new Date(),
-          });
+          return ExportedMessageRepository.fromArray(threadMessages);
+        } catch (err) {
+          console.error(`Failed to load history for session ${remoteId}:`, err);
+          const threadState = auiRef.current?.thread?.getState?.();
+          const localMessages = threadState?.messages || [];
+          if (localMessages.length > 0) {
+            return ExportedMessageRepository.fromArray(
+              localMessages as unknown as ThreadMessageLike[]
+            );
+          }
+          return { messages: [] };
         }
-
-        return ExportedMessageRepository.fromArray(threadMessages);
-      } catch (err) {
-        console.error(`Failed to load history for session ${remoteId}:`, err);
-        return { messages: [] };
-      }
-    },
-    append: async () => {},
-  };
+      },
+      append: async () => {},
+    };
+  }, []);
 }
 
 function getApiUrl(path: string): string {
@@ -146,6 +183,16 @@ function getApiUrl(path: string): string {
 }
 
 export function useSessionThreadListAdapter(userId?: string): RemoteThreadListAdapter {
+  const unstable_Provider: FC<PropsWithChildren> = useCallback(function Provider({
+    children,
+  }) {
+    const history = useSessionThreadHistoryAdapter();
+    const adapters = useMemo(() => ({ history }), [history]);
+    return (
+      <RuntimeAdapterProvider adapters={adapters}>{children}</RuntimeAdapterProvider>
+    );
+  }, []);
+
   return useMemo<RemoteThreadListAdapter>(() => {
     return {
       list: async () => {
@@ -314,6 +361,8 @@ export function useSessionThreadListAdapter(userId?: string): RemoteThreadListAd
           controller.close();
         });
       },
+
+      unstable_Provider,
     };
-  }, [userId]);
+  }, [unstable_Provider, userId]);
 }
