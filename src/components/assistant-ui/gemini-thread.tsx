@@ -1,6 +1,6 @@
 "use client";
 
-import { ThreadPrimitive, useAuiState, useAui } from "@assistant-ui/react";
+import { ThreadPrimitive, useAuiState } from "@assistant-ui/react";
 import { GeminiComposer } from "./gemini-composer";
 import { ChatMessage } from "./gemini-message";
 import { Sparkles } from "lucide-react";
@@ -14,7 +14,7 @@ export function GeminiThread() {
 
   return (
     <ThreadPrimitive.Root className="relative flex h-full w-full flex-col overflow-hidden bg-[#fdfcfc] text-[#1f1f1f] dark:bg-[#0c0c0c] dark:text-[#e3e3e3]">
-      {/* Centered Ambient Glow (fades subtly when active) */}
+      {/* Centered Ambient Glow */}
       <div
         aria-hidden="true"
         className={cn(
@@ -27,7 +27,7 @@ export function GeminiThread() {
 
       {/* Main Viewport Container */}
       <div className="relative z-10 flex h-full w-full flex-col justify-between overflow-hidden">
-        {/* Messages List Area (hidden on home page, smoothly scrolls when messages exist) */}
+        {/* Messages List Area */}
         <ThreadPrimitive.Viewport
           className={cn(
             "flex-1 overflow-y-auto px-4 transition-all duration-500",
@@ -43,7 +43,7 @@ export function GeminiThread() {
           </div>
         </ThreadPrimitive.Viewport>
 
-        {/* Empty State Hero (Single centered composer on Home Page) */}
+        {/* Empty State Hero Content */}
         {isEmpty && (
           <div className="flex flex-1 flex-col items-center justify-center px-4 transition-all duration-500 ease-out animate-in fade-in zoom-in-95">
             <div className="flex w-full max-w-3xl flex-col items-center text-center">
@@ -57,60 +57,28 @@ export function GeminiThread() {
               <h1 className="mb-8 text-4xl font-normal tracking-tight text-[#1f1f1f] dark:text-white md:text-5xl">
                 How can I help you today?
               </h1>
-
-              {/* Centered Composer */}
-              <div className="w-full">
-                <GeminiComposer />
-              </div>
-
-              {/* Suggestion Chips */}
-              <SuggestionChips />
             </div>
           </div>
         )}
 
-        {/* Sticky Bottom Composer Area (Only appears at bottom once conversation starts) */}
-        {!isEmpty && (
-          <div className="sticky bottom-0 z-20 w-full bg-gradient-to-t from-[#fdfcfc] via-[#fdfcfc]/95 to-transparent px-4 pb-6 pt-2 dark:from-[#0c0c0c] dark:via-[#0c0c0c]/95 transition-all duration-500 animate-in fade-in slide-in-from-bottom-4">
-            <GeminiComposer />
+        {/* Single Continuously Mounted Composer */}
+        <div
+          className={cn(
+            "z-20 w-full transition-all duration-500 px-4",
+            isEmpty
+              ? "pb-12"
+              : "sticky bottom-0 bg-gradient-to-t from-[#fdfcfc] via-[#fdfcfc]/95 to-transparent pb-6 pt-2 dark:from-[#0c0c0c] dark:via-[#0c0c0c]/95 animate-in fade-in slide-in-from-bottom-4"
+          )}
+        >
+          <GeminiComposer />
+          {!isEmpty && (
             <div className="mt-2 text-center text-[11px] text-muted-foreground">
-              LLM Council connects to Google Cloud Agent Runtime. Verify important info.
+              Agent Runtime UI connects to Google Cloud Agent Runtime. Verify important
+              info.
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </ThreadPrimitive.Root>
-  );
-}
-
-function SuggestionChips() {
-  const aui = useAui();
-
-  const handleSuggestionClick = (prompt: string) => {
-    if (aui?.thread?.append) {
-      aui.thread.append({
-        role: "user",
-        content: [{ type: "text", text: prompt }],
-      });
-    }
-  };
-
-  return (
-    <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-      {[
-        "Analyze system architecture",
-        "Synthesize council decisions",
-        "Review deployment health",
-      ].map((prompt, idx) => (
-        <button
-          key={idx}
-          type="button"
-          onClick={() => handleSuggestionClick(prompt)}
-          className="rounded-full border border-border/60 bg-white/80 px-4 py-2 text-xs text-[#444746] shadow-sm backdrop-blur-sm transition-all hover:bg-muted/80 hover:text-foreground hover:scale-105 active:scale-95 dark:bg-[#1e1f20]/80 dark:text-[#c4c7c5] dark:hover:bg-[#282a2c]"
-        >
-          {prompt}
-        </button>
-      ))}
-    </div>
   );
 }

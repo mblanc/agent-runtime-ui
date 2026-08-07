@@ -1,68 +1,110 @@
-# Implementation Plan: LLM Council UI (Gemini Clone + better-auth + Agent Runtime)
+# Implementation Plan: Assistant-UI Thread List & Agent Runtime Session Service Integration
 
 ## Overview
 
-This plan implements the Next.js web application specified in [docs/spec.md](file:///Users/mblanc/projects/llm-council-ui/docs/spec.md). It establishes the scaffolding, `better-auth` integration with Google OAuth, the `assistant-ui` Gemini-themed frontend, and the secure Backend-For-Frontend (BFF) streaming proxy connecting to Google Cloud Agent Runtime.
+Connect the Gemini-themed application's sidebar thread list to the **Google Cloud Agent Runtime Session Service** (Vertex AI Reasoning Engines Sessions API) using **`@assistant-ui/react`** thread list primitives and Next.js Backend-For-Frontend (BFF) routes.
 
 ---
 
-## Architecture & Dependency Flow
+## Architecture Decisions
+
+1. **User Identity Isolation**: Use `session.user.id` (canonical Google OAuth `sub`) for all session partitioning and API queries (`filter=user_id="{userId}"`), ensuring security and immutability.
+2. **Stateless BFF Layer**: The Next.js server validates the signed cryptographic session cookie, mints Google Cloud IAM bearer tokens via `google-auth-library` (ADC), and queries Vertex AI Reasoning Engines REST endpoints. No external database is needed.
+3. **Session ID in Stream Queries**: When chatting, the active `sessionId` is passed into `POST /api/chat` and dispatched to `async_stream_query` input (`session_id`) on Vertex AI.
+4. **Mock Parity for Local Dev**: Full in-memory session CRUD simulation when `MOCK_AGENT_RUNTIME=true` or when Google Cloud credentials are not configured.
+
+---
+
+## Dependency & Implementation Order
 
 ```mermaid
 graph TD
-    A[Scaffold Next.js 15 App + Tailwind + shadcn] --> B[Configure better-auth + Google Provider]
-    B --> C[Build Auth UI & Session Protection]
-    A --> D[Implement assistant-ui Gemini Theme Components]
-    D --> E[Build Backend-for-Frontend Agent Runtime Proxy]
-    C --> F[Connect End-to-End Chat with Real-time SSE]
-    E --> F
-    F --> G[Dockerization & Verification]
+    T1[Task 1: Agent Runtime Client Sessions & Types] --> T2[Task 2: BFF Session API Routes]
+    T2 --> T3[Task 3: Client Session Adapter & Runtime Integration]
+    T3 --> T4[Task 4: Gemini Thread Sidebar with assistant-ui Primitives]
+    T4 --> T5[Task 5: Test Suite & Preflight Verification]
 ```
 
 ---
 
-## Phases & Checkpoints
+## Phase 1: Foundation & Backend Services
 
-### Phase 1: Foundation, Scaffolding & Tooling
+### Task 1: Agent Runtime Client Sessions & Types
 
-- Initialize project with Bun, Next.js 15 App Router, TypeScript, and Tailwind CSS.
-- Configure `eslint`, `prettier`, and `concurrently`.
-- Setup the unified validation script: `"preflight": "bun run format && concurrently --kill-others-on-fail -n check,lint,test \"bun run check\" \"bun run lint\" \"bun run test\""`.
-- Install and configure `@assistant-ui/react`, `@assistant-ui/react-markdown`, `lucide-react`, `better-auth`, `google-auth-library`.
-- **Verification**: `bun run preflight` and `bun run build` succeed on clean scaffolding.
+- **Description**: Add session and event schemas to `src/types/agent.ts` and implement session management methods (`listSessions`, `createSession`, `getSession`, `deleteSession`, `listSessionEvents`) in `src/lib/agent-runtime-client.ts`, supporting both live GCP REST calls and local mock mode.
+- **Acceptance Criteria**:
+  - `src/types/agent.ts` defines `AgentSession`, `AgentSessionEvent`, and updated `ChatRequestBody`.
+  - `AgentRuntimeClient` can list, create, get, and delete sessions on Vertex AI Reasoning Engines or mock storage.
+  - `streamQuery` accepts `sessionId` and forwards `session_id` to `async_stream_query`.
+- **Verification**: `bun run test tests/agent-client.test.ts`
+- **Files**: `src/types/agent.ts`, `src/lib/agent-runtime-client.ts`, `tests/agent-client.test.ts`
 
-### Phase 2: Authentication Layer (`better-auth`)
+### Task 2: Next.js BFF Session API Routes (`/api/sessions/*`)
 
-- Setup `src/lib/auth.ts` with SQLite database adapter and Google OAuth configuration.
-- Implement `/api/auth/[...all]` route handler.
-- Setup `src/lib/auth-client.ts` with React client hooks.
-- Create `/login` page with Google SSO button and auth guard for protected chat routes.
-- **Verification**: Local auth flow initiates and session state is exposed to React context.
+- **Description**: Implement authenticated API route handlers for session listing, creation, event history retrieval, and deletion.
+- **Acceptance Criteria**:
+  - `GET /api/sessions`: Authenticates user, returns list of sessions scoped to `user_id`.
+  - `POST /api/sessions`: Creates a new session on Agent Runtime.
+  - `GET /api/sessions/[sessionId]`: Returns session details and turn event history.
+  - `DELETE /api/sessions/[sessionId]`: Deletes session from Agent Runtime.
+  - `POST /api/chat`: Accepts `sessionId` and passes it to `agentClient.streamQuery`.
+  - Rejects unauthenticated requests with 401.
+- **Verification**: `bun run test tests/sessions-api.test.ts`
+- **Files**: `src/app/api/sessions/route.ts`, `src/app/api/sessions/[sessionId]/route.ts`, `src/app/api/chat/route.ts`, `tests/sessions-api.test.ts`
 
-### Phase 3: Gemini UI Experience (`assistant-ui`)
+### Checkpoint: Backend & API Verification
 
-- Implement `gemini-thread.tsx` with:
-  - Empty state with centered _"How can I help you today?"_ headline and soft ambient radial glow.
-  - Single-row pill composer (`gemini-composer.tsx`) with `+` tools menu, dynamic resize input, model switcher, and stateful send/stop button.
-  - Avatar-free full-width markdown assistant reply (`gemini-message.tsx`).
-  - Right-aligned rounded warm-grey user message bubbles.
-  - Collapsible reasoning/thought trace blocks and tool call cards.
-  - Sidebar for multi-thread conversation history.
-- **Verification**: UI renders identical to the Gemini clone specification in light and dark modes.
+- [ ] Session client unit tests pass
+- [ ] BFF session API integration tests pass
+- [ ] `bun run check` succeeds
 
-### Phase 4: Google Cloud Agent Runtime Integration (BFF)
+---
 
-- Implement `src/lib/agent-runtime-client.ts` using `google-auth-library` to generate IAM Bearer tokens.
-- Implement `/api/chat/route.ts` streaming route handler:
-  - Session verification with `better-auth`.
-  - Transform request into Vertex AI Reasoning Engine `:streamQuery` or `/run_sse` passthrough format.
-  - Stream parsed SSE chunks (text, thoughts, tool executions) back to `@assistant-ui/react`.
-  - Include a local mock mode for development without active GCP credentials.
-- **Verification**: Chat streaming works end-to-end, parsing text and reasoning traces without dropped tokens.
+## Phase 2: Client Adapter & UI Integration
 
-### Phase 5: Production Readiness & Packaging
+### Task 3: Client Session Adapter & Runtime Wiring
 
-- Create multi-stage production `Dockerfile` optimized for Google Cloud Run.
-- Setup `.env.example` with documented config variables.
-- Write smoke and integration tests.
-- **Verification**: Production build and container run smoothly.
+- **Description**: Implement client session adapter and wire `useRemoteThreadListRuntime` or session-aware state management in `src/app/page.tsx` and `src/lib/gemini-runtime-adapter.ts`.
+- **Acceptance Criteria**:
+  - `src/lib/session-adapter.ts` provides a `RemoteThreadListAdapter` that bridges assistant-ui with `/api/sessions`.
+  - Chat page wires the remote thread list runtime with `geminiChatAdapter`.
+  - Active session ID is propagated during message execution.
+  - Switching threads loads session history.
+- **Verification**: `bun run check` and component tests
+- **Files**: `src/lib/session-adapter.ts`, `src/lib/gemini-runtime-adapter.ts`, `src/app/page.tsx`
+
+### Task 4: Gemini-Themed Thread Sidebar with Assistant-UI Primitives
+
+- **Description**: Upgrade `src/components/assistant-ui/thread-sidebar.tsx` with `@assistant-ui/react` primitives (`ThreadListPrimitive.Root`, `ThreadListPrimitive.New`, `ThreadListPrimitive.Items`, `ThreadListItemPrimitive`).
+- **Acceptance Criteria**:
+  - Displays real user sessions fetched from Agent Runtime Session Service.
+  - "New chat" button creates a new thread.
+  - Selecting a thread switches active conversation context.
+  - Delete button removes session with confirmation.
+  - Collapses to `w-16` icon-only mode and expands to `w-64` smoothly.
+  - Loading skeleton states displayed while fetching.
+- **Verification**: `bun run test tests/thread-sidebar.test.tsx`
+- **Files**: `src/components/assistant-ui/thread-sidebar.tsx`, `tests/thread-sidebar.test.tsx`
+
+---
+
+## Phase 3: Polish & Preflight Validation
+
+### Task 5: End-to-End Verification & Preflight
+
+- **Description**: Run full automated test suite, verify types, linting, formatting, and preflight script.
+- **Acceptance Criteria**:
+  - `bun run preflight` passes 100% (format, check, lint, test).
+  - All existing and new tests pass cleanly.
+- **Verification**: `bun run preflight`
+- **Files**: All touched files
+
+---
+
+## Risks and Mitigations
+
+| Risk                                | Impact | Mitigation                                                                                                                             |
+| :---------------------------------- | :----- | :------------------------------------------------------------------------------------------------------------------------------------- |
+| **GCP Credentials Missing locally** | Med    | Provide complete mock session store when `MOCK_AGENT_RUNTIME=true` or when ADC credentials are not configured.                         |
+| **Session Event Format Variance**   | Low    | Robust parser in `AgentRuntimeClient.listSessionEvents` that handles both ADK `user_query`/`model_response` and standard part schemas. |
+| **Thread Switching Lag**            | Low    | Optimistic UI updates with skeleton loaders while fetching history from `/api/sessions/[sessionId]`.                                   |

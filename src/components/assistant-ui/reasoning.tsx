@@ -1,8 +1,10 @@
 "use client";
 
-import { ReactNode, useState, useEffect } from "react";
+import { ReactNode, useState, useEffect, useMemo } from "react";
 import { ChevronDown, ChevronRight, BrainCircuit, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SubAgentCollapsible } from "./subagent-collapsible";
+import { ToolCollapsible } from "./tool-collapsible";
 
 interface ReasoningRootProps {
   children: ReactNode;
@@ -130,25 +132,216 @@ export function ReasoningContent({
   );
 }
 
+interface ParsedReasoningBlock {
+  type: "text" | "subagent" | "tool";
+  title?: string;
+  meta?: Record<string, string>;
+  content: string;
+}
+
+function getTextFromChildren(node: ReactNode): string {
+  if (typeof node === "string") return node;
+  if (typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(getTextFromChildren).join("");
+  if (node && typeof node === "object" && "props" in node) {
+    const props = (node as { props?: { children?: ReactNode } }).props;
+    if (props?.children) {
+      return getTextFromChildren(props.children);
+    }
+  }
+  return "";
+}
+
+function parseToolBlockContent(content: string): {
+  args?: string;
+  result?: string;
+} {
+  let args: string | undefined;
+  let result: string | undefined;
+
+  const argsMatch = content.match(
+    /\*\*Arguments:\*\*\s*\r?\n```(?:json)?\s*\r?\n([\s\S]*?)\r?\n```/i
+  );
+  if (argsMatch) {
+    args = argsMatch[1].trim();
+  }
+
+  const resultMatch = content.match(
+    /\*\*Result:\*\*\s*\r?\n```(?:json)?\s*\r?\n([\s\S]*?)\r?\n```/i
+  );
+  if (resultMatch) {
+    result = resultMatch[1].trim();
+  } else {
+    const plainResultMatch = content.match(/\*\*Result:\*\*\s*\r?\n([\s\S]*)/i);
+    if (plainResultMatch) {
+      result = plainResultMatch[1].trim();
+    }
+  }
+
+  if (!args && !result) {
+    result = content.trim();
+  }
+
+  return { args, result };
+}
+
+function parseReasoningBlocks(rawText: string): ParsedReasoningBlock[] {
+  const blocks: ParsedReasoningBlock[] = [];
+  const regex =
+    /:::(subagent|tool)\[([^\]]+)\](?:\{([^}]*)\})?\s*\r?\n([\s\S]*?)(?:\r?\n:::|$)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(rawText)) !== null) {
+    const textBefore = rawText.substring(lastIndex, match.index).trim();
+    if (textBefore) {
+      blocks.push({ type: "text", content: textBefore });
+    }
+
+    const blockType = match[1] as "subagent" | "tool";
+    const title = match[2];
+    const metaStr = match[3] || "";
+    const body = match[4];
+
+    const meta: Record<string, string> = {};
+    const metaRegex = /(\w+)="([^"]*)"/g;
+    let m: RegExpExecArray | null;
+    while ((m = metaRegex.exec(metaStr)) !== null) {
+      meta[m[1]] = m[2];
+    }
+
+    blocks.push({
+      type: blockType,
+      title,
+      meta,
+      content: body,
+    });
+
+    lastIndex = regex.lastIndex;
+  }
+
+  const textAfter = rawText.substring(lastIndex).trim();
+  if (textAfter) {
+    blocks.push({ type: "text", content: textAfter });
+  }
+
+  return blocks;
+}
+
+export function parseLegacyToolTraces(text: string): string {
+  if (!text) return "";
+  // Convert legacy [Tool Executed]: name (args) and [Tool Completed]: name into :::tool[name] blocks
+  const toolExecRegex =
+    /\[Tool Executed\]:\s*([a-zA-Z0-9_-]+)(?:\s*\((.*?)\))?(?:\r?\n\s*\[Tool Completed\]:\s*\1)?/g;
+
+  return text.replace(toolExecRegex, (_, toolName, argsStr) => {
+    let formattedArgs = "";
+    if (argsStr) {
+      try {
+        const pairs = argsStr.split(",").map((p: string) => p.trim());
+        const obj: Record<string, unknown> = {};
+        for (const pair of pairs) {
+          const colonIdx = pair.indexOf(":");
+          if (colonIdx !== -1) {
+            const k = pair.substring(0, colonIdx).trim();
+            const v = pair.substring(colonIdx + 1).trim();
+            obj[k] = isNaN(Number(v)) ? v : Number(v);
+          }
+        }
+        formattedArgs = JSON.stringify(obj, null, 2);
+      } catch {
+        formattedArgs = argsStr;
+      }
+    }
+
+    return `:::tool[${toolName}]{status="complete"}\n**Arguments:**\n\`\`\`json\n${formattedArgs || "{}"}\n\`\`\`\n:::`;
+  });
+}
+
 export function ReasoningText({
+  text,
   children,
   className,
 }: {
-  children: ReactNode;
+  text?: string;
+  children?: ReactNode;
   className?: string;
 }) {
+  const raw = useMemo(() => {
+    return text !== undefined ? text : getTextFromChildren(children);
+  }, [text, children]);
+
+  const rawString = useMemo(() => parseLegacyToolTraces(raw), [raw]);
+
+  const blocks = useMemo(() => {
+    if (!rawString.includes(":::subagent[") && !rawString.includes(":::tool[")) {
+      return null;
+    }
+    return parseReasoningBlocks(rawString);
+  }, [rawString]);
+
+  // If no structured blocks are present, render directly with original styling
+  if (!blocks) {
+    return (
+      <div
+        className={cn(
+          "font-mono text-[11.5px] leading-5 text-[#575b5f] dark:text-[#9aa0a6] whitespace-pre-wrap",
+          className
+        )}
+      >
+        {children ?? text}
+      </div>
+    );
+  }
+
   return (
-    <div
-      className={cn(
-        "font-mono text-[11.5px] leading-5 text-[#575b5f] dark:text-[#9aa0a6] whitespace-pre-wrap",
-        className
-      )}
-    >
-      {children}
+    <div className={cn("space-y-2", className)}>
+      {blocks.map((block, idx) => {
+        if (block.type === "subagent") {
+          return (
+            <SubAgentCollapsible
+              key={`subagent-${idx}-${block.title}`}
+              displayName={block.title}
+              agentName={block.meta?.agent}
+              status={
+                (block.meta?.status as "running" | "complete" | "error") || "complete"
+              }
+              defaultOpen={false}
+            >
+              <div className="whitespace-pre-wrap font-sans text-[13px] leading-relaxed text-[#1f1f1f] dark:text-[#e3e3e3]">
+                {block.content}
+              </div>
+            </SubAgentCollapsible>
+          );
+        }
+
+        if (block.type === "tool") {
+          const { args, result } = parseToolBlockContent(block.content);
+          return (
+            <ToolCollapsible
+              key={`tool-${idx}-${block.title}`}
+              toolName={block.title}
+              args={args}
+              result={result}
+              status={block.meta?.status || "complete"}
+              defaultOpen={false}
+            />
+          );
+        }
+
+        return (
+          <div
+            key={`text-${idx}`}
+            className="my-1 whitespace-pre-wrap font-mono text-[11.5px] leading-5 text-[#575b5f] dark:text-[#9aa0a6]"
+          >
+            {block.content}
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 export function Reasoning({ text }: { text?: string }) {
-  return <ReasoningText>{text}</ReasoningText>;
+  return <ReasoningText text={text} />;
 }

@@ -91,7 +91,7 @@ export function ToolFallback({
               <div className="mb-1 font-sans text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Arguments
               </div>
-              <pre className="max-h-40 overflow-auto rounded-lg bg-muted/50 p-2 text-foreground">
+              <pre className="max-h-40 overflow-auto rounded-lg border border-[#d3d7dc] bg-[#eef2f6] p-2.5 text-[#1f1f1f] dark:border-[#333537] dark:bg-[#1a1c1e] dark:text-[#e3e3e3]">
                 {formattedArgs}
               </pre>
             </div>
@@ -102,7 +102,7 @@ export function ToolFallback({
               <div className="mb-1 font-sans text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Result
               </div>
-              <pre className="max-h-60 overflow-auto rounded-lg bg-muted/50 p-2 text-foreground">
+              <pre className="max-h-60 overflow-auto rounded-lg border border-[#d3d7dc] bg-[#eef2f6] p-2.5 text-[#1f1f1f] dark:border-[#333537] dark:bg-[#1a1c1e] dark:text-[#e3e3e3]">
                 {formattedResult}
               </pre>
             </div>

@@ -77,15 +77,24 @@ body {
   filter: blur(70px);
 }
 
-/* Markdown styling inside assistant responses */
+/* Markdown & Code Block Theme Adaptability */
 .prose pre {
-  background-color: #1e1e1e;
-  border-radius: 0.5rem;
+  background-color: #eef2f6 !important;
+  color: #1f1f1f !important;
+  border: 1px solid #d3d7dc;
+  border-radius: 0.75rem;
   padding: 0.75rem 1rem;
   overflow-x: auto;
 }
 
+.dark .prose pre {
+  background-color: #1a1c1e !important;
+  color: #e3e3e3 !important;
+  border-color: #333537;
+}
+
 .prose code {
+  color: inherit;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 

@@ -2,15 +2,31 @@
 
 import {
   type CodeHeaderProps,
+  type SyntaxHighlighterProps,
   MarkdownTextPrimitive,
   unstable_memoizeMarkdownComponents as memoizeMarkdownComponents,
 } from "@assistant-ui/react-markdown";
 import remarkGfm from "remark-gfm";
 import { type FC, memo, useState, useCallback } from "react";
 import { Check, Copy } from "lucide-react";
+import dynamic from "next/dynamic";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
-import { SyntaxHighlighter } from "./shiki-highlighter";
 import { cn } from "@/lib/utils";
+
+const SyntaxHighlighter = dynamic<SyntaxHighlighterProps>(
+  () =>
+    import("./shiki-highlighter").then(
+      (mod) => mod.SyntaxHighlighter as FC<SyntaxHighlighterProps>
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="aui-shiki-base overflow-x-auto rounded-b-xl border border-t-0 border-[#e3e3e3] bg-[#f8fafd] p-3.5 font-mono text-[13px] dark:border-[#333537] dark:bg-[#141517] animate-pulse">
+        Loading code syntax...
+      </div>
+    ),
+  }
+);
 
 const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
   const [copied, setCopied] = useState(false);

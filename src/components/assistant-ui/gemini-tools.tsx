@@ -55,7 +55,7 @@ export function GeminiToolCall({
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
                 Arguments
               </div>
-              <pre className="mt-1 overflow-x-auto rounded-lg bg-muted/50 p-2 text-[11px] text-foreground">
+              <pre className="mt-1 overflow-x-auto rounded-lg border border-[#d3d7dc] bg-[#eef2f6] p-2 text-[11px] text-[#1f1f1f] dark:border-[#333537] dark:bg-[#1a1c1e] dark:text-[#e3e3e3]">
                 {JSON.stringify(args, null, 2)}
               </pre>
             </div>
@@ -65,7 +65,7 @@ export function GeminiToolCall({
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
                 Result
               </div>
-              <pre className="mt-1 max-h-40 overflow-x-auto rounded-lg bg-muted/50 p-2 text-[11px] text-foreground">
+              <pre className="mt-1 max-h-40 overflow-x-auto rounded-lg border border-[#d3d7dc] bg-[#eef2f6] p-2 text-[11px] text-[#1f1f1f] dark:border-[#333537] dark:bg-[#1a1c1e] dark:text-[#e3e3e3]">
                 {typeof result === "string" ? result : JSON.stringify(result, null, 2)}
               </pre>
             </div>

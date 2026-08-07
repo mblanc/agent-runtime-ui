@@ -18,6 +18,9 @@ import {
 import { SyntaxHighlighter } from "@/components/assistant-ui/shiki-highlighter";
 import { GeminiMessageTiming } from "@/components/assistant-ui/gemini-message-timing";
 
+import { SubAgentCollapsible } from "@/components/assistant-ui/subagent-collapsible";
+import { ToolCollapsible } from "@/components/assistant-ui/tool-collapsible";
+
 function TestWrapper({ children }: { children: React.ReactNode }) {
   const runtime = useLocalRuntime({
     async *run() {
@@ -31,15 +34,15 @@ function TestWrapper({ children }: { children: React.ReactNode }) {
 
 describe("UI Components", () => {
   it("renders Gemini button variant correctly", () => {
-    render(<Button variant="gemini">Ask Council</Button>);
-    const button = screen.getByRole("button", { name: /ask council/i });
+    render(<Button variant="gemini">Ask Agent</Button>);
+    const button = screen.getByRole("button", { name: /ask agent/i });
     expect(button).toBeDefined();
-    expect(button.textContent).toBe("Ask Council");
+    expect(button.textContent).toBe("Ask Agent");
   });
 
   it("renders GeminiThinkingIndicator with status text and timer", () => {
-    render(<GeminiThinkingIndicator statusText="Consulting Council members..." />);
-    expect(screen.getByText("Consulting Council members...")).toBeDefined();
+    render(<GeminiThinkingIndicator statusText="Consulting agent..." />);
+    expect(screen.getByText("Consulting agent...")).toBeDefined();
   });
 
   it("renders ReasoningRoot and expands with animated dots during streaming", () => {
@@ -47,17 +50,78 @@ describe("UI Components", () => {
       <ReasoningRoot streaming={true}>
         <ReasoningTrigger active={true} />
         <ReasoningContent aria-busy={true}>
-          <ReasoningText>Detailed Council Deliberation Trace</ReasoningText>
+          <ReasoningText>Detailed Agent Deliberation Trace</ReasoningText>
         </ReasoningContent>
       </ReasoningRoot>
     );
 
     expect(screen.getByText("Agent is working...")).toBeDefined();
-    expect(screen.getByText("Detailed Council Deliberation Trace")).toBeDefined();
+    expect(screen.getByText("Detailed Agent Deliberation Trace")).toBeDefined();
 
     const trigger = screen.getByRole("button", { name: /thinking/i });
     fireEvent.click(trigger);
-    expect(screen.queryByText("Detailed Council Deliberation Trace")).toBeNull();
+    expect(screen.queryByText("Detailed Agent Deliberation Trace")).toBeNull();
+  });
+
+  it("renders SubAgentCollapsible with disclosure triangle toggle and badges", () => {
+    render(
+      <SubAgentCollapsible
+        displayName="Council Member Alpha"
+        agentName="council_member_alpha"
+        role="Council Member"
+        status="complete"
+      >
+        <div>Alpha individual analysis opinion</div>
+      </SubAgentCollapsible>
+    );
+
+    expect(screen.getByText("Council Member Alpha")).toBeDefined();
+    expect(screen.getByText("Council Member")).toBeDefined();
+    expect(screen.getByText("Completed")).toBeDefined();
+
+    // Body is collapsed by default
+    expect(screen.queryByText("Alpha individual analysis opinion")).toBeNull();
+
+    // Click disclosure trigger to expand
+    const trigger = screen.getByRole("button", { name: /council member alpha/i });
+    fireEvent.click(trigger);
+    expect(screen.getByText("Alpha individual analysis opinion")).toBeDefined();
+
+    // Click disclosure trigger to collapse
+    fireEvent.click(trigger);
+    expect(screen.queryByText("Alpha individual analysis opinion")).toBeNull();
+  });
+
+  it("renders ReasoningText and parses structured subagent and tool tags into interactive components", () => {
+    const rawReasoning = `Workflow starting...
+
+:::subagent[Council Member Beta]{id="evt-3" agent="council_member_beta" status="complete"}
+Beta opinion on agentic systems
+:::
+
+:::tool[search_documents]{status="complete"}
+**Result:** Found 3 relevant papers
+:::
+
+Synthesis completed.`;
+
+    render(
+      <ReasoningRoot defaultOpen={true}>
+        <ReasoningContent>
+          <ReasoningText>{rawReasoning}</ReasoningText>
+        </ReasoningContent>
+      </ReasoningRoot>
+    );
+
+    expect(screen.getByText("Workflow starting...")).toBeDefined();
+    expect(screen.getByText("Council Member Beta")).toBeDefined();
+    expect(screen.getByText("search_documents")).toBeDefined();
+    expect(screen.getByText("Synthesis completed.")).toBeDefined();
+
+    // Expand subagent card
+    const agentTrigger = screen.getByRole("button", { name: /council member beta/i });
+    fireEvent.click(agentTrigger);
+    expect(screen.getByText("Beta opinion on agentic systems")).toBeDefined();
   });
 
   it("renders ToolFallback with arguments and result inspection", () => {
@@ -112,16 +176,152 @@ describe("UI Components", () => {
     expect(screen.getByText(/typescript/i)).toBeDefined();
   });
 
-  it("renders GeminiMessageTiming badge", () => {
+  it("renders GeminiMessageTiming badge on completed message", () => {
     render(
-      <GeminiMessageTiming
-        durationSeconds={1.9}
-        tokensPerSecond={52}
-        engineName="Vertex AI"
-      />
+      <TestWrapper>
+        <GeminiMessageTiming
+          durationSeconds={1.9}
+          tokensPerSecond={52}
+          engineName="Vertex AI"
+        />
+      </TestWrapper>
     );
     expect(screen.getByText("1.9s")).toBeDefined();
     expect(screen.getByText("52 tok/s")).toBeDefined();
     expect(screen.getByText("Vertex AI")).toBeDefined();
+  });
+
+  it("calculates default timing and engine on completed message", () => {
+    render(
+      <TestWrapper>
+        <GeminiMessageTiming />
+      </TestWrapper>
+    );
+    expect(screen.getByText(/Vertex AI Reasoning Engine/i)).toBeDefined();
+    expect(screen.getByText(/tok\/s/i)).toBeDefined();
+  });
+
+  it("renders ToolCollapsible with arguments and results and toggles disclosure triangle", () => {
+    render(
+      <ToolCollapsible
+        toolName="fetch_public_claims"
+        args={{ ticker_or_company: "INTC", limit: 5 }}
+        result={{ claims: ["Patent approval", "Q3 Revenue"] }}
+        status="complete"
+      />
+    );
+
+    expect(screen.getByText("fetch_public_claims")).toBeDefined();
+    expect(screen.getByText("Executed")).toBeDefined();
+
+    // Default closed
+    expect(screen.queryByText(/Patent approval/)).toBeNull();
+
+    // Expand
+    const trigger = screen.getByRole("button", { name: /fetch_public_claims/i });
+    fireEvent.click(trigger);
+
+    expect(screen.getByText(/INTC/)).toBeDefined();
+    expect(screen.getByText(/Patent approval/)).toBeDefined();
+
+    // Collapse
+    fireEvent.click(trigger);
+    expect(screen.queryByText(/Patent approval/)).toBeNull();
+  });
+
+  it("renders multiple sequential tool calls during execution without raw markdown syntax", () => {
+    const rawStreamingTools = `:::tool[fetch_public_claims]{status="running"}
+**Arguments:**
+\`\`\`json
+{
+  "ticker_or_company": "INTC",
+  "limit": 5
+}
+\`\`\`
+:::
+
+:::tool[fetch_public_claims]{status="running"}
+**Arguments:**
+\`\`\`json
+{
+  "ticker_or_company": "MU",
+  "limit": 5
+}
+\`\`\`
+:::`;
+
+    const { container } = render(
+      <ReasoningRoot defaultOpen={true}>
+        <ReasoningContent>
+          <ReasoningText text={rawStreamingTools} />
+        </ReasoningContent>
+      </ReasoningRoot>
+    );
+
+    // Raw markdown tag should NOT be visible
+    expect(container.textContent).not.toContain(":::tool");
+    expect(container.textContent).not.toContain(":::subagent");
+
+    // Both tool cards should be rendered
+    const toolButtons = screen.getAllByRole("button", {
+      name: /fetch_public_claims/i,
+    });
+    expect(toolButtons.length).toBe(2);
+
+    // Running indicators should be present
+    const runningBadges = screen.getAllByText("Running");
+    expect(runningBadges.length).toBe(2);
+
+    // Both tools are collapsed by default with disclosure triangles
+    expect(screen.queryByText(/INTC/)).toBeNull();
+    expect(screen.queryByText(/MU/)).toBeNull();
+
+    // Click first tool disclosure triangle to expand
+    fireEvent.click(toolButtons[0]);
+    expect(screen.getByText(/INTC/)).toBeDefined();
+
+    // Click second tool disclosure triangle to expand
+    fireEvent.click(toolButtons[1]);
+    expect(screen.getByText(/MU/)).toBeDefined();
+
+    // Click first tool to collapse
+    fireEvent.click(toolButtons[0]);
+    expect(screen.queryByText(/INTC/)).toBeNull();
+  });
+
+  it("automatically converts legacy [Tool Executed] session history traces into ToolCollapsible disclosure cards", () => {
+    const legacySessionText = `Starting deliberation...
+
+[Tool Executed]: fetch_public_claims (limit: 5, ticker_or_company: INTC)
+
+[Tool Completed]: fetch_public_claims
+
+[Tool Executed]: fetch_public_claims (limit: 5, ticker_or_company: MU)
+
+[Tool Completed]: fetch_public_claims
+
+All evidence collected.`;
+
+    const { container } = render(
+      <ReasoningRoot defaultOpen={true}>
+        <ReasoningContent>
+          <ReasoningText text={legacySessionText} />
+        </ReasoningContent>
+      </ReasoningRoot>
+    );
+
+    // Legacy plaintext markers should NOT be rendered literally
+    expect(container.textContent).not.toContain("[Tool Executed]");
+    expect(container.textContent).not.toContain("[Tool Completed]");
+
+    // Collapsible tool cards should exist
+    const toolButtons = screen.getAllByRole("button", {
+      name: /fetch_public_claims/i,
+    });
+    expect(toolButtons.length).toBe(2);
+
+    // Expand first tool card
+    fireEvent.click(toolButtons[0]);
+    expect(screen.getByText(/INTC/)).toBeDefined();
   });
 });

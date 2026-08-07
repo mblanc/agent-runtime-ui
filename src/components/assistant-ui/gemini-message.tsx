@@ -6,7 +6,7 @@ import {
   groupPartByType,
 } from "@assistant-ui/react";
 import { Copy, RotateCw, Check } from "lucide-react";
-import { useState } from "react";
+import { useState, memo } from "react";
 import {
   ReasoningRoot,
   ReasoningTrigger,
@@ -18,7 +18,12 @@ import { ToolGroupRoot, ToolGroupTrigger, ToolGroupContent } from "./tool-group"
 import { MarkdownText } from "./markdown-text";
 import { GeminiMessageTiming } from "./gemini-message-timing";
 
-export function ChatMessage() {
+const MESSAGE_GROUP_BY = groupPartByType({
+  reasoning: ["group-reasoning"],
+  "tool-call": ["group-tool"],
+});
+
+function ChatMessageImpl() {
   const [copied, setCopied] = useState(false);
 
   return (
@@ -37,12 +42,7 @@ export function ChatMessage() {
         <div className="flex w-full flex-col space-y-2 text-[#1f1f1f] dark:text-[#e3e3e3]">
           {/* Full-width avatar-free Content with GroupedParts & MarkdownText */}
           <div className="prose prose-neutral dark:prose-invert max-w-none text-[15px] leading-relaxed">
-            <MessagePrimitive.GroupedParts
-              groupBy={groupPartByType({
-                reasoning: ["group-reasoning"],
-                "tool-call": ["group-tool"],
-              })}
-            >
+            <MessagePrimitive.GroupedParts groupBy={MESSAGE_GROUP_BY}>
               {({ part, children }) => {
                 switch (part.type) {
                   case "group-reasoning": {
@@ -51,7 +51,7 @@ export function ChatMessage() {
                       <ReasoningRoot streaming={running}>
                         <ReasoningTrigger active={running} />
                         <ReasoningContent aria-busy={running}>
-                          <ReasoningText>{children}</ReasoningText>
+                          {children}
                         </ReasoningContent>
                       </ReasoningRoot>
                     );
@@ -68,11 +68,7 @@ export function ChatMessage() {
                   case "text":
                     return <MarkdownText />;
                   case "reasoning":
-                    return (
-                      <div className="whitespace-pre-wrap font-mono text-[11.5px] leading-5">
-                        {part.text}
-                      </div>
-                    );
+                    return <ReasoningText text={part.text} />;
                   case "tool-call":
                     return part.toolUI ?? <ToolFallback {...part} />;
                   default:
@@ -112,3 +108,5 @@ export function ChatMessage() {
     </MessagePrimitive.Root>
   );
 }
+
+export const ChatMessage = memo(ChatMessageImpl);

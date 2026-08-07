@@ -4,105 +4,193 @@ import type {
   ChatModelRunResult,
 } from "@assistant-ui/react";
 
-export const geminiChatAdapter: ChatModelAdapter = {
-  async *run({
-    messages,
-    abortSignal,
-  }: ChatModelRunOptions): AsyncGenerator<ChatModelRunResult, void, unknown> {
-    const formattedMessages = messages.map((m) => {
-      let text = "";
-      for (const part of m.content) {
-        if (part.type === "text") {
-          text += part.text;
-        }
-      }
-      return {
-        role: m.role as "user" | "assistant" | "system",
-        content: text,
-      };
-    });
+export function appendToolResultToReasoning(
+  reasoning: string,
+  toolName: string,
+  resStr: string
+): string {
+  const header = `:::tool[${toolName}]{status="running"}`;
+  const lastIdx = reasoning.lastIndexOf(header);
 
-    const response = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: formattedMessages }),
-      signal: abortSignal,
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`Chat request failed (${response.status}): ${err}`);
+  if (lastIdx !== -1) {
+    const before = reasoning.substring(0, lastIdx);
+    const after = reasoning.substring(lastIdx);
+    const closeIdx = after.indexOf("\n:::", header.length);
+    if (closeIdx !== -1) {
+      const blockInside = after
+        .substring(0, closeIdx)
+        .replace(header, `:::tool[${toolName}]{status="complete"}`);
+      const remainder = after.substring(closeIdx);
+      return `${before}${blockInside}\n**Result:**\n\`\`\`json\n${resStr}\n\`\`\`${remainder}`;
     }
+  }
 
-    if (!response.body) {
-      throw new Error("No response body received");
-    }
+  return (
+    reasoning +
+    `\n\n:::tool[${toolName}]{status="complete"}\n**Result:**\n\`\`\`json\n${resStr}\n\`\`\`\n:::`
+  );
+}
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let accumulatedText = "";
-    let accumulatedReasoning = "";
-    let buffer = "";
+function createYieldContent(reasoning: string, text: string): ChatModelRunResult {
+  return {
+    content: [
+      ...(reasoning ? [{ type: "reasoning" as const, text: reasoning }] : []),
+      ...(text ? [{ type: "text" as const, text }] : []),
+    ],
+  };
+}
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith("data: ")) continue;
-
-        const dataStr = trimmed.slice(6);
-        if (dataStr === "[DONE]") return;
-
-        try {
-          const parsed = JSON.parse(dataStr);
-
-          if (parsed.event_type === "thought" && parsed.thought) {
-            accumulatedReasoning += (accumulatedReasoning ? "\n" : "") + parsed.thought;
-            yield {
-              content: [
-                { type: "reasoning", text: accumulatedReasoning },
-                ...(accumulatedText
-                  ? [{ type: "text" as const, text: accumulatedText }]
-                  : []),
-              ],
-            };
-          } else if (parsed.event_type === "content" && parsed.content) {
-            accumulatedText += parsed.content;
-            yield {
-              content: [
-                ...(accumulatedReasoning
-                  ? [{ type: "reasoning" as const, text: accumulatedReasoning }]
-                  : []),
-                { type: "text", text: accumulatedText },
-              ],
-            };
-          } else if (parsed.event_type === "tool_call" && parsed.tool_call) {
-            accumulatedReasoning += `\n[Tool Executed]: ${parsed.tool_call.name || "agent_tool"}`;
-            yield {
-              content: [
-                { type: "reasoning", text: accumulatedReasoning },
-                ...(accumulatedText
-                  ? [{ type: "text" as const, text: accumulatedText }]
-                  : []),
-              ],
-            };
-          } else if (parsed.event_type === "error" && parsed.error) {
-            throw new Error(parsed.error);
-          } else if (parsed.event_type === "done") {
-            return;
-          }
-        } catch (e: unknown) {
-          if (e instanceof Error && e.message !== "Unexpected end of JSON input") {
-            throw e;
+export function createGeminiChatAdapter(
+  getSessionId?: () => string | undefined
+): ChatModelAdapter {
+  return {
+    async *run({
+      messages,
+      abortSignal,
+    }: ChatModelRunOptions): AsyncGenerator<ChatModelRunResult, void, unknown> {
+      const formattedMessages = messages.map((m) => {
+        let text = "";
+        for (const part of m.content) {
+          if (part.type === "text") {
+            text += part.text;
           }
         }
+        return {
+          role: m.role as "user" | "assistant" | "system",
+          content: text,
+        };
+      });
+
+      const sessionId = getSessionId?.();
+
+      try {
+        console.log("[createGeminiChatAdapter] Starting run for sessionId:", sessionId);
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messages: formattedMessages,
+            ...(sessionId ? { sessionId } : {}),
+          }),
+          signal: abortSignal,
+        });
+
+        if (!response.ok) {
+          const err = await response.text();
+          console.error("[createGeminiChatAdapter] HTTP error:", response.status, err);
+          throw new Error(`Chat request failed (${response.status}): ${err}`);
+        }
+
+        if (!response.body) {
+          console.error("[createGeminiChatAdapter] Empty response body");
+          throw new Error("No response body received");
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let accumulatedText = "";
+        let accumulatedReasoning = "";
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            console.log("[createGeminiChatAdapter] Reader done");
+            break;
+          }
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || !trimmed.startsWith("data: ")) continue;
+
+            const dataStr = trimmed.slice(6);
+            if (dataStr === "[DONE]") {
+              console.log("[createGeminiChatAdapter] Received [DONE]");
+              return;
+            }
+
+            try {
+              const parsed = JSON.parse(dataStr);
+              console.log(
+                "[createGeminiChatAdapter] Parsed SSE event:",
+                parsed.event_type
+              );
+
+              if (parsed.event_type === "thought" && parsed.thought) {
+                accumulatedReasoning +=
+                  (accumulatedReasoning ? "\n" : "") + parsed.thought;
+                yield createYieldContent(accumulatedReasoning, accumulatedText);
+              } else if (parsed.event_type === "content" && parsed.content) {
+                accumulatedText += parsed.content;
+                yield createYieldContent(accumulatedReasoning, accumulatedText);
+              } else if (parsed.event_type === "agent_call" && parsed.agent_call) {
+                const name =
+                  parsed.agent_call.displayName || parsed.agent_call.agent || "Sub-Agent";
+                const inputStr = parsed.agent_call.input
+                  ? `**Input:**\n\`\`\`json\n${typeof parsed.agent_call.input === "string" ? parsed.agent_call.input : JSON.stringify(parsed.agent_call.input, null, 2)}\n\`\`\``
+                  : "Analyzing task...";
+                accumulatedReasoning += `\n\n:::subagent[${name}]{status="running" agent="${parsed.agent_call.agent}"}\n${inputStr}\n:::`;
+                yield createYieldContent(accumulatedReasoning, accumulatedText);
+              } else if (
+                parsed.event_type === "agent_response" &&
+                parsed.agent_response
+              ) {
+                const name =
+                  parsed.agent_response.displayName ||
+                  parsed.agent_response.agent ||
+                  "Sub-Agent";
+                accumulatedReasoning += `\n\n:::subagent[${name}]{status="complete" agent="${parsed.agent_response.agent}"}\n${parsed.agent_response.response}\n:::`;
+                yield createYieldContent(accumulatedReasoning, accumulatedText);
+              } else if (parsed.event_type === "tool_call" && parsed.tool_call) {
+                const toolName = parsed.tool_call.name || "agent_tool";
+                const argsStr = JSON.stringify(parsed.tool_call.args || {}, null, 2);
+                accumulatedReasoning += `\n\n:::tool[${toolName}]{status="running"}\n**Arguments:**\n\`\`\`json\n${argsStr}\n\`\`\`\n:::`;
+                yield createYieldContent(accumulatedReasoning, accumulatedText);
+              } else if (parsed.event_type === "tool_result" && parsed.tool_result) {
+                const toolName = parsed.tool_result.name || "agent_tool";
+                const resStr = JSON.stringify(parsed.tool_result.result || {}, null, 2);
+                accumulatedReasoning = appendToolResultToReasoning(
+                  accumulatedReasoning,
+                  toolName,
+                  resStr
+                );
+                yield createYieldContent(accumulatedReasoning, accumulatedText);
+              } else if (parsed.event_type === "error" && parsed.error) {
+                accumulatedText +=
+                  (accumulatedText ? "\n\n" : "") +
+                  `⚠️ **Agent Runtime Error:** ${parsed.error}`;
+                yield createYieldContent(accumulatedReasoning, accumulatedText);
+                return;
+              } else if (parsed.event_type === "done") {
+                // Finalize any running markers to complete
+                accumulatedReasoning = accumulatedReasoning.replaceAll(
+                  'status="running"',
+                  'status="complete"'
+                );
+                yield createYieldContent(accumulatedReasoning, accumulatedText);
+                return;
+              }
+            } catch (e: unknown) {
+              if (e instanceof Error && e.message !== "Unexpected end of JSON input") {
+                throw e;
+              }
+            }
+          }
+        }
+      } catch (err: unknown) {
+        if ((err instanceof Error && err.name === "AbortError") || abortSignal?.aborted) {
+          console.log("[createGeminiChatAdapter] Chat stream aborted cleanly by client");
+          return;
+        }
+        console.error("[createGeminiChatAdapter] Run error:", err);
+        throw err;
       }
-    }
-  },
-};
+    },
+  };
+}
+
+export const geminiChatAdapter = createGeminiChatAdapter();
