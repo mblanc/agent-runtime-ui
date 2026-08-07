@@ -8,6 +8,8 @@ import {
 import {
   createGeminiChatAdapter,
   createGeminiFeedbackAdapter,
+  createWebSpeechDictationAdapter,
+  createWebSpeechSynthesisAdapter,
 } from "@/lib/gemini-runtime-adapter";
 import { useSessionThreadListAdapter } from "@/lib/session-adapter";
 import { ThreadSidebar } from "@/components/assistant-ui/thread-sidebar";
@@ -44,6 +46,10 @@ export default function ChatPage() {
     []
   );
 
+  const dictationAdapter = useMemo(() => createWebSpeechDictationAdapter(), []);
+
+  const speechAdapter = useMemo(() => createWebSpeechSynthesisAdapter(), []);
+
   const handleThreadIdChange = useCallback((newId: string | undefined) => {
     activeThreadIdRef.current = newId;
     setActiveThreadId(newId);
@@ -54,6 +60,8 @@ export default function ChatPage() {
       return useLocalRuntime(chatAdapter, {
         adapters: {
           feedback: feedbackAdapter,
+          dictation: dictationAdapter,
+          speech: speechAdapter,
         },
       });
     },

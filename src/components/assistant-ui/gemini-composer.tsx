@@ -55,14 +55,25 @@ export function GeminiComposer() {
         {/* Model Picker */}
         <ModelPicker selectedModel={selectedModel} onSelectModel={setSelectedModel} />
 
-        {/* Voice Trigger */}
-        <button
-          type="button"
-          aria-label="Voice mode"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#444746] transition-colors hover:bg-[#444746]/10 hover:text-[#1f1f1f] dark:text-[#c4c7c5] dark:hover:bg-[#c4c7c5]/10 dark:hover:text-[#e3e3e3]"
-        >
-          <Mic className="h-5 w-5" />
-        </button>
+        {/* Voice Dictation Trigger */}
+        <AuiIf condition={({ composer }) => composer?.dictation == null}>
+          <ComposerPrimitive.Dictate
+            type="button"
+            aria-label="Voice dictation"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#444746] transition-colors hover:bg-[#444746]/10 hover:text-[#1f1f1f] dark:text-[#c4c7c5] dark:hover:bg-[#c4c7c5]/10 dark:hover:text-[#e3e3e3]"
+          >
+            <Mic className="h-5 w-5" />
+          </ComposerPrimitive.Dictate>
+        </AuiIf>
+        <AuiIf condition={({ composer }) => composer?.dictation != null}>
+          <ComposerPrimitive.StopDictation
+            type="button"
+            aria-label="Stop dictation"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600 animate-pulse transition-transform hover:scale-105 active:scale-95 dark:bg-rose-950/60 dark:text-rose-400"
+          >
+            <Mic className="h-5 w-5" />
+          </ComposerPrimitive.StopDictation>
+        </AuiIf>
 
         {/* Send Button */}
         <ComposerPrimitive.Send className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#d3e3fd] text-[#062e6f] transition-all hover:bg-[#c2d7fc] active:scale-95 disabled:bg-[#e8eaed] disabled:text-[#1f1f1f]/30 disabled:hover:scale-100 dark:bg-[#1b2f9c] dark:text-[#d3e3fd] dark:hover:bg-[#233bbd] dark:disabled:bg-[#282a2c] dark:disabled:text-[#e3e3e3]/20">

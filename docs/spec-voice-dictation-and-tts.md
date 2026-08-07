@@ -64,14 +64,14 @@ const runtime = useLocalRuntime(adapter, {
 
 ## 4. Implementation Checklist
 
-- [ ] **Task 1: Adapter Registration**
+- [x] **Task 1: Adapter Registration**
   - Register `WebSpeechDictationAdapter` and `WebSpeechSynthesisAdapter` in `src/lib/gemini-runtime-adapter.ts`.
 
-- [ ] **Task 2: Composer Dictation Button**
+- [x] **Task 2: Composer Dictation Button**
   - Update `src/components/assistant-ui/gemini-composer.tsx` to use `ComposerPrimitive.Dictate`.
 
-- [ ] **Task 3: Message Action Bar Speaker**
+- [x] **Task 3: Message Action Bar Speaker**
   - Update `src/components/assistant-ui/gemini-message.tsx` to include `ActionBarPrimitive.Speak`.
 
-- [ ] **Task 4: Quality Gates**
+- [x] **Task 4: Quality Gates**
   - Run `bun run preflight` to verify type checking, linting, and unit tests pass cleanly.

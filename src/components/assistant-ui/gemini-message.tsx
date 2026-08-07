@@ -8,7 +8,17 @@ import {
   SelectionToolbarPrimitive,
   groupPartByType,
 } from "@assistant-ui/react";
-import { Copy, RotateCw, Check, Quote, Pencil, ThumbsUp, ThumbsDown } from "lucide-react";
+import {
+  Copy,
+  RotateCw,
+  Check,
+  Quote,
+  Pencil,
+  ThumbsUp,
+  ThumbsDown,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import { useState, memo } from "react";
 import {
   ReasoningRoot,
@@ -129,6 +139,22 @@ function ChatMessageImpl() {
 
             <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
               <ActionBarPrimitive.Root>
+                <AuiIf condition={({ message }) => message?.speech == null}>
+                  <ActionBarPrimitive.Speak
+                    className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    aria-label="Read aloud"
+                  >
+                    <Volume2 className="h-4 w-4" />
+                  </ActionBarPrimitive.Speak>
+                </AuiIf>
+                <AuiIf condition={({ message }) => message?.speech != null}>
+                  <ActionBarPrimitive.StopSpeaking
+                    className="flex h-8 w-8 items-center justify-center rounded-full text-foreground bg-muted/80 animate-pulse transition-colors hover:bg-muted"
+                    aria-label="Stop reading"
+                  >
+                    <VolumeX className="h-4 w-4" />
+                  </ActionBarPrimitive.StopSpeaking>
+                </AuiIf>
                 <ActionBarPrimitive.Copy
                   className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   aria-label="Copy message"
