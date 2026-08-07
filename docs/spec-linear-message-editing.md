@@ -70,15 +70,15 @@ New Stream Payload sent to /api/chat & Vertex AI Reasoning Engine:
 
 ## 5. Implementation Checklist
 
-- [ ] **Task 1: User Message Edit UI**
+- [x] **Task 1: User Message Edit UI**
   - Update `src/components/assistant-ui/gemini-message.tsx` to include `ActionBarPrimitive.Edit` and inline textarea editor for user bubbles.
 
-- [ ] **Task 2: Reload & Truncation Logic**
+- [x] **Task 2: Reload & Truncation Logic**
   - Verify `aui.thread.reload()` behavior in `gemini-message.tsx` and ensure downstream messages are cleanly truncated.
 
-- [ ] **Task 3: BFF Payload Verification**
+- [x] **Task 3: BFF Payload Verification**
   - Verify that `src/app/api/chat/route.ts` correctly processes truncated history arrays during re-stream queries.
 
-- [ ] **Task 4: Unit & E2E Testing**
-  - Add test cases in `tests/components.test.tsx` verifying inline user edit toggles and submission triggers.
+- [x] **Task 4: Unit & E2E Testing**
+  - Add test cases in `tests/components.test.tsx` and `tests/linear-editing.test.tsx` verifying inline user edit toggles, submission triggers, reload action, and linear history truncation.
   - Run `bun run preflight` quality gates.
