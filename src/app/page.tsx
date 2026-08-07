@@ -5,7 +5,10 @@ import {
   useLocalRuntime,
   useRemoteThreadListRuntime,
 } from "@assistant-ui/react";
-import { createGeminiChatAdapter } from "@/lib/gemini-runtime-adapter";
+import {
+  createGeminiChatAdapter,
+  createGeminiFeedbackAdapter,
+} from "@/lib/gemini-runtime-adapter";
 import { useSessionThreadListAdapter } from "@/lib/session-adapter";
 import { ThreadSidebar } from "@/components/assistant-ui/thread-sidebar";
 import { GeminiThread } from "@/components/assistant-ui/gemini-thread";
@@ -36,6 +39,11 @@ export default function ChatPage() {
     []
   );
 
+  const feedbackAdapter = useMemo(
+    () => createGeminiFeedbackAdapter(() => activeThreadIdRef.current),
+    []
+  );
+
   const handleThreadIdChange = useCallback((newId: string | undefined) => {
     activeThreadIdRef.current = newId;
     setActiveThreadId(newId);
@@ -43,7 +51,11 @@ export default function ChatPage() {
 
   const runtime = useRemoteThreadListRuntime({
     runtimeHook: function useRuntimeHook() {
-      return useLocalRuntime(chatAdapter);
+      return useLocalRuntime(chatAdapter, {
+        adapters: {
+          feedback: feedbackAdapter,
+        },
+      });
     },
     adapter: sessionListAdapter,
     onThreadIdChange: handleThreadIdChange,

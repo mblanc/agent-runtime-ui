@@ -1,9 +1,12 @@
 import { GoogleAuth } from "google-auth-library";
 import {
+  AgentFeedbackRequest,
+  AgentFeedbackResponse,
   AgentSession,
   AgentSessionEvent,
   AgentStreamEvent,
   ChatRequestBody,
+  FeedbackType,
 } from "@/types/agent";
 
 // In-memory mock store for local development and unit tests
@@ -682,6 +685,10 @@ export class AgentRuntimeClient {
     return `https://${this.location}-aiplatform.googleapis.com/v1beta1/${this.getNormalizedEngineResource()}/sessions`;
   }
 
+  private getFeedbackBaseUrl(): string {
+    return `https://${this.location}-aiplatform.googleapis.com/v1beta1/${this.getNormalizedEngineResource()}/feedbackEntries`;
+  }
+
   /**
    * Retrieves past conversation sessions for the authenticated user.
    * Supports both Google sub ID and email filters.
@@ -1028,6 +1035,78 @@ export class AgentRuntimeClient {
       return groupTurnSessionEvents(rawEvents, sessionId);
     } catch (err: unknown) {
       console.error("Error listing session events from Agent Runtime:", err);
+      throw err;
+    }
+  }
+
+  /**
+   * Submits user feedback to Vertex AI Reasoning Engine Feedback Service.
+   */
+  async submitFeedback(
+    request: AgentFeedbackRequest,
+    userId: string
+  ): Promise<AgentFeedbackResponse> {
+    if (this.isMock) {
+      return {
+        name: `projects/mock-project/locations/us-central1/reasoningEngines/mock-engine/feedbackEntries/feedback-${Date.now()}`,
+        createTime: new Date().toISOString(),
+        feedbackType: request.feedbackType,
+      };
+    }
+
+    try {
+      const accessToken = await this.getAccessToken();
+      const endpoint = this.getFeedbackBaseUrl();
+
+      const cleanSessionId =
+        extractSessionIdFromResourceName(request.sessionId) || request.sessionId;
+
+      const payload = {
+        session_id: cleanSessionId,
+        ...(request.eventId ? { event_id: request.eventId } : {}),
+        feedback_type: request.feedbackType,
+        config: {
+          ...(request.feedbackText ? { feedback_text: request.feedbackText } : {}),
+          ...(request.feedbackLabels && request.feedbackLabels.length > 0
+            ? { feedback_labels: request.feedbackLabels }
+            : {}),
+          user_id: userId,
+          source: "Agent Runtime UI",
+        },
+      };
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(
+          `Failed to submit feedback to Vertex AI (${response.status}): ${errText}`
+        );
+      }
+
+      const raw = (await response.json()) as Record<string, unknown>;
+      return {
+        name:
+          (raw.name as string) ||
+          `projects/${this.projectId}/locations/${this.location}/reasoningEngines/${this.reasoningEngineId}/feedbackEntries/feedback-${Date.now()}`,
+        createTime:
+          (raw.createTime as string) ||
+          (raw.create_time as string) ||
+          new Date().toISOString(),
+        feedbackType:
+          (raw.feedbackType as FeedbackType) ||
+          (raw.feedback_type as FeedbackType) ||
+          request.feedbackType,
+      };
+    } catch (err: unknown) {
+      console.error("Error submitting feedback to Agent Runtime:", err);
       throw err;
     }
   }

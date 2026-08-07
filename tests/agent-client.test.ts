@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AgentRuntimeClient,
   parseRawSessionEvent,
@@ -446,5 +446,77 @@ describe("AgentRuntimeClient", () => {
       "**Response:**\nQ3 revenue increased by 14% YoY driven by data center AI chips."
     );
     expect(updated).not.toContain('status="running"');
+  });
+
+  describe("AgentRuntimeClient.submitFeedback", () => {
+    it("submits feedback in mock mode and returns AgentFeedbackResponse", async () => {
+      const client = new AgentRuntimeClient();
+      const res = await client.submitFeedback(
+        {
+          sessionId: "session-123",
+          eventId: "evt-456",
+          feedbackType: "THUMBS_UP",
+          feedbackText: "Great output",
+          feedbackLabels: ["accurate"],
+        },
+        "test-user"
+      );
+
+      expect(res).toBeDefined();
+      expect(res.feedbackType).toBe("THUMBS_UP");
+      expect(res.name).toContain("feedbackEntries");
+      expect(res.createTime).toBeDefined();
+    });
+
+    it("submits feedback to GCP Vertex AI Reasoning Engine endpoint", async () => {
+      process.env.MOCK_AGENT_RUNTIME = "false";
+      process.env.GOOGLE_CLOUD_PROJECT = "my-gcp-project";
+      process.env.GOOGLE_CLOUD_LOCATION = "us-central1";
+      process.env.GOOGLE_REASONING_ENGINE_ID = "engine-888";
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          name: "projects/my-gcp-project/locations/us-central1/reasoningEngines/engine-888/feedbackEntries/fb-001",
+          createTime: "2026-08-07T14:30:00Z",
+          feedbackType: "THUMBS_DOWN",
+        }),
+      });
+      vi.spyOn(globalThis, "fetch").mockImplementation(
+        mockFetch as unknown as typeof fetch
+      );
+
+      const client = new AgentRuntimeClient();
+      vi.spyOn(
+        client as unknown as { getAccessToken: () => Promise<string> },
+        "getAccessToken"
+      ).mockResolvedValue("mock-access-token");
+
+      const res = await client.submitFeedback(
+        {
+          sessionId:
+            "projects/my-gcp-project/locations/us-central1/reasoningEngines/engine-888/sessions/sess-1",
+          eventId: "evt-2",
+          feedbackType: "THUMBS_DOWN",
+          feedbackText: "Too brief",
+        },
+        "user-1"
+      );
+
+      expect(res.feedbackType).toBe("THUMBS_DOWN");
+      expect(res.name).toBe(
+        "projects/my-gcp-project/locations/us-central1/reasoningEngines/engine-888/feedbackEntries/fb-001"
+      );
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url).toBe(
+        "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/my-gcp-project/locations/us-central1/reasoningEngines/engine-888/feedbackEntries"
+      );
+      expect(opts.headers.Authorization).toBe("Bearer mock-access-token");
+      const parsedBody = JSON.parse(opts.body);
+      expect(parsedBody.session_id).toBe("sess-1");
+      expect(parsedBody.event_id).toBe("evt-2");
+      expect(parsedBody.feedback_type).toBe("THUMBS_DOWN");
+    });
   });
 });

@@ -8,7 +8,7 @@ import {
   SelectionToolbarPrimitive,
   groupPartByType,
 } from "@assistant-ui/react";
-import { Copy, RotateCw, Check, Quote, Pencil } from "lucide-react";
+import { Copy, RotateCw, Check, Quote, Pencil, ThumbsUp, ThumbsDown } from "lucide-react";
 import { useState, memo } from "react";
 import {
   ReasoningRoot,
@@ -149,6 +149,18 @@ function ChatMessageImpl() {
                 >
                   <RotateCw className="h-4 w-4" />
                 </ActionBarPrimitive.Reload>
+                <ActionBarPrimitive.FeedbackPositive
+                  className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-emerald-600 dark:hover:text-emerald-400 data-[submitted=true]:text-emerald-600 dark:data-[submitted=true]:text-emerald-400 data-[submitted=true]:bg-emerald-50 dark:data-[submitted=true]:bg-emerald-950/40"
+                  aria-label="Good response"
+                >
+                  <ThumbsUp className="h-4 w-4" />
+                </ActionBarPrimitive.FeedbackPositive>
+                <ActionBarPrimitive.FeedbackNegative
+                  className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-rose-600 dark:hover:text-rose-400 data-[submitted=true]:text-rose-600 dark:data-[submitted=true]:text-rose-400 data-[submitted=true]:bg-rose-50 dark:data-[submitted=true]:bg-rose-950/40"
+                  aria-label="Bad response"
+                >
+                  <ThumbsDown className="h-4 w-4" />
+                </ActionBarPrimitive.FeedbackNegative>
               </ActionBarPrimitive.Root>
             </div>
           </div>
