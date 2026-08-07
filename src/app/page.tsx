@@ -12,22 +12,20 @@ import {
   createWebSpeechDictationAdapter,
   createWebSpeechSynthesisAdapter,
 } from "@/lib/gemini-runtime-adapter";
-import { useSessionThreadListAdapter } from "@/lib/session-adapter";
+import {
+  useSessionThreadListAdapter,
+  createSessionHistoryAdapter,
+} from "@/lib/session-adapter";
 import { ThreadSidebar } from "@/components/assistant-ui/thread-sidebar";
 import { GeminiThread } from "@/components/assistant-ui/gemini-thread";
 import { useSession } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 export default function ChatPage() {
   const { data: session, isPending } = useSession();
   const router = useRouter();
-  const [activeThreadId, setActiveThreadId] = useState<string | undefined>();
-  const activeThreadIdRef = useRef<string | undefined>(activeThreadId);
-
-  useEffect(() => {
-    activeThreadIdRef.current = activeThreadId;
-  }, [activeThreadId]);
+  const activeThreadIdRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     if (!isPending && !session?.user) {
@@ -47,6 +45,11 @@ export default function ChatPage() {
     []
   );
 
+  const historyAdapter = useMemo(
+    () => createSessionHistoryAdapter(() => activeThreadIdRef.current),
+    []
+  );
+
   const attachmentAdapter = useMemo(() => createGcsAttachmentAdapter(), []);
 
   const dictationAdapter = useMemo(() => createWebSpeechDictationAdapter(), []);
@@ -55,13 +58,13 @@ export default function ChatPage() {
 
   const handleThreadIdChange = useCallback((newId: string | undefined) => {
     activeThreadIdRef.current = newId;
-    setActiveThreadId(newId);
   }, []);
 
   const runtime = useRemoteThreadListRuntime({
     runtimeHook: function useRuntimeHook() {
       return useLocalRuntime(chatAdapter, {
         adapters: {
+          history: historyAdapter,
           attachments: attachmentAdapter,
           feedback: feedbackAdapter,
           dictation: dictationAdapter,

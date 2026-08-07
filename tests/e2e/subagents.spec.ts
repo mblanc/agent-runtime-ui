@@ -5,7 +5,7 @@ const TARGET_ENGINE_ID =
   "projects/125188993477/locations/us-central1/reasoningEngines/6238058879222022144";
 
 test.describe("Subagent Reasoning & Main Answer E2E", () => {
-  test.beforeEach(async ({ context, page }) => {
+  test.beforeEach(async ({ context }) => {
     // Dynamically sign session token using BETTER_AUTH_SECRET / AUTH_SECRET from environment
     const token = await signSessionToken({
       sub: "playwright-test",
@@ -25,18 +25,9 @@ test.describe("Subagent Reasoning & Main Answer E2E", () => {
       },
     ]);
 
-    // Intercept /api/chat calls to inject target reasoningEngineId
-    await page.route("**/api/chat", async (route) => {
-      const request = route.request();
-      if (request.method() === "POST") {
-        const postData = JSON.parse(request.postData() || "{}");
-        postData.reasoningEngineId = TARGET_ENGINE_ID;
-        await route.continue({
-          postData: JSON.stringify(postData),
-        });
-      } else {
-        await route.continue();
-      }
+    // Pass target reasoningEngineId via custom header without breaking stream interception
+    await context.setExtraHTTPHeaders({
+      "x-reasoning-engine-id": TARGET_ENGINE_ID,
     });
   });
 
@@ -72,17 +63,17 @@ test.describe("Subagent Reasoning & Main Answer E2E", () => {
 
     // Inspect DOM elements
     // Check Thinking Process box
-    const reasoningBox = page
-      .locator(
-        "details, button:has-text('Thinking Process'), [data-component='thinking']"
-      )
-      .first();
-    const hasReasoningBox = await reasoningBox.isVisible().catch(() => false);
+    const reasoningTrigger = page.locator("button:has-text('Thinking Process')").first();
+    const hasReasoningBox = await reasoningTrigger.isVisible().catch(() => false);
     console.log("Thinking Process Box Visible:", hasReasoningBox);
+    if (hasReasoningBox) {
+      await reasoningTrigger.click();
+      await page.waitForTimeout(500);
+    }
 
     // Check SubAgent Collapsible components
     const subagentCollapsibles = page.locator(
-      "details summary, button:has-text('Subagent')"
+      "button:has-text('Subagent'), button:has-text('Council')"
     );
     const subagentCount = await subagentCollapsibles.count();
     console.log("Subagent Collapsibles Count:", subagentCount);

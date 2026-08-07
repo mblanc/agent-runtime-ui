@@ -33,7 +33,9 @@ export async function POST(req: NextRequest) {
     }
 
     const userId = session.user.id;
-    const agentClient = new AgentRuntimeClient(body.reasoningEngineId);
+    const customEngineId =
+      req.headers.get("x-reasoning-engine-id") || body.reasoningEngineId;
+    const agentClient = new AgentRuntimeClient(customEngineId);
 
     const stream = new ReadableStream({
       async start(controller) {
@@ -44,6 +46,14 @@ export async function POST(req: NextRequest) {
           "user:",
           userId
         );
+
+        const heartbeatInterval = setInterval(() => {
+          try {
+            controller.enqueue(encoder.encode(": keepalive\n\n"));
+          } catch {
+            // Stream closed
+          }
+        }, 2000);
 
         try {
           for await (const event of agentClient.streamQuery(body, userId)) {
@@ -62,6 +72,7 @@ export async function POST(req: NextRequest) {
           })}\n\n`;
           controller.enqueue(encoder.encode(errChunk));
         } finally {
+          clearInterval(heartbeatInterval);
           console.log("[/api/chat] Controller closing stream");
           controller.close();
         }

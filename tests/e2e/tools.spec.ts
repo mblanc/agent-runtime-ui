@@ -5,7 +5,7 @@ const TARGET_ENGINE_ID =
   "projects/125188993477/locations/us-central1/reasoningEngines/1295472637392191488";
 
 test.describe("Tool Calling & Reasoning E2E", () => {
-  test.beforeEach(async ({ context, page }) => {
+  test.beforeEach(async ({ context }) => {
     // Generate valid session token
     const token = await signSessionToken({
       sub: "playwright-test",
@@ -25,24 +25,21 @@ test.describe("Tool Calling & Reasoning E2E", () => {
       },
     ]);
 
-    // Intercept /api/chat calls to inject target reasoningEngineId
-    await page.route("**/api/chat", async (route) => {
-      const request = route.request();
-      if (request.method() === "POST") {
-        const postData = JSON.parse(request.postData() || "{}");
-        postData.reasoningEngineId = TARGET_ENGINE_ID;
-        await route.continue({
-          postData: JSON.stringify(postData),
-        });
-      } else {
-        await route.continue();
-      }
+    // Pass target reasoningEngineId via custom header without breaking stream interception
+    await context.setExtraHTTPHeaders({
+      "x-reasoning-engine-id": TARGET_ENGINE_ID,
     });
   });
 
   test("tool calling streams arguments, results into thinking box without duplication and displays main answer", async ({
     page,
   }, testInfo) => {
+    page.on("console", (msg) => console.log("[BROWSER CONSOLE]", msg.type(), msg.text()));
+    page.on("pageerror", (err) => console.log("[BROWSER ERROR]", err.message));
+    page.on("requestfailed", (req) =>
+      console.log("[REQUEST FAILED]", req.url(), req.failure()?.errorText)
+    );
+
     console.log("Navigating to home page for tool calling test...");
     await page.goto("/");
 
@@ -58,9 +55,9 @@ test.describe("Tool Calling & Reasoning E2E", () => {
     console.log("Pressing Enter to submit prompt...");
     await promptInput.press("Enter");
 
-    // Wait for response stream to start and complete (45s)
+    // Wait for response stream to start and complete (live reasoning engines with multiple tools take ~60s)
     console.log("Waiting for tool execution & streaming response...");
-    await page.waitForTimeout(45000);
+    await page.waitForTimeout(65000);
 
     // Take screenshot of tool call stream result and attach to Playwright report
     const screenshot = await page.screenshot({ fullPage: true });
@@ -71,6 +68,13 @@ test.describe("Tool Calling & Reasoning E2E", () => {
     console.log("Attached tool call screenshot to report");
 
     // Inspect DOM elements
+    // Open Thinking Process if collapsed
+    const reasoningTrigger = page.locator("button:has-text('Thinking Process')").first();
+    if (await reasoningTrigger.isVisible().catch(() => false)) {
+      await reasoningTrigger.click();
+      await page.waitForTimeout(500);
+    }
+
     // 1. Check Tool Collapsible components (e.g. fetch_public_claims buttons)
     const toolButtons = page.locator("button:has-text('fetch_public_claims')");
     const toolCount = await toolButtons.count();

@@ -270,6 +270,13 @@ export function createGeminiChatAdapter(
 
       try {
         console.log("[createGeminiChatAdapter] Starting run for sessionId:", sessionId);
+        abortSignal?.addEventListener("abort", () => {
+          console.warn(
+            "[createGeminiChatAdapter] AbortSignal triggered! Reason:",
+            abortSignal.reason
+          );
+        });
+
         const response = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -303,7 +310,12 @@ export function createGeminiChatAdapter(
         while (true) {
           const { done, value } = await reader.read();
           if (done) {
-            console.log("[createGeminiChatAdapter] Reader done");
+            console.log(
+              "[createGeminiChatAdapter] Reader done. Aborted:",
+              abortSignal?.aborted,
+              "Reason:",
+              abortSignal?.reason
+            );
             break;
           }
 

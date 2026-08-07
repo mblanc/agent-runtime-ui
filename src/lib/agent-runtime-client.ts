@@ -1154,7 +1154,19 @@ export class AgentRuntimeClient {
         ...(cleanSessionId ? { session_id: cleanSessionId } : {}),
       };
 
-      if (lastUserMsgObj?.parts && lastUserMsgObj.parts.length > 0) {
+      const nonTextParts = lastUserMsgObj?.parts?.filter(
+        (p) =>
+          p.file_data ||
+          p.fileData ||
+          p.image ||
+          p.file ||
+          p.function_response ||
+          p.functionResponse ||
+          p.function_call ||
+          p.functionCall
+      );
+
+      if (nonTextParts && nonTextParts.length > 0 && lastUserMsgObj?.parts) {
         inputPayload.parts = lastUserMsgObj.parts.map((p) => {
           if (p.file_data) {
             return {
@@ -1387,6 +1399,8 @@ export class AgentRuntimeClient {
           }
         }
       }
+
+      yield { event_type: "done" };
     } catch (err: unknown) {
       const errorMessage =
         err instanceof Error ? err.message : "Failed to stream from Agent Runtime";
