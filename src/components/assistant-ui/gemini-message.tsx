@@ -94,7 +94,7 @@ function ChatMessageImpl() {
               </MessagePrimitive.Parts>
             </div>
             <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-              <ActionBarPrimitive.Root>
+              <ActionBarPrimitive.Root className="flex flex-row items-center gap-0.5 sm:gap-1">
                 <ActionBarPrimitive.Edit
                   className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   aria-label="Edit message"
@@ -202,7 +202,7 @@ function ChatMessageImpl() {
             <GeminiMessageTiming />
 
             <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-              <ActionBarPrimitive.Root>
+              <ActionBarPrimitive.Root className="flex flex-row items-center gap-0.5 sm:gap-1">
                 <AuiIf condition={({ message }) => message?.speech == null}>
                   <ActionBarPrimitive.Speak
                     className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
