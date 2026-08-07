@@ -1,8 +1,11 @@
 import { test, expect } from "@playwright/test";
 import { signSessionToken } from "../../src/lib/jwt";
 
+const TARGET_ENGINE_ID =
+  "projects/125188993477/locations/us-central1/reasoningEngines/6238058879222022144";
+
 test.describe("Subagent Reasoning & Main Answer E2E", () => {
-  test.beforeEach(async ({ context }) => {
+  test.beforeEach(async ({ context, page }) => {
     // Dynamically sign session token using BETTER_AUTH_SECRET / AUTH_SECRET from environment
     const token = await signSessionToken({
       sub: "playwright-test",
@@ -21,6 +24,20 @@ test.describe("Subagent Reasoning & Main Answer E2E", () => {
         sameSite: "Lax",
       },
     ]);
+
+    // Intercept /api/chat calls to inject target reasoningEngineId
+    await page.route("**/api/chat", async (route) => {
+      const request = route.request();
+      if (request.method() === "POST") {
+        const postData = JSON.parse(request.postData() || "{}");
+        postData.reasoningEngineId = TARGET_ENGINE_ID;
+        await route.continue({
+          postData: JSON.stringify(postData),
+        });
+      } else {
+        await route.continue();
+      }
+    });
   });
 
   test("interactive mode streams subagents into thinking box and main answer into main response", async ({
@@ -45,16 +62,13 @@ test.describe("Subagent Reasoning & Main Answer E2E", () => {
     console.log("Waiting for streaming response...");
     await page.waitForTimeout(45000);
 
-    // Take screenshot of interactive stream result
-    const screenshotPath = testInfo.outputPath("interactive-result.png");
-    await page.screenshot({ path: screenshotPath, fullPage: true });
-    console.log("Saved interactive stream screenshot to:", screenshotPath);
-
-    // Copy screenshot to ./test-results/interactive-result.png for easy user access
-    await page.screenshot({
-      path: "./test-results/interactive-result.png",
-      fullPage: true,
+    // Take screenshot of interactive stream result and attach to Playwright report
+    const screenshot = await page.screenshot({ fullPage: true });
+    await testInfo.attach("interactive-result", {
+      body: screenshot,
+      contentType: "image/png",
     });
+    console.log("Attached interactive stream screenshot to report");
 
     // Inspect DOM elements
     // Check Thinking Process box

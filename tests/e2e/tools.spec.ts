@@ -62,14 +62,13 @@ test.describe("Tool Calling & Reasoning E2E", () => {
     console.log("Waiting for tool execution & streaming response...");
     await page.waitForTimeout(45000);
 
-    // Save screenshots
-    const screenshotPath = testInfo.outputPath("tools-interactive-result.png");
-    await page.screenshot({ path: screenshotPath, fullPage: true });
-    console.log("Saved tool call screenshot to:", screenshotPath);
-    await page.screenshot({
-      path: "./test-results/tools-interactive-result.png",
-      fullPage: true,
+    // Take screenshot of tool call stream result and attach to Playwright report
+    const screenshot = await page.screenshot({ fullPage: true });
+    await testInfo.attach("tools-interactive-result", {
+      body: screenshot,
+      contentType: "image/png",
     });
+    console.log("Attached tool call screenshot to report");
 
     // Inspect DOM elements
     // 1. Check Tool Collapsible components (e.g. fetch_public_claims buttons)
