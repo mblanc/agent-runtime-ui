@@ -39,3 +39,10 @@ bun.lockb
 *.suo
 *.ntvs*
 *.njsproj
+
+# Playwright test output
+test-results/
+playwright-report/
+blob-report/
+
+.agents

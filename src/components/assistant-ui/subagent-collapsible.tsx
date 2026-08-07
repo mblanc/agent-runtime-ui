@@ -10,16 +10,16 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { MarkdownText } from "./markdown-text";
 
 export interface SubAgentCollapsibleProps {
   agentName?: string;
   displayName?: string;
   role?: string;
-  status?: "running" | "complete" | "error";
+  status?: "running" | "complete" | "error" | string;
   children?: ReactNode;
   content?: string;
   callInput?: string;
+  output?: string;
   defaultOpen?: boolean;
   className?: string;
 }
@@ -32,6 +32,7 @@ export function SubAgentCollapsible({
   children,
   content,
   callInput,
+  output,
   defaultOpen = false,
   className,
 }: SubAgentCollapsibleProps) {
@@ -40,6 +41,7 @@ export function SubAgentCollapsible({
   const isError = status === "error";
 
   const title = displayName || agentName || "Sub-Agent";
+  const bodyText = output || content;
 
   return (
     <div
@@ -112,25 +114,46 @@ export function SubAgentCollapsible({
       {isOpen && (
         <div className="border-t border-[#e3e3e3] bg-white/60 p-3.5 dark:border-[#333537] dark:bg-[#141517]/80">
           {callInput && (
-            <div className="mb-2.5 rounded-lg border border-border/40 bg-muted/30 p-2 font-mono text-[11px] text-muted-foreground">
-              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <div className="mb-2.5">
+              <div className="mb-1 font-sans text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Task Input
               </div>
-              <div>{callInput}</div>
+              <pre className="max-h-48 overflow-auto rounded-lg border border-[#d3d7dc] bg-[#eef2f6] p-2.5 font-mono text-[11px] text-[#1f1f1f] dark:border-[#333537] dark:bg-[#1a1c1e] dark:text-[#e3e3e3]">
+                {callInput}
+              </pre>
             </div>
           )}
 
-          <div className="prose prose-neutral dark:prose-invert max-w-none text-[13px] leading-relaxed">
-            {content ? (
-              <MarkdownText />
-            ) : children ? (
-              children
-            ) : (
-              <div className="italic text-muted-foreground">
-                No output provided by sub-agent.
+          {bodyText ? (
+            <div>
+              {callInput && (
+                <div className="mb-1 font-sans text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Response
+                </div>
+              )}
+              <div className="whitespace-pre-wrap font-sans text-[13px] leading-relaxed text-[#1f1f1f] dark:text-[#e3e3e3]">
+                {bodyText}
               </div>
-            )}
-          </div>
+            </div>
+          ) : children ? (
+            <div>
+              {callInput && (
+                <div className="mb-1 font-sans text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Response
+                </div>
+              )}
+              {children}
+            </div>
+          ) : isRunning ? (
+            <div className="flex items-center gap-2 py-1 text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+              <span>Sub-agent is processing task...</span>
+            </div>
+          ) : (
+            <div className="italic text-muted-foreground">
+              No output provided by sub-agent.
+            </div>
+          )}
         </div>
       )}
     </div>

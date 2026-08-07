@@ -423,4 +423,28 @@ describe("AgentRuntimeClient", () => {
     expect(grouped[1].thought).toContain(":::subagent[Specialist A]");
     expect(grouped[1].thought).toContain(":::subagent[Specialist B]");
   });
+
+  it("updates running subagent block with appendAgentResponseToReasoning in adapter", async () => {
+    const { appendAgentResponseToReasoning } =
+      await import("@/lib/gemini-runtime-adapter");
+
+    const initialReasoning =
+      'Analyzing workflow...\n\n:::subagent[Financial Analyst]{status="running" agent="financial_analyst"}\n**Task Input:**\nAnalyze Q3 revenue\n:::';
+
+    const updated = appendAgentResponseToReasoning(
+      initialReasoning,
+      "financial_analyst",
+      "Q3 revenue increased by 14% YoY driven by data center AI chips.",
+      "Financial Analyst"
+    );
+
+    expect(updated).toContain(
+      ':::subagent[Financial Analyst]{status="complete" agent="financial_analyst"}'
+    );
+    expect(updated).toContain("**Task Input:**\nAnalyze Q3 revenue");
+    expect(updated).toContain(
+      "**Response:**\nQ3 revenue increased by 14% YoY driven by data center AI chips."
+    );
+    expect(updated).not.toContain('status="running"');
+  });
 });

@@ -228,6 +228,41 @@ function parseReasoningBlocks(rawText: string): ParsedReasoningBlock[] {
   return blocks;
 }
 
+function parseSubAgentBlockContent(content: string): {
+  input?: string;
+  output?: string;
+} {
+  let input: string | undefined;
+  let output: string | undefined;
+
+  const inputMatch =
+    content.match(
+      /\*\*(?:Task Input|Input):\*\*\s*\r?\n```(?:json)?\s*\r?\n([\s\S]*?)\r?\n```/i
+    ) ||
+    content.match(
+      /\*\*(?:Task Input|Input):\*\*\s*\r?\n([\s\S]*?)(?=\r?\n\*\*(?:Response|Output|Result):\*\*|$)/i
+    );
+
+  if (inputMatch) {
+    input = inputMatch[1].trim();
+  }
+
+  const outputMatch =
+    content.match(
+      /\*\*(?:Response|Output|Result):\*\*\s*\r?\n```(?:json)?\s*\r?\n([\s\S]*?)\r?\n```/i
+    ) || content.match(/\*\*(?:Response|Output|Result):\*\*\s*\r?\n([\s\S]*)/i);
+
+  if (outputMatch) {
+    output = outputMatch[1].trim();
+  }
+
+  if (!input && !output) {
+    output = content.trim();
+  }
+
+  return { input, output };
+}
+
 export function parseLegacyToolTraces(text: string): string {
   if (!text) return "";
   // Convert legacy [Tool Executed]: name (args) and [Tool Completed]: name into :::tool[name] blocks
@@ -298,6 +333,7 @@ export function ReasoningText({
     <div className={cn("space-y-2", className)}>
       {blocks.map((block, idx) => {
         if (block.type === "subagent") {
+          const { input, output } = parseSubAgentBlockContent(block.content);
           return (
             <SubAgentCollapsible
               key={`subagent-${idx}-${block.title}`}
@@ -306,12 +342,10 @@ export function ReasoningText({
               status={
                 (block.meta?.status as "running" | "complete" | "error") || "complete"
               }
+              callInput={input || block.meta?.input}
+              output={output}
               defaultOpen={false}
-            >
-              <div className="whitespace-pre-wrap font-sans text-[13px] leading-relaxed text-[#1f1f1f] dark:text-[#e3e3e3]">
-                {block.content}
-              </div>
-            </SubAgentCollapsible>
+            />
           );
         }
 

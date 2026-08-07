@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     }
 
     const userId = session.user.id;
-    const agentClient = new AgentRuntimeClient();
+    const agentClient = new AgentRuntimeClient(body.reasoningEngineId);
 
     const stream = new ReadableStream({
       async start(controller) {

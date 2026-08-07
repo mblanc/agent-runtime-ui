@@ -3,6 +3,7 @@ import type {
   ChatModelRunOptions,
   ChatModelRunResult,
 } from "@assistant-ui/react";
+import { formatAgentDisplayName } from "@/lib/utils";
 
 export function appendToolResultToReasoning(
   reasoning: string,
@@ -28,6 +29,38 @@ export function appendToolResultToReasoning(
   return (
     reasoning +
     `\n\n:::tool[${toolName}]{status="complete"}\n**Result:**\n\`\`\`json\n${resStr}\n\`\`\`\n:::`
+  );
+}
+
+export function appendAgentResponseToReasoning(
+  reasoning: string,
+  agentName: string,
+  responseStr: string,
+  displayName?: string
+): string {
+  const name = displayName || formatAgentDisplayName(agentName);
+  const runningHeader = `:::subagent[${name}]{status="running" agent="${agentName}"}`;
+  const lastIdx = reasoning.lastIndexOf(runningHeader);
+
+  if (lastIdx !== -1) {
+    const before = reasoning.substring(0, lastIdx);
+    const after = reasoning.substring(lastIdx);
+    const closeIdx = after.indexOf("\n:::", runningHeader.length);
+    if (closeIdx !== -1) {
+      const blockInside = after
+        .substring(0, closeIdx)
+        .replace(
+          runningHeader,
+          `:::subagent[${name}]{status="complete" agent="${agentName}"}`
+        );
+      const remainder = after.substring(closeIdx);
+      return `${before}${blockInside}\n**Response:**\n${responseStr}${remainder}`;
+    }
+  }
+
+  return (
+    reasoning +
+    `\n\n:::subagent[${name}]{status="complete" agent="${agentName}"}\n${responseStr}\n:::`
   );
 }
 
@@ -90,6 +123,8 @@ export function createGeminiChatAdapter(
         const decoder = new TextDecoder();
         let accumulatedText = "";
         let accumulatedReasoning = "";
+        let currentAuthor: string | undefined = undefined;
+        let currentAuthorText = "";
         let buffer = "";
 
         while (true) {
@@ -125,27 +160,94 @@ export function createGeminiChatAdapter(
                   (accumulatedReasoning ? "\n" : "") + parsed.thought;
                 yield createYieldContent(accumulatedReasoning, accumulatedText);
               } else if (parsed.event_type === "content" && parsed.content) {
-                accumulatedText += parsed.content;
+                const author = parsed.author as string | undefined;
+
+                if (
+                  author &&
+                  currentAuthor &&
+                  author !== currentAuthor &&
+                  currentAuthorText.trim()
+                ) {
+                  const name = formatAgentDisplayName(currentAuthor);
+                  accumulatedReasoning = appendAgentResponseToReasoning(
+                    accumulatedReasoning,
+                    currentAuthor,
+                    currentAuthorText.trim(),
+                    name
+                  );
+                  currentAuthor = author;
+                  currentAuthorText = parsed.content;
+                  accumulatedText = parsed.content;
+                } else {
+                  if (!currentAuthor && author) {
+                    currentAuthor = author;
+                  }
+                  currentAuthorText += parsed.content;
+                  accumulatedText += parsed.content;
+                }
                 yield createYieldContent(accumulatedReasoning, accumulatedText);
               } else if (parsed.event_type === "agent_call" && parsed.agent_call) {
+                if (currentAuthor && currentAuthorText.trim()) {
+                  const name = formatAgentDisplayName(currentAuthor);
+                  accumulatedReasoning = appendAgentResponseToReasoning(
+                    accumulatedReasoning,
+                    currentAuthor,
+                    currentAuthorText.trim(),
+                    name
+                  );
+                  currentAuthor = undefined;
+                  currentAuthorText = "";
+                  accumulatedText = "";
+                }
+
                 const name =
                   parsed.agent_call.displayName || parsed.agent_call.agent || "Sub-Agent";
                 const inputStr = parsed.agent_call.input
-                  ? `**Input:**\n\`\`\`json\n${typeof parsed.agent_call.input === "string" ? parsed.agent_call.input : JSON.stringify(parsed.agent_call.input, null, 2)}\n\`\`\``
-                  : "Analyzing task...";
+                  ? `**Task Input:**\n\`\`\`json\n${typeof parsed.agent_call.input === "string" ? parsed.agent_call.input : JSON.stringify(parsed.agent_call.input, null, 2)}\n\`\`\``
+                  : "";
                 accumulatedReasoning += `\n\n:::subagent[${name}]{status="running" agent="${parsed.agent_call.agent}"}\n${inputStr}\n:::`;
                 yield createYieldContent(accumulatedReasoning, accumulatedText);
               } else if (
                 parsed.event_type === "agent_response" &&
                 parsed.agent_response
               ) {
+                if (currentAuthor && currentAuthorText.trim()) {
+                  const name = formatAgentDisplayName(currentAuthor);
+                  accumulatedReasoning = appendAgentResponseToReasoning(
+                    accumulatedReasoning,
+                    currentAuthor,
+                    currentAuthorText.trim(),
+                    name
+                  );
+                  currentAuthor = undefined;
+                  currentAuthorText = "";
+                  accumulatedText = "";
+                }
+
+                const agent = parsed.agent_response.agent || "sub_agent";
                 const name =
-                  parsed.agent_response.displayName ||
-                  parsed.agent_response.agent ||
-                  "Sub-Agent";
-                accumulatedReasoning += `\n\n:::subagent[${name}]{status="complete" agent="${parsed.agent_response.agent}"}\n${parsed.agent_response.response}\n:::`;
+                  parsed.agent_response.displayName || formatAgentDisplayName(agent);
+                accumulatedReasoning = appendAgentResponseToReasoning(
+                  accumulatedReasoning,
+                  agent,
+                  parsed.agent_response.response,
+                  name
+                );
                 yield createYieldContent(accumulatedReasoning, accumulatedText);
               } else if (parsed.event_type === "tool_call" && parsed.tool_call) {
+                if (currentAuthor && currentAuthorText.trim()) {
+                  const name = formatAgentDisplayName(currentAuthor);
+                  accumulatedReasoning = appendAgentResponseToReasoning(
+                    accumulatedReasoning,
+                    currentAuthor,
+                    currentAuthorText.trim(),
+                    name
+                  );
+                  currentAuthor = undefined;
+                  currentAuthorText = "";
+                  accumulatedText = "";
+                }
+
                 const toolName = parsed.tool_call.name || "agent_tool";
                 const argsStr = JSON.stringify(parsed.tool_call.args || {}, null, 2);
                 accumulatedReasoning += `\n\n:::tool[${toolName}]{status="running"}\n**Arguments:**\n\`\`\`json\n${argsStr}\n\`\`\`\n:::`;

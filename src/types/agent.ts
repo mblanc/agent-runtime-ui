@@ -114,4 +114,5 @@ export interface ChatRequestBody {
   }>;
   sessionId?: string;
   modelTier?: GeminiModelTier;
+  reasoningEngineId?: string;
 }

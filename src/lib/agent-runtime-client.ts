@@ -158,30 +158,84 @@ export function isLocalSessionId(sessionId?: string): boolean {
   return sessionId.startsWith("__LOCALID_") || sessionId.startsWith("local-");
 }
 
-export function formatAgentDisplayName(authorOrPath?: string): string {
-  if (!authorOrPath) return "Assistant";
-  const leaf = authorOrPath.split("/").pop() || authorOrPath;
-  const clean = leaf.replace(/@\d+$/, "").replace(/[_-]/g, " ").trim();
-  return clean.replace(/\b\w/g, (c) => c.toUpperCase());
-}
+import { formatAgentDisplayName } from "@/lib/utils";
+export { formatAgentDisplayName };
 
 export function isRootWorkflowOutput(rawEvt?: Record<string, unknown>): boolean {
   if (!rawEvt) return false;
-  const nodeInfo = (rawEvt.nodeInfo ||
-    (rawEvt.config as Record<string, unknown>)?.nodeInfo) as
-    Record<string, unknown> | undefined;
-  if (!nodeInfo) return false;
 
-  const path = typeof nodeInfo.path === "string" ? nodeInfo.path : "";
-  const outputFor = Array.isArray(nodeInfo.outputFor)
-    ? (nodeInfo.outputFor as string[])
-    : [];
+  const config = (rawEvt.config || {}) as Record<string, unknown>;
+  const rawEvent = (rawEvt.raw_event || rawEvt.rawEvent || {}) as Record<string, unknown>;
 
-  if (!path || outputFor.length === 0) return false;
+  const nodeInfo = (rawEvt.node_info ||
+    rawEvt.nodeInfo ||
+    config.node_info ||
+    config.nodeInfo ||
+    rawEvent.node_info ||
+    rawEvent.nodeInfo) as Record<string, unknown> | undefined;
 
-  const rootContainer = path.split("/")[0];
-  // If outputFor contains the root workflow and path is a child node
-  return outputFor.includes(rootContainer) && path !== rootContainer;
+  if (nodeInfo) {
+    const path = typeof nodeInfo.path === "string" ? nodeInfo.path : "";
+    const outputForRaw = nodeInfo.output_for || nodeInfo.outputFor;
+    const outputFor = Array.isArray(outputForRaw) ? (outputForRaw as string[]) : [];
+
+    if (path && outputFor.length > 0) {
+      const rootContainer = path.split("/")[0];
+      if (outputFor.includes(rootContainer) && path !== rootContainer) {
+        return true;
+      }
+    }
+  }
+
+  if (
+    rawEvt.root_output === true ||
+    rawEvt.is_final === true ||
+    config.root_output === true ||
+    config.is_final === true ||
+    rawEvent.root_output === true ||
+    rawEvent.is_final === true
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+export function isSubagentNode(rawEvt?: Record<string, unknown>): boolean {
+  if (!rawEvt) return false;
+
+  const config = (rawEvt.config || {}) as Record<string, unknown>;
+  const rawEvent = (rawEvt.raw_event || rawEvt.rawEvent || {}) as Record<string, unknown>;
+
+  const nodeInfo = (rawEvt.node_info ||
+    rawEvt.nodeInfo ||
+    config.node_info ||
+    config.nodeInfo ||
+    rawEvent.node_info ||
+    rawEvent.nodeInfo) as Record<string, unknown> | undefined;
+
+  if (nodeInfo) {
+    const path = typeof nodeInfo.path === "string" ? nodeInfo.path : "";
+    const outputForRaw = nodeInfo.output_for || nodeInfo.outputFor;
+    const outputFor = Array.isArray(outputForRaw) ? (outputForRaw as string[]) : [];
+
+    if (path && path.includes("/")) {
+      const rootContainer = path.split("/")[0];
+      if (path !== rootContainer && !outputFor.includes(rootContainer)) {
+        return true;
+      }
+    }
+  }
+
+  if (
+    rawEvt.is_subagent === true ||
+    config.is_subagent === true ||
+    rawEvent.is_subagent === true
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 function getEventToolCalls(evt: AgentSessionEvent) {
@@ -581,10 +635,11 @@ export class AgentRuntimeClient {
   private reasoningEngineId: string;
   private isMock: boolean;
 
-  constructor() {
+  constructor(overrideEngineId?: string) {
     this.projectId = process.env.GOOGLE_CLOUD_PROJECT || "";
     this.location = process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
-    this.reasoningEngineId = process.env.GOOGLE_REASONING_ENGINE_ID || "";
+    this.reasoningEngineId =
+      overrideEngineId || process.env.GOOGLE_REASONING_ENGINE_ID || "";
 
     // Automatically sync location and projectId from full resource name if provided
     if (this.reasoningEngineId.startsWith("projects/")) {
@@ -1102,41 +1157,98 @@ export class AgentRuntimeClient {
           try {
             const parsed = JSON.parse(dataStr);
 
-            // Handle ADK content.parts event schema
-            if (parsed.content?.parts && Array.isArray(parsed.content.parts)) {
+            if (parsed.agent_call) {
+              yield { event_type: "agent_call", agent_call: parsed.agent_call };
+            } else if (parsed.agent_response) {
+              yield {
+                event_type: "agent_response",
+                agent_response: parsed.agent_response,
+              };
+            } else if (parsed.content?.parts && Array.isArray(parsed.content.parts)) {
+              const author =
+                (parsed.author as string) ||
+                (parsed.content?.author as string) ||
+                (parsed.config?.author as string);
+              const isSubAgent = isSubagentNode(parsed);
+
               for (const part of parsed.content.parts) {
                 if (part.text) {
                   if (part.thought) {
                     yield { event_type: "thought", thought: part.text };
+                  } else if (isSubAgent) {
+                    yield {
+                      event_type: "agent_response",
+                      agent_response: {
+                        agent: author || "sub_agent",
+                        displayName: formatAgentDisplayName(author),
+                        response: part.text,
+                      },
+                    };
                   } else {
-                    yield { event_type: "content", content: part.text };
+                    yield { event_type: "content", content: part.text, author };
                   }
                 }
                 const fnCall = part.function_call || part.functionCall;
                 if (fnCall) {
+                  const name = String(fnCall.name || "");
                   yield {
                     event_type: "tool_call",
                     tool_call: {
-                      name: fnCall.name,
+                      name,
                       args: fnCall.args,
                     },
                   };
                 }
                 const fnResp = part.function_response || part.functionResponse;
                 if (fnResp) {
+                  const name = String(fnResp.name || "");
                   yield {
                     event_type: "tool_result",
                     tool_result: {
-                      name: fnResp.name,
-                      result: fnResp.response,
+                      name,
+                      result: (fnResp.response as Record<string, unknown>) || {},
                     },
                   };
                 }
               }
             } else if (parsed.text) {
-              yield { event_type: "content", content: parsed.text };
+              const author =
+                (parsed.author as string) ||
+                (parsed.config?.author as string) ||
+                (parsed.agent as string);
+              const isSubAgent = isSubagentNode(parsed);
+
+              if (isSubAgent) {
+                yield {
+                  event_type: "agent_response",
+                  agent_response: {
+                    agent: author || "sub_agent",
+                    displayName: formatAgentDisplayName(author),
+                    response: parsed.text,
+                  },
+                };
+              } else {
+                yield { event_type: "content", content: parsed.text, author };
+              }
             } else if (parsed.thought) {
               yield { event_type: "thought", thought: parsed.thought };
+            } else if (parsed.function_call || parsed.functionCall) {
+              const fnCall = parsed.function_call || parsed.functionCall;
+              const name = String(fnCall.name || "");
+              yield {
+                event_type: "tool_call",
+                tool_call: { name, args: fnCall.args },
+              };
+            } else if (parsed.function_response || parsed.functionResponse) {
+              const fnResp = parsed.function_response || parsed.functionResponse;
+              const name = String(fnResp.name || "");
+              yield {
+                event_type: "tool_result",
+                tool_result: {
+                  name,
+                  result: (fnResp.response as Record<string, unknown>) || {},
+                },
+              };
             } else if (parsed.tool_call) {
               yield { event_type: "tool_call", tool_call: parsed.tool_call };
             } else if (parsed.tool_result) {
