@@ -3,11 +3,25 @@ import {
   type ChatModelRunOptions,
   type ChatModelRunResult,
   type FeedbackAdapter,
+  type AttachmentAdapter,
+  type PendingAttachment,
+  type CompleteAttachment,
+  type Attachment,
+  type ThreadUserMessagePart,
   WebSpeechDictationAdapter,
   WebSpeechSynthesisAdapter,
 } from "@assistant-ui/react";
-import type { FeedbackType, AgentMessagePart } from "@/types/agent";
+import type { FeedbackType, AgentMessagePart, PresignBatchResponse } from "@/types/agent";
 import { formatAgentDisplayName } from "@/lib/utils";
+
+export interface AttachmentMetadata {
+  gcsUri: string;
+  readUrl: string;
+  previewUrl: string;
+  contentType: string;
+}
+
+export const attachmentMetadataMap = new Map<string, AttachmentMetadata>();
 
 export function appendToolResultToReasoning(
   reasoning: string,
@@ -129,6 +143,49 @@ export function createGeminiChatAdapter(
           if (part.type === "text") {
             text += part.text;
             parts.push({ text: part.text });
+          } else if (part.type === "image") {
+            const imgPart = part as { image?: string; filename?: string };
+            const imgUrl = imgPart.image || "";
+            const meta = imgUrl
+              ? Array.from(attachmentMetadataMap.values()).find(
+                  (val) => val.readUrl === imgUrl || val.previewUrl === imgUrl
+                )
+              : undefined;
+            const gcsUri =
+              meta?.gcsUri || (imgUrl.startsWith("gs://") ? imgUrl : undefined);
+            const mimeType = meta?.contentType || "image/png";
+
+            if (gcsUri) {
+              parts.push({
+                file_data: {
+                  file_uri: gcsUri,
+                  mime_type: mimeType,
+                },
+                image: imgUrl,
+              });
+            } else if (imgUrl) {
+              parts.push({
+                image: imgUrl,
+              });
+            }
+          } else if (part.type === "file") {
+            const filePart = part as {
+              data?: string;
+              mimeType?: string;
+              filename?: string;
+            };
+            const fileUri = filePart.data || "";
+            parts.push({
+              file_data: {
+                file_uri: fileUri,
+                mime_type: filePart.mimeType || "application/octet-stream",
+              },
+              file: {
+                filename: filePart.filename,
+                data: fileUri,
+                mimeType: filePart.mimeType || "application/octet-stream",
+              },
+            });
           } else if (part.type === "tool-call") {
             const tc = part as {
               toolCallId?: string;
@@ -167,6 +224,37 @@ export function createGeminiChatAdapter(
                   args: tc.args || {},
                 },
               });
+            }
+          }
+        }
+
+        // Check if there are attachments attached to user message
+        const msgWithAttachments = m as unknown as {
+          attachments?: Array<{
+            id: string;
+            name: string;
+            contentType?: string;
+          }>;
+        };
+        if (
+          msgWithAttachments.attachments &&
+          Array.isArray(msgWithAttachments.attachments)
+        ) {
+          for (const att of msgWithAttachments.attachments) {
+            const meta = attachmentMetadataMap.get(att.id);
+            if (meta?.gcsUri) {
+              const alreadyPresent = parts.some(
+                (p) => p.file_data?.file_uri === meta.gcsUri
+              );
+              if (!alreadyPresent) {
+                parts.push({
+                  file_data: {
+                    file_uri: meta.gcsUri,
+                    mime_type:
+                      meta.contentType || att.contentType || "application/octet-stream",
+                  },
+                });
+              }
             }
           }
         }
@@ -520,3 +608,189 @@ export function createWebSpeechSynthesisAdapter(): WebSpeechSynthesisAdapter | u
     return undefined;
   }
 }
+
+export function createGcsAttachmentAdapter(): AttachmentAdapter {
+  return {
+    accept:
+      "image/*,application/pdf,text/*,audio/*,video/*,application/json,application/xml",
+    async *add({
+      file,
+    }: {
+      file: File;
+    }): AsyncGenerator<PendingAttachment, void, unknown> {
+      const previewUrl =
+        typeof URL !== "undefined" && URL.createObjectURL
+          ? URL.createObjectURL(file)
+          : "";
+      const tempId = `att_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const isImage = file.type.startsWith("image/");
+      const attachmentType = isImage ? "image" : "document";
+
+      yield {
+        id: tempId,
+        type: attachmentType,
+        name: file.name,
+        contentType: file.type || "application/octet-stream",
+        file,
+        status: {
+          type: "running",
+          reason: "uploading",
+          progress: 0,
+        },
+      };
+
+      try {
+        const presignRes = await fetch("/api/uploads/presign", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            files: [
+              {
+                filename: file.name,
+                contentType: file.type || "application/octet-stream",
+                sizeBytes: file.size,
+              },
+            ],
+          }),
+        });
+
+        if (!presignRes.ok) {
+          const errText = await presignRes.text();
+          throw new Error(`Failed to get upload URL (${presignRes.status}): ${errText}`);
+        }
+
+        const { uploads } = (await presignRes.json()) as PresignBatchResponse;
+        const uploadItem = uploads?.[0];
+        if (!uploadItem) {
+          throw new Error("No upload data returned from server");
+        }
+
+        yield {
+          id: uploadItem.fileId || tempId,
+          type: attachmentType,
+          name: file.name,
+          contentType: file.type || "application/octet-stream",
+          file,
+          status: {
+            type: "running",
+            reason: "uploading",
+            progress: 0.5,
+          },
+        };
+
+        const uploadRes = await fetch(uploadItem.uploadUrl, {
+          method: "PUT",
+          headers: {
+            "Content-Type": file.type || "application/octet-stream",
+          },
+          body: file,
+        });
+
+        if (!uploadRes.ok) {
+          throw new Error(`Upload to storage failed with status ${uploadRes.status}`);
+        }
+
+        const finalId = uploadItem.fileId || tempId;
+        attachmentMetadataMap.set(finalId, {
+          gcsUri: uploadItem.gcsUri,
+          readUrl: uploadItem.readUrl || previewUrl,
+          previewUrl,
+          contentType: file.type || "application/octet-stream",
+        });
+
+        yield {
+          id: finalId,
+          type: attachmentType,
+          name: file.name,
+          contentType: file.type || "application/octet-stream",
+          file,
+          status: {
+            type: "requires-action",
+            reason: "composer-send",
+          },
+        };
+        return;
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : "Upload failed";
+        console.error("[createGcsAttachmentAdapter] Upload error:", errorMsg);
+        yield {
+          id: tempId,
+          type: attachmentType,
+          name: file.name,
+          contentType: file.type || "application/octet-stream",
+          file,
+          status: {
+            type: "incomplete",
+            reason: "error",
+            message: errorMsg,
+          },
+        };
+        return;
+      }
+    },
+    async send(attachment: PendingAttachment): Promise<CompleteAttachment> {
+      const meta = attachmentMetadataMap.get(attachment.id);
+      const isImage =
+        attachment.file.type.startsWith("image/") || attachment.type === "image";
+      const gcsUri =
+        meta?.gcsUri ||
+        `gs://mock-bucket/users/current/${attachment.id}-${attachment.name}`;
+      const readUrl =
+        meta?.readUrl ||
+        meta?.previewUrl ||
+        (typeof URL !== "undefined" && URL.createObjectURL
+          ? URL.createObjectURL(attachment.file)
+          : "");
+
+      let content: ThreadUserMessagePart[];
+
+      if (isImage) {
+        content = [
+          {
+            type: "image",
+            image: readUrl,
+            filename: attachment.name,
+          },
+        ];
+      } else {
+        content = [
+          {
+            type: "file",
+            data: gcsUri,
+            mimeType:
+              attachment.contentType ||
+              attachment.file.type ||
+              "application/octet-stream",
+            filename: attachment.name,
+            sourceType: "url",
+          },
+        ];
+      }
+
+      return {
+        id: attachment.id,
+        type: attachment.type,
+        name: attachment.name,
+        contentType: attachment.contentType,
+        file: attachment.file,
+        status: {
+          type: "complete",
+        },
+        content,
+      };
+    },
+    async remove(attachment: Attachment): Promise<void> {
+      const meta = attachmentMetadataMap.get(attachment.id);
+      if (meta?.previewUrl && typeof URL !== "undefined" && URL.revokeObjectURL) {
+        try {
+          URL.revokeObjectURL(meta.previewUrl);
+        } catch {
+          // ignore
+        }
+      }
+      attachmentMetadataMap.delete(attachment.id);
+    },
+  };
+}
+
+export const gcsAttachmentAdapter = createGcsAttachmentAdapter();

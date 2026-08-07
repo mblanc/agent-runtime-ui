@@ -1,6 +1,6 @@
 "use client";
 
-import { AuiIf, ComposerPrimitive } from "@assistant-ui/react";
+import { AuiIf, ComposerPrimitive, AttachmentPrimitive } from "@assistant-ui/react";
 import {
   Plus,
   ArrowUp,
@@ -11,6 +11,8 @@ import {
   Sparkles,
   Cpu,
   Check,
+  X,
+  FileText,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -25,7 +27,15 @@ export function GeminiComposer() {
   const [selectedModel, setSelectedModel] = useState<"flash" | "pro">("flash");
 
   return (
-    <ComposerPrimitive.Root className="mx-auto flex w-full max-w-3xl flex-col rounded-4xl bg-white p-2.5 shadow-[0_2px_14px_-2px_rgba(0,0,0,0.12)] transition-shadow hover:shadow-[0_4px_20px_-2px_rgba(0,0,0,0.16)] dark:bg-[#1e1f20] dark:shadow-[0_2px_14px_-2px_rgba(0,0,0,0.5)]">
+    <ComposerPrimitive.Root className="relative mx-auto flex w-full max-w-3xl flex-col rounded-4xl bg-white p-2.5 shadow-[0_2px_14px_-2px_rgba(0,0,0,0.12)] transition-shadow hover:shadow-[0_4px_20px_-2px_rgba(0,0,0,0.16)] dark:bg-[#1e1f20] dark:shadow-[0_2px_14px_-2px_rgba(0,0,0,0.5)]">
+      {/* Drag & Drop File Upload Overlay */}
+      <ComposerPrimitive.AttachmentDropzone className="absolute inset-0 z-30 flex items-center justify-center rounded-4xl border-2 border-dashed border-blue-500 bg-blue-50/90 text-sm font-medium text-blue-600 opacity-0 pointer-events-none data-[dragging]:opacity-100 data-[dragging]:pointer-events-auto transition-opacity backdrop-blur-xs dark:border-blue-400 dark:bg-blue-950/90 dark:text-blue-200">
+        <div className="flex items-center gap-2">
+          <Paperclip className="h-5 w-5" />
+          <span>Drop photos & files to attach</span>
+        </div>
+      </ComposerPrimitive.AttachmentDropzone>
+
       {/* Queued Messages List */}
       <ComposerPrimitive.Queue>
         {({ queueItem }) => (
@@ -39,6 +49,28 @@ export function GeminiComposer() {
           </div>
         )}
       </ComposerPrimitive.Queue>
+
+      {/* Active Attachments Chips List */}
+      <div className="mb-1.5 flex flex-wrap gap-2 px-1">
+        <ComposerPrimitive.Attachments>
+          {() => (
+            <AttachmentPrimitive.Root className="group relative flex items-center gap-2 rounded-2xl bg-[#f0f4f9] py-1 pl-2.5 pr-2 text-xs text-[#1f1f1f] border border-[#e3e3e3] dark:bg-[#282a2c] dark:text-[#e3e3e3] dark:border-[#3c4043] transition-all hover:bg-[#e4e9f0] dark:hover:bg-[#333538]">
+              <AttachmentPrimitive.unstable_Thumb className="h-5 w-5 shrink-0 rounded overflow-hidden object-cover bg-muted" />
+              <FileText className="h-3.5 w-3.5 shrink-0 text-[#1a73e8] dark:text-[#8ab4f8]" />
+              <span className="max-w-[150px] truncate font-medium">
+                <AttachmentPrimitive.Name />
+              </span>
+              <AttachmentPrimitive.Remove
+                type="button"
+                aria-label="Remove attachment"
+                className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[#575b5f] transition-colors hover:bg-[#444746]/15 hover:text-[#1f1f1f] dark:text-[#9aa0a6] dark:hover:bg-[#c4c7c5]/20 dark:hover:text-[#e3e3e3]"
+              >
+                <X className="h-3 w-3" />
+              </AttachmentPrimitive.Remove>
+            </AttachmentPrimitive.Root>
+          )}
+        </ComposerPrimitive.Attachments>
+      </div>
 
       <div className="flex items-center gap-1.5">
         {/* Plus / Tools Menu */}
@@ -106,10 +138,15 @@ function PlusMenu() {
         <Plus className="h-5 w-5" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56 p-1.5 shadow-xl">
-        <DropdownMenuItem className="cursor-pointer gap-2.5 py-2.5">
-          <Paperclip className="h-4 w-4 text-[#1a73e8] dark:text-[#8ab4f8]" />
-          <span>Add photos & files</span>
-        </DropdownMenuItem>
+        <ComposerPrimitive.AddAttachment asChild multiple>
+          <DropdownMenuItem
+            className="cursor-pointer gap-2.5 py-2.5"
+            onSelect={(e) => e.preventDefault()}
+          >
+            <Paperclip className="h-4 w-4 text-[#1a73e8] dark:text-[#8ab4f8]" />
+            <span>Add photos & files</span>
+          </DropdownMenuItem>
+        </ComposerPrimitive.AddAttachment>
         <DropdownMenuItem className="cursor-pointer gap-2.5 py-2.5">
           <Sparkles className="h-4 w-4 text-[#1a73e8] dark:text-[#8ab4f8]" />
           <span>Deep Research</span>

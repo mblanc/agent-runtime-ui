@@ -519,4 +519,116 @@ describe("AgentRuntimeClient", () => {
       expect(parsedBody.feedback_type).toBe("THUMBS_DOWN");
     });
   });
+
+  describe("AgentRuntimeClient Multimodal streamQuery", () => {
+    it("forwards file_data parts in input payload to Vertex AI Reasoning Engine", async () => {
+      process.env.MOCK_AGENT_RUNTIME = "false";
+      process.env.GOOGLE_CLOUD_PROJECT = "test-project";
+      process.env.GOOGLE_CLOUD_LOCATION = "us-central1";
+      process.env.GOOGLE_REASONING_ENGINE_ID = "multimodal-engine";
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        body: new ReadableStream({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode(
+                'data: {"text":"Multimodal analysis complete."}\n\ndata: [DONE]\n\n'
+              )
+            );
+            controller.close();
+          },
+        }),
+      });
+      vi.spyOn(globalThis, "fetch").mockImplementation(
+        mockFetch as unknown as typeof fetch
+      );
+
+      const client = new AgentRuntimeClient();
+      vi.spyOn(
+        client as unknown as { getAccessToken: () => Promise<string> },
+        "getAccessToken"
+      ).mockResolvedValue("mock-token");
+
+      const events = [];
+      for await (const event of client.streamQuery(
+        {
+          messages: [
+            {
+              role: "user",
+              content: "Analyze this image",
+              parts: [
+                { text: "Analyze this image" },
+                {
+                  file_data: {
+                    file_uri: "gs://bucket/users/u1/photo.png",
+                    mime_type: "image/png",
+                  },
+                },
+              ],
+            },
+          ],
+        },
+        "u1"
+      )) {
+        events.push(event);
+      }
+
+      expect(events.length).toBeGreaterThan(0);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url).toContain(":streamQuery");
+      const body = JSON.parse(opts.body);
+      expect(body.class_method).toBe("async_stream_query");
+      expect(body.input.message).toBe("Analyze this image");
+      expect(body.input.parts).toHaveLength(2);
+      expect(body.input.parts[0]).toEqual({ text: "Analyze this image" });
+      expect(body.input.parts[1]).toEqual({
+        file_data: {
+          file_uri: "gs://bucket/users/u1/photo.png",
+          mime_type: "image/png",
+        },
+      });
+    });
+
+    it("streams mock multimodal evaluation response in mock mode", async () => {
+      process.env.MOCK_AGENT_RUNTIME = "true";
+      const client = new AgentRuntimeClient();
+
+      const events = [];
+      for await (const event of client.streamQuery(
+        {
+          messages: [
+            {
+              role: "user",
+              content: "Review chart",
+              parts: [
+                { text: "Review chart" },
+                {
+                  file_data: {
+                    file_uri: "gs://mock-bucket/users/u1/chart.png",
+                    mime_type: "image/png",
+                  },
+                },
+              ],
+            },
+          ],
+        },
+        "u1"
+      )) {
+        events.push(event);
+      }
+
+      const thoughtEvent = events.find(
+        (e) => e.event_type === "thought" && e.thought?.includes("multimodal GCS")
+      );
+      expect(thoughtEvent).toBeDefined();
+
+      const contentEvents = events.filter((e) => e.event_type === "content");
+      const fullText = contentEvents.map((e) => e.content).join("");
+      expect(fullText).toContain("multimodal attachment");
+      expect(fullText).toContain("gs://mock-bucket/users/u1/chart.png");
+    });
+  });
 });

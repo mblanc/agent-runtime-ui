@@ -8,6 +8,7 @@ import {
 import {
   createGeminiChatAdapter,
   createGeminiFeedbackAdapter,
+  createGcsAttachmentAdapter,
   createWebSpeechDictationAdapter,
   createWebSpeechSynthesisAdapter,
 } from "@/lib/gemini-runtime-adapter";
@@ -46,6 +47,8 @@ export default function ChatPage() {
     []
   );
 
+  const attachmentAdapter = useMemo(() => createGcsAttachmentAdapter(), []);
+
   const dictationAdapter = useMemo(() => createWebSpeechDictationAdapter(), []);
 
   const speechAdapter = useMemo(() => createWebSpeechSynthesisAdapter(), []);
@@ -59,6 +62,7 @@ export default function ChatPage() {
     runtimeHook: function useRuntimeHook() {
       return useLocalRuntime(chatAdapter, {
         adapters: {
+          attachments: attachmentAdapter,
           feedback: feedbackAdapter,
           dictation: dictationAdapter,
           speech: speechAdapter,

@@ -5,6 +5,7 @@ import {
   MessagePrimitive,
   ActionBarPrimitive,
   ComposerPrimitive,
+  AttachmentPrimitive,
   SelectionToolbarPrimitive,
   groupPartByType,
 } from "@assistant-ui/react";
@@ -18,6 +19,7 @@ import {
   ThumbsDown,
   Volume2,
   VolumeX,
+  FileText,
 } from "lucide-react";
 import { useState, memo } from "react";
 import {
@@ -47,7 +49,49 @@ function ChatMessageImpl() {
         <AuiIf condition={({ composer }) => !composer?.isEditing}>
           <div className="flex w-full flex-col items-end gap-1">
             <div className="max-w-[80%] rounded-3xl bg-[#f0f4f9] px-5 py-3 text-[15px] leading-relaxed text-[#1f1f1f] shadow-sm dark:bg-[#282a2c] dark:text-[#e3e3e3]">
-              <MessagePrimitive.Content />
+              <div className="mb-2 flex flex-wrap gap-2">
+                <MessagePrimitive.Attachments>
+                  {() => (
+                    <AttachmentPrimitive.Root className="flex items-center gap-2 rounded-2xl bg-white/80 px-3 py-1.5 text-xs border border-[#e3e3e3] dark:bg-black/40 dark:border-[#3c4043]">
+                      <AttachmentPrimitive.unstable_Thumb className="h-5 w-5 shrink-0 rounded overflow-hidden object-cover bg-muted" />
+                      <FileText className="h-3.5 w-3.5 shrink-0 text-[#1a73e8] dark:text-[#8ab4f8]" />
+                      <span className="max-w-[150px] truncate font-medium">
+                        <AttachmentPrimitive.Name />
+                      </span>
+                    </AttachmentPrimitive.Root>
+                  )}
+                </MessagePrimitive.Attachments>
+              </div>
+              <MessagePrimitive.Parts>
+                {({ part }) => {
+                  switch (part.type) {
+                    case "text":
+                      return <p className="whitespace-pre-wrap">{part.text}</p>;
+                    case "image":
+                      return (
+                        <div className="my-1.5 overflow-hidden rounded-2xl border border-[#e3e3e3] dark:border-[#3c4043] max-w-sm">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={part.image}
+                            alt={part.filename || "Attached image"}
+                            className="max-h-72 w-auto object-contain rounded-2xl"
+                          />
+                        </div>
+                      );
+                    case "file":
+                      return (
+                        <div className="my-1.5 flex items-center gap-2 rounded-2xl bg-white/70 px-3.5 py-2 text-xs border border-[#e3e3e3] dark:bg-black/30 dark:border-[#3c4043] max-w-sm">
+                          <FileText className="h-4 w-4 shrink-0 text-[#1a73e8] dark:text-[#8ab4f8]" />
+                          <span className="truncate font-medium">
+                            {part.filename || "Attached file"}
+                          </span>
+                        </div>
+                      );
+                    default:
+                      return null;
+                  }
+                }}
+              </MessagePrimitive.Parts>
             </div>
             <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
               <ActionBarPrimitive.Root>
@@ -122,6 +166,26 @@ function ChatMessageImpl() {
                   }
                   case "text":
                     return <MarkdownText />;
+                  case "image":
+                    return (
+                      <div className="my-2 overflow-hidden rounded-2xl border border-[#e3e3e3] dark:border-[#3c4043] max-w-md">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={part.image}
+                          alt={part.filename || "Assistant image"}
+                          className="max-h-80 w-auto object-contain rounded-2xl"
+                        />
+                      </div>
+                    );
+                  case "file":
+                    return (
+                      <div className="my-2 flex items-center gap-2 rounded-2xl bg-[#f0f4f9] px-4 py-2.5 text-xs border border-[#e3e3e3] dark:bg-[#282a2c] dark:border-[#3c4043] max-w-md">
+                        <FileText className="h-4 w-4 shrink-0 text-[#1a73e8] dark:text-[#8ab4f8]" />
+                        <span className="truncate font-medium">
+                          {part.filename || "File"}
+                        </span>
+                      </div>
+                    );
                   case "reasoning":
                     return <ReasoningText text={part.text} />;
                   case "tool-call":

@@ -1154,12 +1154,43 @@ export class AgentRuntimeClient {
         ...(cleanSessionId ? { session_id: cleanSessionId } : {}),
       };
 
+      if (lastUserMsgObj?.parts && lastUserMsgObj.parts.length > 0) {
+        inputPayload.parts = lastUserMsgObj.parts.map((p) => {
+          if (p.file_data) {
+            return {
+              file_data: {
+                file_uri: p.file_data.file_uri,
+                mime_type: p.file_data.mime_type,
+              },
+            };
+          }
+          if (p.fileData) {
+            return {
+              file_data: {
+                file_uri: p.fileData.file_uri || p.fileData.fileUri || "",
+                mime_type: p.fileData.mime_type || p.fileData.mimeType || "",
+              },
+            };
+          }
+          if (p.function_response || p.functionResponse) {
+            return {
+              function_response: p.function_response || p.functionResponse,
+            };
+          }
+          if (p.function_call || p.functionCall) {
+            return {
+              function_call: p.function_call || p.functionCall,
+            };
+          }
+          return { text: p.text || "" };
+        });
+      }
+
       if (fnResponsePart) {
         const fnResp =
           fnResponsePart.function_response || fnResponsePart.functionResponse;
         inputPayload.function_response = fnResp;
         inputPayload.functionResponse = fnResp;
-        inputPayload.parts = lastUserMsgObj?.parts;
       }
 
       // ADK Reasoning Engine contract expects class_method + input
@@ -1457,10 +1488,24 @@ export class AgentRuntimeClient {
       return;
     }
 
-    // 3. Simulated thought event
+    // 3. Check for multimodal attachments
+    const fileDataParts = lastUserMsg?.parts?.filter((p) => p.file_data || p.fileData);
+    const hasAttachments = fileDataParts && fileDataParts.length > 0;
+    const fileUris = hasAttachments
+      ? fileDataParts
+          .map(
+            (p) => p.file_data?.file_uri || p.fileData?.file_uri || p.fileData?.fileUri
+          )
+          .filter(Boolean)
+          .join(", ")
+      : "";
+
+    // Simulated thought event
     yield {
       event_type: "thought",
-      thought: `Analyzing prompt "${lastPrompt}" and evaluating Google Cloud Agent Runtime state...`,
+      thought: hasAttachments
+        ? `Analyzing prompt "${lastPrompt}" and evaluating multimodal GCS attachment(s): ${fileUris}...`
+        : `Analyzing prompt "${lastPrompt}" and evaluating Google Cloud Agent Runtime state...`,
     };
     await new Promise((r) => setTimeout(r, 100));
 
@@ -1468,14 +1513,18 @@ export class AgentRuntimeClient {
     yield {
       event_type: "tool_call",
       tool_call: {
-        name: "agent_runtime_query",
-        args: { project: "gemini-enterprise", prompt: lastPrompt },
+        name: hasAttachments ? "multimodal_gcs_analyzer" : "agent_runtime_query",
+        args: hasAttachments
+          ? { project: "gemini-enterprise", prompt: lastPrompt, files: fileUris }
+          : { project: "gemini-enterprise", prompt: lastPrompt },
       },
     };
     await new Promise((r) => setTimeout(r, 150));
 
     // 5. Stream text tokens
-    const sampleReply = `Hello! I am connected to your **ADK Agent** running on **Google Cloud Agent Runtime**.\n\nYou asked:\n> "${lastPrompt}"\n\n### System Capabilities:\n- Real-time streaming token generation\n- Google Cloud Agent Runtime Session Service\n- Collapsible thought process inspection\n- ADK tool invocation rendering\n\nHow else can I assist your team today?`;
+    const sampleReply = hasAttachments
+      ? `Hello! I have received and analyzed your multimodal attachment(s):\n> \`${fileUris}\`\n\nPrompt: "${lastPrompt}"\n\n### Multimodal Inspection Summary:\n- File payload successfully verified in Google Cloud Storage\n- Multimodal embeddings processed via Vertex AI Reasoning Engine\n- Real-time streaming response active\n\nHow else can I assist you with this file?`
+      : `Hello! I am connected to your **ADK Agent** running on **Google Cloud Agent Runtime**.\n\nYou asked:\n> "${lastPrompt}"\n\n### System Capabilities:\n- Real-time streaming token generation\n- Google Cloud Agent Runtime Session Service\n- Collapsible thought process inspection\n- ADK tool invocation rendering\n\nHow else can I assist your team today?`;
 
     const chunks = sampleReply.split(" ");
     for (const chunk of chunks) {

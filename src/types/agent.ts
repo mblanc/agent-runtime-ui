@@ -1,6 +1,29 @@
+export interface GcsFileDataPart {
+  file_data: {
+    file_uri: string;
+    mime_type: string;
+  };
+}
+
 export interface AgentMessagePart {
   text?: string;
   thought?: boolean;
+  file_data?: {
+    file_uri: string;
+    mime_type: string;
+  };
+  fileData?: {
+    file_uri?: string;
+    fileUri?: string;
+    mime_type?: string;
+    mimeType?: string;
+  };
+  image?: string;
+  file?: {
+    filename?: string;
+    data: string;
+    mimeType: string;
+  };
   functionCall?: {
     name: string;
     args: Record<string, unknown>;
@@ -20,6 +43,33 @@ export interface AgentMessagePart {
     name: string;
     response: Record<string, unknown>;
   };
+}
+
+export interface PresignFileRequest {
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+}
+
+export interface PresignBatchRequest {
+  files: PresignFileRequest[];
+}
+
+export interface PresignedUploadItem {
+  fileId: string;
+  filename: string;
+  contentType: string;
+  uploadUrl: string; // HTTP PUT signed URL (Expires in 5m)
+  readUrl: string; // HTTP GET signed URL for UI rendering
+  gcsUri: string; // gs://bucket/users/{userId}/{fileId}-{filename}
+}
+
+export interface PresignBatchResponse {
+  uploads: PresignedUploadItem[];
+}
+
+export interface SignedReadResponse {
+  readUrl: string;
 }
 
 export interface AgentMessage {
