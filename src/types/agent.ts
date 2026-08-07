@@ -6,6 +6,17 @@ export interface AgentMessagePart {
     args: Record<string, unknown>;
   };
   functionResponse?: {
+    id?: string;
+    name: string;
+    response: Record<string, unknown>;
+  };
+  function_call?: {
+    id?: string;
+    name: string;
+    args: Record<string, unknown>;
+  };
+  function_response?: {
+    id?: string;
     name: string;
     response: Record<string, unknown>;
   };
@@ -54,10 +65,15 @@ export interface AgentStreamEvent {
     response: string;
   };
   tool_call?: {
+    id?: string;
     name: string;
     args: Record<string, unknown>;
+    status?: "running" | "complete" | "incomplete" | "requires-action";
+    requires_confirmation?: boolean;
+    requires_action?: boolean;
   };
   tool_result?: {
+    id?: string;
     name: string;
     result: Record<string, unknown>;
   };
@@ -111,6 +127,7 @@ export interface ChatRequestBody {
   messages: Array<{
     role: "user" | "assistant" | "system";
     content: string;
+    parts?: AgentMessagePart[];
   }>;
   sessionId?: string;
   modelTier?: GeminiModelTier;

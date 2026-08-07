@@ -6,7 +6,7 @@ import {
   WebSpeechDictationAdapter,
   WebSpeechSynthesisAdapter,
 } from "@assistant-ui/react";
-import type { FeedbackType } from "@/types/agent";
+import type { FeedbackType, AgentMessagePart } from "@/types/agent";
 import { formatAgentDisplayName } from "@/lib/utils";
 
 export function appendToolResultToReasoning(
@@ -14,8 +14,15 @@ export function appendToolResultToReasoning(
   toolName: string,
   resStr: string
 ): string {
-  const header = `:::tool[${toolName}]{status="running"}`;
-  const lastIdx = reasoning.lastIndexOf(header);
+  const runningHeader = `:::tool[${toolName}]{status="running"}`;
+  const reqActionHeader = `:::tool[${toolName}]{status="requires-action"}`;
+
+  let lastIdx = reasoning.lastIndexOf(runningHeader);
+  let header = runningHeader;
+  if (lastIdx === -1) {
+    lastIdx = reasoning.lastIndexOf(reqActionHeader);
+    header = reqActionHeader;
+  }
 
   if (lastIdx !== -1) {
     const before = reasoning.substring(0, lastIdx);
@@ -68,10 +75,39 @@ export function appendAgentResponseToReasoning(
   );
 }
 
-function createYieldContent(reasoning: string, text: string): ChatModelRunResult {
+export interface ToolCallYieldItem {
+  toolCallId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  result?: unknown;
+  status?: {
+    type: "running" | "complete" | "incomplete" | "requires-action";
+    reason?: string;
+  };
+}
+
+type ToolCallContentPart = Extract<
+  NonNullable<ChatModelRunResult["content"]>[number],
+  { type: "tool-call" }
+>;
+
+function createYieldContent(
+  reasoning: string,
+  text: string,
+  toolCalls?: ToolCallYieldItem[]
+): ChatModelRunResult {
   return {
     content: [
       ...(reasoning ? [{ type: "reasoning" as const, text: reasoning }] : []),
+      ...(toolCalls || []).map((tc) => ({
+        type: "tool-call" as const,
+        toolCallId: tc.toolCallId,
+        toolName: tc.toolName,
+        args: tc.args as unknown as ToolCallContentPart["args"],
+        argsText: JSON.stringify(tc.args || {}),
+        result: tc.result,
+        status: tc.status || { type: "complete" as const },
+      })),
       ...(text ? [{ type: "text" as const, text }] : []),
     ],
   };
@@ -87,14 +123,58 @@ export function createGeminiChatAdapter(
     }: ChatModelRunOptions): AsyncGenerator<ChatModelRunResult, void, unknown> {
       const formattedMessages = messages.map((m) => {
         let text = "";
+        const parts: AgentMessagePart[] = [];
+
         for (const part of m.content) {
           if (part.type === "text") {
             text += part.text;
+            parts.push({ text: part.text });
+          } else if (part.type === "tool-call") {
+            const tc = part as {
+              toolCallId?: string;
+              id?: string;
+              toolName?: string;
+              args?: Record<string, unknown>;
+              result?: unknown;
+            };
+            if (tc.result !== undefined) {
+              const responseObj =
+                typeof tc.result === "object" && tc.result !== null
+                  ? (tc.result as Record<string, unknown>)
+                  : { result: tc.result };
+
+              parts.push({
+                function_response: {
+                  id: tc.toolCallId || tc.id || "adk-call-id",
+                  name: tc.toolName || "adk_request_confirmation",
+                  response: responseObj,
+                },
+                functionResponse: {
+                  id: tc.toolCallId || tc.id || "adk-call-id",
+                  name: tc.toolName || "adk_request_confirmation",
+                  response: responseObj,
+                },
+              });
+            } else {
+              parts.push({
+                function_call: {
+                  id: tc.toolCallId || tc.id,
+                  name: tc.toolName || "tool",
+                  args: tc.args || {},
+                },
+                functionCall: {
+                  name: tc.toolName || "tool",
+                  args: tc.args || {},
+                },
+              });
+            }
           }
         }
+
         return {
           role: m.role as "user" | "assistant" | "system",
           content: text,
+          ...(parts.length > 0 ? { parts } : {}),
         };
       });
 
@@ -130,6 +210,7 @@ export function createGeminiChatAdapter(
         let currentAuthor: string | undefined = undefined;
         let currentAuthorText = "";
         let buffer = "";
+        const toolCallsMap = new Map<string, ToolCallYieldItem>();
 
         while (true) {
           const { done, value } = await reader.read();
@@ -162,7 +243,11 @@ export function createGeminiChatAdapter(
               if (parsed.event_type === "thought" && parsed.thought) {
                 accumulatedReasoning +=
                   (accumulatedReasoning ? "\n" : "") + parsed.thought;
-                yield createYieldContent(accumulatedReasoning, accumulatedText);
+                yield createYieldContent(
+                  accumulatedReasoning,
+                  accumulatedText,
+                  Array.from(toolCallsMap.values())
+                );
               } else if (parsed.event_type === "content" && parsed.content) {
                 const author = parsed.author as string | undefined;
 
@@ -189,7 +274,11 @@ export function createGeminiChatAdapter(
                   currentAuthorText += parsed.content;
                   accumulatedText += parsed.content;
                 }
-                yield createYieldContent(accumulatedReasoning, accumulatedText);
+                yield createYieldContent(
+                  accumulatedReasoning,
+                  accumulatedText,
+                  Array.from(toolCallsMap.values())
+                );
               } else if (parsed.event_type === "agent_call" && parsed.agent_call) {
                 if (currentAuthor && currentAuthorText.trim()) {
                   const name = formatAgentDisplayName(currentAuthor);
@@ -210,7 +299,11 @@ export function createGeminiChatAdapter(
                   ? `**Task Input:**\n\`\`\`json\n${typeof parsed.agent_call.input === "string" ? parsed.agent_call.input : JSON.stringify(parsed.agent_call.input, null, 2)}\n\`\`\``
                   : "";
                 accumulatedReasoning += `\n\n:::subagent[${name}]{status="running" agent="${parsed.agent_call.agent}"}\n${inputStr}\n:::`;
-                yield createYieldContent(accumulatedReasoning, accumulatedText);
+                yield createYieldContent(
+                  accumulatedReasoning,
+                  accumulatedText,
+                  Array.from(toolCallsMap.values())
+                );
               } else if (
                 parsed.event_type === "agent_response" &&
                 parsed.agent_response
@@ -237,7 +330,11 @@ export function createGeminiChatAdapter(
                   parsed.agent_response.response,
                   name
                 );
-                yield createYieldContent(accumulatedReasoning, accumulatedText);
+                yield createYieldContent(
+                  accumulatedReasoning,
+                  accumulatedText,
+                  Array.from(toolCallsMap.values())
+                );
               } else if (parsed.event_type === "tool_call" && parsed.tool_call) {
                 if (currentAuthor && currentAuthorText.trim()) {
                   const name = formatAgentDisplayName(currentAuthor);
@@ -253,31 +350,97 @@ export function createGeminiChatAdapter(
                 }
 
                 const toolName = parsed.tool_call.name || "agent_tool";
-                const argsStr = JSON.stringify(parsed.tool_call.args || {}, null, 2);
-                accumulatedReasoning += `\n\n:::tool[${toolName}]{status="running"}\n**Arguments:**\n\`\`\`json\n${argsStr}\n\`\`\`\n:::`;
-                yield createYieldContent(accumulatedReasoning, accumulatedText);
+                const toolCallId =
+                  parsed.tool_call.id ||
+                  `call_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+                const args = parsed.tool_call.args || {};
+                const isRequiresAction =
+                  toolName === "adk_request_confirmation" ||
+                  parsed.tool_call.status === "requires-action" ||
+                  parsed.tool_call.requires_confirmation === true ||
+                  parsed.tool_call.requires_action === true;
+
+                const toolStatus = isRequiresAction
+                  ? { type: "requires-action" as const, reason: "interrupt" as const }
+                  : { type: "running" as const };
+
+                toolCallsMap.set(toolCallId, {
+                  toolCallId,
+                  toolName,
+                  args,
+                  status: toolStatus,
+                });
+
+                const argsStr = JSON.stringify(args, null, 2);
+                accumulatedReasoning += `\n\n:::tool[${toolName}]{status="${isRequiresAction ? "requires-action" : "running"}"}\n**Arguments:**\n\`\`\`json\n${argsStr}\n\`\`\`\n:::`;
+                yield createYieldContent(
+                  accumulatedReasoning,
+                  accumulatedText,
+                  Array.from(toolCallsMap.values())
+                );
               } else if (parsed.event_type === "tool_result" && parsed.tool_result) {
                 const toolName = parsed.tool_result.name || "agent_tool";
-                const resStr = JSON.stringify(parsed.tool_result.result || {}, null, 2);
+                const result = parsed.tool_result.result || {};
+                const resStr = JSON.stringify(result, null, 2);
+
+                let matched = false;
+                for (const tc of toolCallsMap.values()) {
+                  if (tc.toolName === toolName && tc.status?.type !== "complete") {
+                    tc.result = result;
+                    tc.status = { type: "complete" };
+                    matched = true;
+                    break;
+                  }
+                }
+                if (!matched) {
+                  const toolCallId =
+                    parsed.tool_result.id ||
+                    `result_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+                  toolCallsMap.set(toolCallId, {
+                    toolCallId,
+                    toolName,
+                    args: {},
+                    result,
+                    status: { type: "complete" },
+                  });
+                }
+
                 accumulatedReasoning = appendToolResultToReasoning(
                   accumulatedReasoning,
                   toolName,
                   resStr
                 );
-                yield createYieldContent(accumulatedReasoning, accumulatedText);
+                yield createYieldContent(
+                  accumulatedReasoning,
+                  accumulatedText,
+                  Array.from(toolCallsMap.values())
+                );
               } else if (parsed.event_type === "error" && parsed.error) {
                 accumulatedText +=
                   (accumulatedText ? "\n\n" : "") +
                   `⚠️ **Agent Runtime Error:** ${parsed.error}`;
-                yield createYieldContent(accumulatedReasoning, accumulatedText);
+                yield createYieldContent(
+                  accumulatedReasoning,
+                  accumulatedText,
+                  Array.from(toolCallsMap.values())
+                );
                 return;
               } else if (parsed.event_type === "done") {
                 // Finalize any running markers to complete
+                for (const tc of toolCallsMap.values()) {
+                  if (tc.status?.type === "running") {
+                    tc.status = { type: "complete" };
+                  }
+                }
                 accumulatedReasoning = accumulatedReasoning.replaceAll(
                   'status="running"',
                   'status="complete"'
                 );
-                yield createYieldContent(accumulatedReasoning, accumulatedText);
+                yield createYieldContent(
+                  accumulatedReasoning,
+                  accumulatedText,
+                  Array.from(toolCallsMap.values())
+                );
                 return;
               }
             } catch (e: unknown) {

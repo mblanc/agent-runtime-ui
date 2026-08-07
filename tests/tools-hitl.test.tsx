@@ -1,0 +1,467 @@
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
+import { NextRequest } from "next/server";
+import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
+import {
+  createGeminiChatAdapter,
+  appendToolResultToReasoning,
+} from "@/lib/gemini-runtime-adapter";
+import { AgentRuntimeClient } from "@/lib/agent-runtime-client";
+import { POST as chatRoute } from "@/app/api/chat/route";
+import { auth } from "@/lib/auth";
+
+describe("ToolFallback & ADK HITL Integration", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  describe("ToolFallback Rendering & States", () => {
+    it("renders running state with animated loader and running badge", () => {
+      render(
+        <ToolFallback toolName="query_enterprise_database" status={{ type: "running" }} />
+      );
+
+      expect(screen.getByText("query_enterprise_database")).toBeDefined();
+      expect(screen.getByText("Running")).toBeDefined();
+      expect(screen.getByText("View Details")).toBeDefined();
+    });
+
+    it("renders complete state with executed badge and checkmark", () => {
+      render(
+        <ToolFallback
+          toolName="compute_metrics"
+          status={{ type: "complete" }}
+          result={{ cpu: "12%", memory: "450MB" }}
+        />
+      );
+
+      expect(screen.getByText("compute_metrics")).toBeDefined();
+      expect(screen.getByText("Executed")).toBeDefined();
+    });
+
+    it("renders error state when status is incomplete or has error", () => {
+      render(
+        <ToolFallback
+          toolName="failing_tool"
+          status={{ type: "incomplete", error: "Permission denied" }}
+        />
+      );
+
+      expect(screen.getByText("failing_tool")).toBeDefined();
+      expect(screen.getByText("Error")).toBeDefined();
+    });
+
+    it("renders requires-action state with amber alert badge and card", () => {
+      render(
+        <ToolFallback
+          toolName="adk_request_confirmation"
+          status={{ type: "requires-action" }}
+          args={{
+            prompt: "Do you confirm terminating instance test-vm-01?",
+            action_description: "Delete VM instance",
+          }}
+        />
+      );
+
+      expect(screen.getByText("adk_request_confirmation")).toBeDefined();
+      expect(screen.getByText("Requires Approval")).toBeDefined();
+      expect(
+        screen.getByText("Do you confirm terminating instance test-vm-01?")
+      ).toBeDefined();
+      expect(
+        screen.getByRole("button", { name: /approve tool execution/i })
+      ).toBeDefined();
+      expect(
+        screen.getByRole("button", { name: /decline tool execution/i })
+      ).toBeDefined();
+    });
+  });
+
+  describe("Expand/Collapse Details", () => {
+    it("toggles argument and result inspection on header click", () => {
+      render(
+        <ToolFallback
+          toolName="fetch_weather"
+          args={{ location: "San Francisco, CA", units: "metric" }}
+          result={{ temperature: 19, conditions: "Sunny" }}
+          status={{ type: "complete" }}
+        />
+      );
+
+      // Collapsed by default
+      expect(screen.queryByText(/San Francisco, CA/)).toBeNull();
+      expect(screen.queryByText(/Sunny/)).toBeNull();
+      expect(screen.getByText("View Details")).toBeDefined();
+
+      // Click to expand
+      const trigger = screen.getByRole("button", { name: /fetch_weather/i });
+      fireEvent.click(trigger);
+
+      expect(screen.getByText("Collapse")).toBeDefined();
+      expect(screen.getByText(/San Francisco, CA/)).toBeDefined();
+      expect(screen.getByText(/Sunny/)).toBeDefined();
+
+      // Click to collapse
+      fireEvent.click(trigger);
+      expect(screen.getByText("View Details")).toBeDefined();
+      expect(screen.queryByText(/San Francisco, CA/)).toBeNull();
+    });
+
+    it("handles raw string args and argsText correctly", () => {
+      render(
+        <ToolFallback
+          toolName="parse_json"
+          argsText='{"dataset": "customer_records", "rows": 100}'
+          result='{"processed": true}'
+          defaultOpen={true}
+        />
+      );
+
+      expect(screen.getByText(/customer_records/)).toBeDefined();
+      expect(screen.getByText(/processed/)).toBeDefined();
+    });
+  });
+
+  describe("HITL Approval & Decline Actions", () => {
+    it("invokes addResult and respondToApproval with confirmed: true on Approve click", () => {
+      const addResult = vi.fn();
+      const respondToApproval = vi.fn();
+
+      render(
+        <ToolFallback
+          toolName="adk_request_confirmation"
+          status={{ type: "requires-action" }}
+          args={{ prompt: "Authorize critical database drop table?" }}
+          addResult={addResult}
+          respondToApproval={respondToApproval}
+        />
+      );
+
+      const approveBtn = screen.getByRole("button", {
+        name: /approve tool execution/i,
+      });
+      fireEvent.click(approveBtn);
+
+      expect(addResult).toHaveBeenCalledWith({ confirmed: true });
+      expect(respondToApproval).toHaveBeenCalledWith({
+        approved: true,
+        confirmed: true,
+      });
+
+      // Shows approved confirmation message
+      expect(screen.getByText(/approved by user/i)).toBeDefined();
+    });
+
+    it("invokes addResult and respondToApproval with confirmed: false on Decline click", () => {
+      const addResult = vi.fn();
+      const respondToApproval = vi.fn();
+
+      render(
+        <ToolFallback
+          toolName="adk_request_confirmation"
+          status={{ type: "requires-action" }}
+          args={{ prompt: "Authorize critical database drop table?" }}
+          addResult={addResult}
+          respondToApproval={respondToApproval}
+        />
+      );
+
+      const declineBtn = screen.getByRole("button", {
+        name: /decline tool execution/i,
+      });
+      fireEvent.click(declineBtn);
+
+      expect(addResult).toHaveBeenCalledWith({ confirmed: false });
+      expect(respondToApproval).toHaveBeenCalledWith({
+        approved: false,
+        confirmed: false,
+      });
+
+      // Shows declined confirmation message
+      expect(screen.getByText(/declined by user/i)).toBeDefined();
+    });
+
+    it("falls back to default prompt when args contains no custom message", () => {
+      render(
+        <ToolFallback
+          toolName="custom_tool"
+          status={{ type: "requires-action" }}
+          args={{ randomKey: 123 }}
+        />
+      );
+
+      expect(screen.getByText("Tool requires human approval to proceed")).toBeDefined();
+    });
+
+    it("displays existing resolved state if result is provided with confirmed: true", () => {
+      render(
+        <ToolFallback
+          toolName="adk_request_confirmation"
+          status={{ type: "requires-action" }}
+          args={{ prompt: "Authorize migration" }}
+          result={{ confirmed: true }}
+        />
+      );
+
+      expect(screen.getByText(/approved by user/i)).toBeDefined();
+      expect(
+        screen.queryByRole("button", { name: /approve tool execution/i })
+      ).toBeNull();
+    });
+
+    it("displays existing resolved state if result is provided with confirmed: false", () => {
+      render(
+        <ToolFallback
+          toolName="adk_request_confirmation"
+          status={{ type: "requires-action" }}
+          args={{ prompt: "Authorize migration" }}
+          result={{ confirmed: false }}
+        />
+      );
+
+      expect(screen.getByText(/declined by user/i)).toBeDefined();
+      expect(
+        screen.queryByRole("button", { name: /decline tool execution/i })
+      ).toBeNull();
+    });
+  });
+
+  describe("Stream Integration & Payload Formatting", () => {
+    it("formats function_response and functionResponse payload when tool result is present", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        body: {
+          getReader() {
+            let done = false;
+            return {
+              async read() {
+                if (done) return { done: true, value: undefined };
+                done = true;
+                const encoder = new TextEncoder();
+                return {
+                  done: false,
+                  value: encoder.encode(
+                    'data: {"event_type":"content","content":"Approval acknowledged"}\n\ndata: [DONE]\n\n'
+                  ),
+                };
+              },
+            };
+          },
+        },
+      });
+      global.fetch = mockFetch as unknown as typeof fetch;
+
+      const testMessages = [
+        {
+          id: "m-1",
+          role: "assistant" as const,
+          content: [
+            {
+              type: "tool-call" as const,
+              toolCallId: "call-12345",
+              toolName: "adk_request_confirmation",
+              args: { prompt: "Confirm drop" },
+              argsText: '{"prompt":"Confirm drop"}',
+              result: { confirmed: true },
+            },
+          ],
+          attachments: [],
+          metadata: { custom: {} },
+          createdAt: new Date(),
+          status: { type: "complete" as const, reason: "stop" as const },
+        },
+      ];
+
+      const runOptions = {
+        messages: testMessages,
+        abortSignal: new AbortController().signal,
+        runConfig: {},
+        context: undefined,
+        unstable_getMessage: () => undefined,
+      };
+
+      const adapter = createGeminiChatAdapter();
+      const generator = adapter.run(
+        runOptions as unknown as Parameters<typeof adapter.run>[0]
+      );
+
+      const results = [];
+      if (Symbol.asyncIterator in generator) {
+        for await (const res of generator) {
+          results.push(res);
+        }
+      }
+
+      expect(mockFetch).toHaveBeenCalled();
+      const callArgs = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(callArgs.messages[0].parts[0].function_response).toEqual({
+        id: "call-12345",
+        name: "adk_request_confirmation",
+        response: { confirmed: true },
+      });
+      expect(callArgs.messages[0].parts[0].functionResponse).toEqual({
+        id: "call-12345",
+        name: "adk_request_confirmation",
+        response: { confirmed: true },
+      });
+    });
+
+    it("appendToolResultToReasoning replaces requires-action header cleanly", () => {
+      const initialReasoning =
+        ':::tool[adk_request_confirmation]{status="requires-action"}\n**Arguments:**\n```json\n{\n  "prompt": "Delete"\n}\n```\n:::';
+      const updated = appendToolResultToReasoning(
+        initialReasoning,
+        "adk_request_confirmation",
+        JSON.stringify({ confirmed: true }, null, 2)
+      );
+
+      expect(updated).toContain('status="complete"');
+      expect(updated).not.toContain('status="requires-action"');
+      expect(updated).toContain("**Result:**");
+    });
+  });
+
+  describe("AgentRuntimeClient & Mock Mode HITL", () => {
+    it("yields tool_call with requires-action on prompt requesting confirmation", async () => {
+      const client = new AgentRuntimeClient();
+      const events = [];
+
+      for await (const evt of client.streamQuery(
+        {
+          messages: [
+            {
+              role: "user",
+              content: "Please delete the production database records",
+            },
+          ],
+        },
+        "test-user"
+      )) {
+        events.push(evt);
+      }
+
+      const toolCallEvt = events.find((e) => e.event_type === "tool_call");
+      expect(toolCallEvt).toBeDefined();
+      expect(toolCallEvt?.tool_call?.name).toBe("adk_request_confirmation");
+      expect(toolCallEvt?.tool_call?.status).toBe("requires-action");
+      expect(toolCallEvt?.tool_call?.requires_confirmation).toBe(true);
+    });
+
+    it("yields confirmed tool_result and resumed execution when receiving function_response", async () => {
+      const client = new AgentRuntimeClient();
+      const events = [];
+
+      for await (const evt of client.streamQuery(
+        {
+          messages: [
+            {
+              role: "user",
+              content: "",
+              parts: [
+                {
+                  function_response: {
+                    id: "call-99",
+                    name: "adk_request_confirmation",
+                    response: { confirmed: true },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+        "test-user"
+      )) {
+        events.push(evt);
+      }
+
+      const toolResultEvt = events.find((e) => e.event_type === "tool_result");
+      expect(toolResultEvt).toBeDefined();
+      expect(toolResultEvt?.tool_result?.name).toBe("adk_request_confirmation");
+      expect(toolResultEvt?.tool_result?.result).toEqual({ confirmed: true });
+
+      const contentEvt = events.find(
+        (e) => e.event_type === "content" && e.content?.includes("Approved")
+      );
+      expect(contentEvt).toBeDefined();
+    });
+
+    it("yields declined tool_result when receiving function_response with confirmed: false", async () => {
+      const client = new AgentRuntimeClient();
+      const events = [];
+
+      for await (const evt of client.streamQuery(
+        {
+          messages: [
+            {
+              role: "user",
+              content: "",
+              parts: [
+                {
+                  function_response: {
+                    id: "call-100",
+                    name: "adk_request_confirmation",
+                    response: { confirmed: false },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+        "test-user"
+      )) {
+        events.push(evt);
+      }
+
+      const toolResultEvt = events.find((e) => e.event_type === "tool_result");
+      expect(toolResultEvt).toBeDefined();
+      expect(toolResultEvt?.tool_result?.result).toEqual({ confirmed: false });
+
+      const contentEvt = events.find(
+        (e) => e.event_type === "content" && e.content?.includes("Declined")
+      );
+      expect(contentEvt).toBeDefined();
+    });
+  });
+
+  describe("API Chat Route with HITL Payload", () => {
+    it("streams confirmation tool_call via /api/chat when action requires confirmation", async () => {
+      vi.spyOn(auth.api, "getSession").mockResolvedValueOnce({
+        user: {
+          id: "test-user",
+          name: "Test User",
+          email: "test@example.com",
+        },
+        session: {
+          expiresAt: new Date(Date.now() + 86400000).toISOString(),
+        },
+      });
+
+      const req = new NextRequest("http://localhost:3000/api/chat", {
+        method: "POST",
+        body: JSON.stringify({
+          messages: [
+            {
+              role: "user",
+              content: "Please confirm delete cluster resource",
+            },
+          ],
+        }),
+      });
+
+      const res = await chatRoute(req);
+      expect(res.status).toBe(200);
+
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let text = "";
+      while (true) {
+        const { done, value } = await reader!.read();
+        if (done) break;
+        text += decoder.decode(value, { stream: true });
+      }
+
+      expect(text).toContain("adk_request_confirmation");
+      expect(text).toContain("requires-action");
+    });
+  });
+});

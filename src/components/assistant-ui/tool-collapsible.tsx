@@ -73,7 +73,14 @@ export function ToolCollapsible({
             </span>
           )}
 
-          {!isRunning && !isError && (
+          {status === "requires-action" && (
+            <span className="flex items-center gap-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+              <AlertCircle className="h-3 w-3" />
+              <span>Requires Approval</span>
+            </span>
+          )}
+
+          {!isRunning && status !== "requires-action" && !isError && (
             <span className="flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400">
               <CheckCircle2 className="h-3 w-3" />
               <span>Executed</span>

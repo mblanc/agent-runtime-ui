@@ -541,14 +541,16 @@ export function parseRawSessionEvent(
             if (typeof p.text === "string" && p.text.trim()) {
               textPieces.push(p.text.trim());
             }
-            if (p.functionCall && typeof p.functionCall === "object") {
-              const fn = p.functionCall as Record<string, unknown>;
+            const fnCall = p.functionCall || p.function_call;
+            if (fnCall && typeof fnCall === "object") {
+              const fn = fnCall as Record<string, unknown>;
               const name = String(fn.name || "agent_tool");
               const args = (fn.args as Record<string, unknown>) || {};
               parsedToolCalls.push({ name, args });
             }
-            if (p.functionResponse && typeof p.functionResponse === "object") {
-              const fn = p.functionResponse as Record<string, unknown>;
+            const fnResp = p.functionResponse || p.function_response;
+            if (fnResp && typeof fnResp === "object") {
+              const fn = fnResp as Record<string, unknown>;
               const name = String(fn.name || "tool");
               const result = (fn.response as Record<string, unknown>) || {};
               parsedToolResults.push({ name, result });
@@ -1135,8 +1137,11 @@ export class AgentRuntimeClient {
       // Endpoint for Vertex AI Reasoning Engine streamQuery
       const endpoint = `https://${this.location}-aiplatform.googleapis.com/v1/${this.getNormalizedEngineResource()}:streamQuery`;
 
-      const lastUserMessage =
-        [...body.messages].reverse().find((m) => m.role === "user")?.content || "";
+      const lastUserMsgObj = [...body.messages].reverse().find((m) => m.role === "user");
+      const lastUserMessage = lastUserMsgObj?.content || "";
+      const fnResponsePart = lastUserMsgObj?.parts?.find(
+        (p) => p.function_response || p.functionResponse
+      );
 
       const cleanSessionId =
         body.sessionId && !isLocalSessionId(body.sessionId)
@@ -1148,6 +1153,14 @@ export class AgentRuntimeClient {
         user_id: userId,
         ...(cleanSessionId ? { session_id: cleanSessionId } : {}),
       };
+
+      if (fnResponsePart) {
+        const fnResp =
+          fnResponsePart.function_response || fnResponsePart.functionResponse;
+        inputPayload.function_response = fnResp;
+        inputPayload.functionResponse = fnResp;
+        inputPayload.parts = lastUserMsgObj?.parts;
+      }
 
       // ADK Reasoning Engine contract expects class_method + input
       const response = await fetch(endpoint, {
@@ -1360,17 +1373,98 @@ export class AgentRuntimeClient {
   private async *mockStreamQuery(
     body: ChatRequestBody
   ): AsyncGenerator<AgentStreamEvent, void, unknown> {
-    const lastPrompt =
-      [...body.messages].reverse().find((m) => m.role === "user")?.content || "Hello";
+    const lastUserMsg = [...body.messages].reverse().find((m) => m.role === "user");
+    const lastPrompt = lastUserMsg?.content || "Hello";
+    const fnResponsePart = lastUserMsg?.parts?.find(
+      (p) => p.function_response || p.functionResponse
+    );
 
-    // 1. Send simulated thought event
+    // 1. If this is a function response to a prior confirmation request:
+    if (fnResponsePart) {
+      const fnResp = fnResponsePart.function_response || fnResponsePart.functionResponse;
+      const isConfirmed =
+        fnResp?.response?.confirmed === true || fnResp?.response?.approved === true;
+
+      yield {
+        event_type: "thought",
+        thought: `Received human authorization decision: ${isConfirmed ? "APPROVED" : "DECLINED"}. Resuming workflow execution...`,
+      };
+      await new Promise((r) => setTimeout(r, 80));
+
+      yield {
+        event_type: "tool_result",
+        tool_result: {
+          name: fnResp?.name || "adk_request_confirmation",
+          result: fnResp?.response || { confirmed: isConfirmed },
+        },
+      };
+      await new Promise((r) => setTimeout(r, 80));
+
+      const resolutionText = isConfirmed
+        ? "Human authorization received: **Approved**. The requested operation was completed successfully on Google Cloud Agent Runtime."
+        : "Human authorization received: **Declined**. The operation was safely aborted.";
+
+      const chunks = resolutionText.split(" ");
+      for (const chunk of chunks) {
+        yield {
+          event_type: "content",
+          content: chunk + " ",
+        };
+        await new Promise((r) => setTimeout(r, 15));
+      }
+
+      yield { event_type: "done" };
+      return;
+    }
+
+    // 2. If prompt asks for confirmation or critical action:
+    const lowerPrompt = lastPrompt.toLowerCase();
+    const isConfirmationTrigger =
+      lowerPrompt.includes("confirm") ||
+      lowerPrompt.includes("delete") ||
+      lowerPrompt.includes("approval") ||
+      lowerPrompt.includes("hitl") ||
+      lowerPrompt.includes("adk_request_confirmation");
+
+    if (isConfirmationTrigger) {
+      yield {
+        event_type: "thought",
+        thought: `Analyzing action "${lastPrompt}" requiring human authorization...`,
+      };
+      await new Promise((r) => setTimeout(r, 80));
+
+      yield {
+        event_type: "tool_call",
+        tool_call: {
+          name: "adk_request_confirmation",
+          args: {
+            prompt: `Do you approve the execution of: "${lastPrompt}"?`,
+            action_description: `Authorize execution: ${lastPrompt}`,
+          },
+          status: "requires-action",
+          requires_confirmation: true,
+          requires_action: true,
+        },
+      };
+
+      yield {
+        event_type: "content",
+        content:
+          "This tool operation requires human approval to proceed. Please review and approve or decline above.",
+      };
+
+      yield { event_type: "done" };
+      return;
+    }
+
+    // 3. Simulated thought event
     yield {
       event_type: "thought",
       thought: `Analyzing prompt "${lastPrompt}" and evaluating Google Cloud Agent Runtime state...`,
     };
     await new Promise((r) => setTimeout(r, 100));
 
-    // 2. Send simulated tool execution
+    // 4. Simulated tool execution
     yield {
       event_type: "tool_call",
       tool_call: {
@@ -1380,7 +1474,7 @@ export class AgentRuntimeClient {
     };
     await new Promise((r) => setTimeout(r, 150));
 
-    // 3. Stream text tokens
+    // 5. Stream text tokens
     const sampleReply = `Hello! I am connected to your **ADK Agent** running on **Google Cloud Agent Runtime**.\n\nYou asked:\n> "${lastPrompt}"\n\n### System Capabilities:\n- Real-time streaming token generation\n- Google Cloud Agent Runtime Session Service\n- Collapsible thought process inspection\n- ADK tool invocation rendering\n\nHow else can I assist your team today?`;
 
     const chunks = sampleReply.split(" ");
