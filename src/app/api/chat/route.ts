@@ -6,9 +6,14 @@ import { ChatRequestBody } from "@/types/agent";
 export const runtime = "nodejs";
 
 export const POST = withAuth(async (req, { userId }) => {
-  const body: ChatRequestBody = await req.json();
+  let body: ChatRequestBody;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
-  if (!body.messages || !Array.isArray(body.messages)) {
+  if (!body || !body.messages || !Array.isArray(body.messages)) {
     return NextResponse.json({ error: "Invalid messages array" }, { status: 400 });
   }
 
