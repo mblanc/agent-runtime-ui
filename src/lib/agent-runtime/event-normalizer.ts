@@ -263,6 +263,7 @@ export function groupTurnSessionEvents(
     const subAgentsList = [];
     const usedIndices = new Set<number>();
     const usedResultKeys = new Set<string>();
+    const processedCallKeys = new Set<string>();
 
     for (let i = 0; i < intermediateEvents.length; i++) {
       if (usedIndices.has(i)) continue;
@@ -299,42 +300,62 @@ export function groupTurnSessionEvents(
       for (const call of calls) {
         const toolName = call.name || "tool";
         const argsStr = JSON.stringify(call.args || {}, null, 2);
+        const callKey = `${toolName}-${argsStr}`;
 
         let matchedResultStr: string | undefined;
-        for (let j = i + 1; j < intermediateEvents.length; j++) {
-          const nextResults = getEventToolResults(intermediateEvents[j]);
 
-          const resIdx = nextResults.findIndex(
-            (r, idx) => r.name === toolName && !usedResultKeys.has(`${j}-${idx}`)
+        // 1. Check if the result is in the same event
+        const sameEventResIdx = results.findIndex(
+          (r, idx) => r.name === toolName && !usedResultKeys.has(`${i}-${idx}`)
+        );
+        if (sameEventResIdx !== -1) {
+          usedResultKeys.add(`${i}-${sameEventResIdx}`);
+          matchedResultStr = JSON.stringify(
+            results[sameEventResIdx].result || {},
+            null,
+            2
           );
-          if (resIdx !== -1) {
-            usedResultKeys.add(`${j}-${resIdx}`);
-            matchedResultStr = JSON.stringify(nextResults[resIdx].result || {}, null, 2);
-            break;
+        } else {
+          // 2. Look ahead in subsequent intermediate events
+          for (let j = i + 1; j < intermediateEvents.length; j++) {
+            const nextResults = getEventToolResults(intermediateEvents[j]);
+
+            const resIdx = nextResults.findIndex(
+              (r, idx) => r.name === toolName && !usedResultKeys.has(`${j}-${idx}`)
+            );
+            if (resIdx !== -1) {
+              usedResultKeys.add(`${j}-${resIdx}`);
+              matchedResultStr = JSON.stringify(
+                nextResults[resIdx].result || {},
+                null,
+                2
+              );
+              break;
+            }
           }
         }
 
         if (matchedResultStr !== undefined) {
+          processedCallKeys.add(callKey);
           reasoningBlocks.push(
             `:::tool[${toolName}]{status="complete"}\n**Arguments:**\n\`\`\`json\n${argsStr}\n\`\`\`\n**Result:**\n\`\`\`json\n${matchedResultStr}\n\`\`\`\n:::`
           );
-        } else {
+        } else if (!processedCallKeys.has(callKey)) {
+          processedCallKeys.add(callKey);
           reasoningBlocks.push(
             `:::tool[${toolName}]{status="complete"}\n**Arguments:**\n\`\`\`json\n${argsStr}\n\`\`\`\n:::`
           );
         }
       }
 
-      if (calls.length === 0 && results.length > 0) {
-        for (let resIdx = 0; resIdx < results.length; resIdx++) {
-          if (usedResultKeys.has(`${i}-${resIdx}`)) continue;
-          const res = results[resIdx];
-          const toolName = res.name || "tool";
-          const resStr = JSON.stringify(res.result || {}, null, 2);
-          reasoningBlocks.push(
-            `:::tool[${toolName}]{status="complete"}\n**Result:**\n\`\`\`json\n${resStr}\n\`\`\`\n:::`
-          );
-        }
+      for (let resIdx = 0; resIdx < results.length; resIdx++) {
+        if (usedResultKeys.has(`${i}-${resIdx}`)) continue;
+        const res = results[resIdx];
+        const toolName = res.name || "tool";
+        const resStr = JSON.stringify(res.result || {}, null, 2);
+        reasoningBlocks.push(
+          `:::tool[${toolName}]{status="complete"}\n**Result:**\n\`\`\`json\n${resStr}\n\`\`\`\n:::`
+        );
       }
     }
 

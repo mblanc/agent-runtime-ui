@@ -6,32 +6,62 @@ import {
 import type { AgentMessagePart } from "@/types/agent";
 import { formatAgentDisplayName } from "@/lib/utils";
 
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export function appendToolResultToReasoning(
   reasoning: string,
   toolName: string,
   resStr: string
 ): string {
-  const runningHeader = `:::tool[${toolName}]{status="running"}`;
-  const reqActionHeader = `:::tool[${toolName}]{status="requires-action"}`;
+  const toolBlockRegex = new RegExp(
+    `:::tool\\[${escapeRegex(toolName)}\\](\\{[^}]*status="(?:running|requires-action)"[^}]*\\})\\s*\\r?\\n([\\s\\S]*?)(?:\\r?\\n:::|$)`,
+    "g"
+  );
 
-  let lastIdx = reasoning.lastIndexOf(runningHeader);
-  let header = runningHeader;
-  if (lastIdx === -1) {
-    lastIdx = reasoning.lastIndexOf(reqActionHeader);
-    header = reqActionHeader;
+  let lastMatch: RegExpExecArray | null = null;
+  let match: RegExpExecArray | null;
+  while ((match = toolBlockRegex.exec(reasoning)) !== null) {
+    lastMatch = match;
   }
 
-  if (lastIdx !== -1) {
-    const before = reasoning.substring(0, lastIdx);
-    const after = reasoning.substring(lastIdx);
-    const closeIdx = after.indexOf("\n:::", header.length);
-    if (closeIdx !== -1) {
-      const blockInside = after
-        .substring(0, closeIdx)
-        .replace(header, `:::tool[${toolName}]{status="complete"}`);
-      const remainder = after.substring(closeIdx);
-      return `${before}${blockInside}\n**Result:**\n\`\`\`json\n${resStr}\n\`\`\`${remainder}`;
+  if (lastMatch) {
+    const matchIndex = lastMatch.index;
+    const fullMatch = lastMatch[0];
+    const attrGroup = lastMatch[1];
+    const bodyGroup = lastMatch[2];
+
+    const updatedAttr = attrGroup.replace(
+      /status="(?:running|requires-action)"/,
+      'status="complete"'
+    );
+
+    let updatedBody = bodyGroup.trimEnd();
+    if (updatedBody.includes("**Result:**")) {
+      updatedBody = updatedBody.replace(
+        /\*\*Result:\*\*\s*\r?\n```(?:json)?\s*\r?\n[\s\S]*?\r?\n```/i,
+        `**Result:**\n\`\`\`json\n${resStr}\n\`\`\``
+      );
+    } else {
+      updatedBody = `${updatedBody}\n**Result:**\n\`\`\`json\n${resStr}\n\`\`\``;
     }
+
+    const replacement = `:::tool[${toolName}]${updatedAttr}\n${updatedBody}\n:::`;
+    return (
+      reasoning.substring(0, matchIndex) +
+      replacement +
+      reasoning.substring(matchIndex + fullMatch.length)
+    );
+  }
+
+  // If no running block was found, check if a complete block already exists with results
+  const completeRegex = new RegExp(
+    `:::tool\\[${escapeRegex(toolName)}\\]\\{status="complete"\\}`,
+    "i"
+  );
+  if (completeRegex.test(reasoning)) {
+    return reasoning;
   }
 
   return (
@@ -389,13 +419,31 @@ export function createGeminiChatAdapter(
                 } else if (parsed.event_type === "tool_call" && parsed.tool_call) {
                   const tc = parsed.tool_call;
                   const toolName = tc.name || "tool";
-                  const toolCallId =
-                    tc.id ||
-                    `call_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
                   const isReqAction =
                     tc.status === "requires-action" ||
                     tc.requires_action ||
                     tc.requires_confirmation;
+
+                  let existingCallId: string | undefined;
+                  if (tc.id && toolCallsMap.has(tc.id)) {
+                    existingCallId = tc.id;
+                  } else {
+                    for (const [id, item] of toolCallsMap.entries()) {
+                      if (
+                        item.toolName === toolName &&
+                        item.status?.type !== "complete"
+                      ) {
+                        existingCallId = id;
+                        break;
+                      }
+                    }
+                  }
+
+                  const toolCallId =
+                    existingCallId ||
+                    tc.id ||
+                    `call_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+                  const isNewCall = !existingCallId;
 
                   toolCallsMap.set(toolCallId, {
                     toolCallId,
@@ -407,10 +455,19 @@ export function createGeminiChatAdapter(
                     },
                   });
 
-                  const argsStr = JSON.stringify(tc.args || {}, null, 2);
-                  const statusTag = isReqAction ? "requires-action" : "running";
-                  const toolBlock = `\n\n:::tool[${toolName}]{status="${statusTag}"}\n**Arguments:**\n\`\`\`json\n${argsStr}\n\`\`\`\n:::`;
-                  accumulatedReasoning += toolBlock;
+                  if (isNewCall) {
+                    const argsStr = JSON.stringify(tc.args || {}, null, 2);
+                    const statusTag = isReqAction ? "requires-action" : "running";
+                    const runningRegex = new RegExp(
+                      `:::tool\\[${escapeRegex(toolName)}\\]\\{[^}]*status="(?:running|requires-action)"`,
+                      "i"
+                    );
+
+                    if (!runningRegex.test(accumulatedReasoning)) {
+                      const toolBlock = `\n\n:::tool[${toolName}]{status="${statusTag}"}\n**Arguments:**\n\`\`\`json\n${argsStr}\n\`\`\`\n:::`;
+                      accumulatedReasoning += toolBlock;
+                    }
+                  }
 
                   yield createYieldContent(
                     accumulatedReasoning,
@@ -424,12 +481,19 @@ export function createGeminiChatAdapter(
                   const resStr = JSON.stringify(result ?? {}, null, 2);
 
                   let matched = false;
-                  for (const tc of toolCallsMap.values()) {
-                    if (tc.toolName === toolName && tc.status?.type !== "complete") {
-                      tc.result = result;
-                      tc.status = { type: "complete" };
-                      matched = true;
-                      break;
+                  if (parsed.tool_result.id && toolCallsMap.has(parsed.tool_result.id)) {
+                    const tc = toolCallsMap.get(parsed.tool_result.id)!;
+                    tc.result = result;
+                    tc.status = { type: "complete" };
+                    matched = true;
+                  } else {
+                    for (const tc of toolCallsMap.values()) {
+                      if (tc.toolName === toolName && tc.status?.type !== "complete") {
+                        tc.result = result;
+                        tc.status = { type: "complete" };
+                        matched = true;
+                        break;
+                      }
                     }
                   }
                   if (!matched) {

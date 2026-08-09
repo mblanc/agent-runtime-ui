@@ -27,6 +27,85 @@ describe("AgentRuntimeClient", () => {
     expect(updated.endsWith(":::")).toBe(true);
     expect(updated).not.toContain('status="running"');
   });
+
+  it("does not create duplicate tool blocks when appendToolResultToReasoning is called on already completed tool", () => {
+    const completedReasoning =
+      'Analyzing query...\n\n:::tool[fetch_public_claims]{status="complete"}\n**Arguments:**\n```json\n{\n  "ticker": "INTC"\n}\n```\n**Result:**\n```json\n{"status":"success"}\n```\n:::';
+    const resultJson = JSON.stringify({ status: "success" });
+
+    const updated = appendToolResultToReasoning(
+      completedReasoning,
+      "fetch_public_claims",
+      resultJson
+    );
+
+    const matches = updated.match(/:::tool\[fetch_public_claims\]/g);
+    expect(matches?.length).toBe(1);
+  });
+
+  it("deduplicates repeated tool calls across intermediate session events in groupTurnSessionEvents", () => {
+    const rawEvents = [
+      {
+        name: "events/0",
+        author: "user",
+        content: { role: "user", parts: [{ text: "Fetch claims" }] },
+      },
+      {
+        name: "events/1",
+        author: "assistant",
+        content: {
+          parts: [
+            {
+              functionCall: {
+                name: "fetch_public_claims",
+                args: { ticker: "NVDA" },
+              },
+            },
+          ],
+        },
+      },
+      {
+        name: "events/2",
+        author: "assistant",
+        content: {
+          parts: [
+            {
+              functionCall: {
+                name: "fetch_public_claims",
+                args: { ticker: "NVDA" },
+              },
+            },
+            {
+              functionResponse: {
+                name: "fetch_public_claims",
+                response: { claims: 12 },
+              },
+            },
+          ],
+        },
+      },
+      {
+        name: "events/3",
+        author: "assistant",
+        content: {
+          parts: [{ text: "Analysis complete with 12 claims." }],
+        },
+      },
+    ];
+
+    const grouped = groupTurnSessionEvents(rawEvents, "session-1");
+    expect(grouped.length).toBe(2); // 1 user turn + 1 consolidated assistant turn
+    const assistantTurn = grouped[1];
+    expect(assistantTurn.thought).toBeDefined();
+
+    // Verify there is only ONE tool block in thought, and it contains both Arguments and Result
+    const toolOccurrences = assistantTurn.thought?.match(
+      /:::tool\[fetch_public_claims\]/g
+    );
+    expect(toolOccurrences?.length).toBe(1);
+    expect(assistantTurn.thought).toContain("**Arguments:**");
+    expect(assistantTurn.thought).toContain("**Result:**");
+  });
   beforeEach(() => {
     process.env.MOCK_AGENT_RUNTIME = "true";
   });

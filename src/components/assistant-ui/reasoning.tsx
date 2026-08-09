@@ -228,7 +228,52 @@ function parseReasoningBlocks(rawText: string): ParsedReasoningBlock[] {
     blocks.push({ type: "thought", content: textAfter });
   }
 
-  return blocks;
+  return deduplicateParsedBlocks(blocks);
+}
+
+function deduplicateParsedBlocks(blocks: ParsedReasoningBlock[]): ParsedReasoningBlock[] {
+  const completedKeys = new Set<string>();
+
+  for (const block of blocks) {
+    if (block.type === "tool" && block.title) {
+      const isComplete =
+        block.meta?.status === "complete" || block.content.includes("**Result:**");
+      if (isComplete) {
+        const { args } = parseToolBlockContent(block.content);
+        const key = `${block.title}-${args || ""}`;
+        completedKeys.add(key);
+      }
+    }
+  }
+
+  if (completedKeys.size === 0) {
+    return blocks;
+  }
+
+  const seenComplete = new Set<string>();
+  const filtered: ParsedReasoningBlock[] = [];
+
+  for (const block of blocks) {
+    if (block.type === "tool" && block.title) {
+      const { args } = parseToolBlockContent(block.content);
+      const key = `${block.title}-${args || ""}`;
+
+      if (completedKeys.has(key)) {
+        const isComplete =
+          block.meta?.status === "complete" || block.content.includes("**Result:**");
+        if (isComplete) {
+          if (!seenComplete.has(key)) {
+            seenComplete.add(key);
+            filtered.push(block);
+          }
+        }
+        continue;
+      }
+    }
+    filtered.push(block);
+  }
+
+  return filtered;
 }
 
 function parseSubAgentBlockContent(content: string): {

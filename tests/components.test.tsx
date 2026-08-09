@@ -370,6 +370,53 @@ All evidence collected.`;
     expect(screen.getByText(/INTC/)).toBeDefined();
   });
 
+  it("deduplicates running and completed tool cards for the same tool call in ReasoningText", () => {
+    const rawReasoningWithDuplicate = `Thinking about the query...
+:::tool[search_database]{status="running"}
+**Arguments:**
+\`\`\`json
+{
+  "query": "vertex reasoning engine"
+}
+\`\`\`
+:::
+
+:::tool[search_database]{status="complete"}
+**Arguments:**
+\`\`\`json
+{
+  "query": "vertex reasoning engine"
+}
+\`\`\`
+**Result:**
+\`\`\`json
+{
+  "found": 42
+}
+\`\`\`
+:::
+Found results.`;
+
+    render(
+      <ReasoningRoot defaultOpen={true}>
+        <ReasoningContent>
+          <ReasoningText text={rawReasoningWithDuplicate} />
+        </ReasoningContent>
+      </ReasoningRoot>
+    );
+
+    // Should only render 1 tool button, not 2
+    const toolButtons = screen.getAllByRole("button", {
+      name: /search_database/i,
+    });
+    expect(toolButtons.length).toBe(1);
+
+    // Expand the card and verify result is visible
+    fireEvent.click(toolButtons[0]);
+    expect(screen.getByText(/vertex reasoning engine/)).toBeDefined();
+    expect(screen.getByText(/42/)).toBeDefined();
+  });
+
   it("renders dynamic agent greeting, badge, and description in GeminiThread empty state", async () => {
     const { GeminiThread } = await import("@/components/assistant-ui/gemini-thread");
     const { AgentProvider } = await import("@/lib/agent-context");
