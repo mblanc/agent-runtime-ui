@@ -124,15 +124,21 @@ export function isImagePart(part: AgentMessagePart): part is AgentImagePart {
   return typeof part.image === "string";
 }
 
-export function isFunctionCallPart(part: AgentMessagePart): part is AgentFunctionCallPart {
+export function isFunctionCallPart(
+  part: AgentMessagePart
+): part is AgentFunctionCallPart {
   return Boolean(part.function_call || part.functionCall);
 }
 
-export function isFunctionResponsePart(part: AgentMessagePart): part is AgentFunctionResponsePart {
+export function isFunctionResponsePart(
+  part: AgentMessagePart
+): part is AgentFunctionResponsePart {
   return Boolean(part.function_response || part.functionResponse);
 }
 
-export function normalizeAgentMessagePart(raw: Record<string, unknown>): AgentMessagePart {
+export function normalizeAgentMessagePart(
+  raw: Record<string, unknown>
+): AgentMessagePart {
   if (
     typeof raw.text === "string" &&
     !raw.function_call &&
@@ -147,8 +153,7 @@ export function normalizeAgentMessagePart(raw: Record<string, unknown>): AgentMe
   }
 
   const fnCall = (raw.function_call || raw.functionCall) as
-    | Record<string, unknown>
-    | undefined;
+    Record<string, unknown> | undefined;
   if (fnCall) {
     const callData = {
       id: (fnCall.id as string) || (raw.id as string),
@@ -163,8 +168,7 @@ export function normalizeAgentMessagePart(raw: Record<string, unknown>): AgentMe
   }
 
   const fnResp = (raw.function_response || raw.functionResponse) as
-    | Record<string, unknown>
-    | undefined;
+    Record<string, unknown> | undefined;
   if (fnResp) {
     const respData = {
       id: (fnResp.id as string) || (raw.id as string),
@@ -178,9 +182,7 @@ export function normalizeAgentMessagePart(raw: Record<string, unknown>): AgentMe
     };
   }
 
-  const fileData = (raw.file_data || raw.fileData) as
-    | Record<string, unknown>
-    | undefined;
+  const fileData = (raw.file_data || raw.fileData) as Record<string, unknown> | undefined;
   if (fileData) {
     const file_uri = String(fileData.file_uri || fileData.fileUri || "");
     const mime_type = String(

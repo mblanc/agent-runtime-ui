@@ -8,11 +8,7 @@ import {
   ListAgentsResponse,
 } from "@/types/agent";
 import { IAgentRuntimeProvider } from "../types";
-import {
-  mockAgentsStore,
-  mockSessionsStore,
-  mockSessionEventsStore,
-} from "./mock-store";
+import { mockAgentsStore, mockSessionsStore, mockSessionEventsStore } from "./mock-store";
 import {
   extractReasoningEngineIdFromResourceName,
   extractSessionIdFromResourceName,
@@ -91,8 +87,7 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
         return true;
       })
       .sort(
-        (a, b) =>
-          new Date(b.updateTime).getTime() - new Date(a.updateTime).getTime()
+        (a, b) => new Date(b.updateTime).getTime() - new Date(a.updateTime).getTime()
       );
   }
 
@@ -191,7 +186,7 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
 
   async *streamQuery(
     body: ChatRequestBody,
-    userId: string
+    _userId: string
   ): AsyncGenerator<AgentStreamEvent, void, unknown> {
     const lastUserMsg = [...body.messages].reverse().find((m) => m.role === "user");
     const lastPrompt = lastUserMsg?.content || "Hello";

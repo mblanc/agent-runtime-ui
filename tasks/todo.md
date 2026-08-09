@@ -33,6 +33,7 @@
   - **Scope:** S
 
 ### Checkpoint 1: Hygiene & Types Verified
+
 - [x] TypeScript check passes (`bun run check`)
 - [x] Test suite passes (`bun run test`)
 
@@ -103,6 +104,7 @@
   - **Scope:** S
 
 ### Checkpoint 2: Domain Decomposition Verified
+
 - [x] TypeScript check passes (`bun run check`)
 - [x] Tests pass (`bun test tests/agent-client.test.ts tests/agents-api.test.ts`)
 
@@ -110,43 +112,44 @@
 
 ## Phase 3: BFF Route Middleware (`withAuth`) & CQS Normalization
 
-- [ ] **Task 3.1: Typed `withAuth` Route Wrapper**
+- [x] **Task 3.1: Typed `withAuth` Route Wrapper**
   - **Description:** Create `src/lib/api-handler.ts` providing `withAuth` higher-order function that extracts user session, standardizes 401/500 error responses, and injects `AuthenticatedContext`.
   - **Acceptance Criteria:**
-    - [ ] `withAuth` handles authentication verification, route params resolution, and centralized error logging
+    - [x] `withAuth` handles authentication verification, route params resolution, and centralized error logging
   - **Verification:** `bun run check`
   - **Files:** `src/lib/api-handler.ts`
   - **Scope:** S
 
-- [ ] **Task 3.2: Refactor Agents, Chat, and Feedback Routes**
+- [x] **Task 3.2: Refactor Agents, Chat, and Feedback Routes**
   - **Description:** Refactor `src/app/api/agents/route.ts`, `src/app/api/chat/route.ts`, and `src/app/api/feedback/route.ts` to use `withAuth`.
   - **Acceptance Criteria:**
-    - [ ] Routes refactored with clean declarative syntax using `withAuth`
-    - [ ] Chat SSE streaming works seamlessly inside `withAuth`
+    - [x] Routes refactored with clean declarative syntax using `withAuth`
+    - [x] Chat SSE streaming works seamlessly inside `withAuth`
   - **Verification:** `bun test tests/agents-api.test.ts tests/chat-api.test.ts tests/feedback-api.test.ts`
   - **Files:** `src/app/api/agents/route.ts`, `src/app/api/chat/route.ts`, `src/app/api/feedback/route.ts`
   - **Scope:** M
 
-- [ ] **Task 3.3: Refactor Sessions Routes & Eliminate CQS Mutation**
+- [x] **Task 3.3: Refactor Sessions Routes & Eliminate CQS Mutation**
   - **Description:** Refactor `src/app/api/sessions/route.ts` and `src/app/api/sessions/[sessionId]/route.ts` to use `withAuth`. Remove background mutating `PATCH` on `GET /api/sessions/[sessionId]`.
   - **Acceptance Criteria:**
-    - [ ] `GET /api/sessions/[sessionId]` operates as a pure, idempotent query without side-effect writes
-    - [ ] All session CRUD routes use `withAuth`
+    - [x] `GET /api/sessions/[sessionId]` operates as a pure, idempotent query without side-effect writes
+    - [x] All session CRUD routes use `withAuth`
   - **Verification:** `bun test tests/sessions-api.test.ts`
   - **Files:** `src/app/api/sessions/route.ts`, `src/app/api/sessions/[sessionId]/route.ts`
   - **Scope:** S
 
-- [ ] **Task 3.4: Refactor Uploads Routes**
+- [x] **Task 3.4: Refactor Uploads Routes**
   - **Description:** Refactor `src/app/api/uploads/presign/route.ts` and `src/app/api/uploads/signed-read/route.ts` with `withAuth`.
   - **Acceptance Criteria:**
-    - [ ] Presign and signed-read routes use `withAuth` and enforce user identity prefix isolation
+    - [x] Presign and signed-read routes use `withAuth` and enforce user identity prefix isolation
   - **Verification:** `bun test tests/uploads-api.test.ts`
   - **Files:** `src/app/api/uploads/presign/route.ts`, `src/app/api/uploads/signed-read/route.ts`
   - **Scope:** S
 
 ### Checkpoint 3: BFF Middleware & CQS Verified
-- [ ] All API test suites pass (`bun test tests/*api*.test.ts`)
-- [ ] TypeScript check passes (`bun run check`)
+
+- [x] All API test suites pass (`bun test tests/*api*.test.ts`)
+- [x] TypeScript check passes (`bun run check`)
 
 ---
 
@@ -190,6 +193,7 @@
   - **Scope:** M
 
 ### Checkpoint 4: Tool Stream & Memory Management Verified
+
 - [ ] All component and adapter tests pass (`bun test tests/*.test.tsx`)
 - [ ] Zero memory leaks from revoked attachment URLs
 

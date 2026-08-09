@@ -1,8 +1,4 @@
-import {
-  AgentSession,
-  AgentSessionEvent,
-  DeployedAgent,
-} from "@/types/agent";
+import { AgentSession, AgentSessionEvent, DeployedAgent } from "@/types/agent";
 
 export const mockAgentsStore: DeployedAgent[] = [
   {

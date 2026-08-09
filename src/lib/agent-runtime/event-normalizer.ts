@@ -396,7 +396,8 @@ export function formatSessionEventsToThreadMessages(
         role: "assistant",
         content,
         createdAt: e.createTime,
-        thought: accumulatedThoughts.length > 0 ? accumulatedThoughts.join("\n\n") : undefined,
+        thought:
+          accumulatedThoughts.length > 0 ? accumulatedThoughts.join("\n\n") : undefined,
         subAgents: e.subAgents,
         toolCalls: e.tool_calls,
         toolResults: e.tool_results,

@@ -28,9 +28,5 @@ export function createAgentRuntimeProvider(
     return new MockAgentRuntimeProvider(effectiveAgentId, location);
   }
 
-  return new VertexAiReasoningEngineProvider(
-    effectiveAgentId,
-    location,
-    tokenGetter
-  );
+  return new VertexAiReasoningEngineProvider(effectiveAgentId, location, tokenGetter);
 }

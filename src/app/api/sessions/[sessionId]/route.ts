@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { NextResponse } from "next/server";
+import { withAuthDynamic } from "@/lib/api-handler";
 import {
   AgentRuntimeClient,
   formatSessionEventsToThreadMessages,
@@ -7,24 +7,13 @@ import {
 
 export const runtime = "nodejs";
 
-interface RouteContext {
-  params: Promise<{ sessionId: string }>;
+interface SessionParams extends Record<string, string> {
+  sessionId: string;
 }
 
-export async function GET(req: NextRequest, context: RouteContext) {
-  try {
-    const session = await auth.api.getSession({
-      headers: req.headers,
-    });
-
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: "Unauthorized. Please sign in to view this session." },
-        { status: 401 }
-      );
-    }
-
-    const { sessionId } = await context.params;
+export const GET = withAuthDynamic<SessionParams>(
+  async (req, { userId, userEmail, params }) => {
+    const sessionId = params?.sessionId;
 
     if (
       !sessionId ||
@@ -48,23 +37,23 @@ export async function GET(req: NextRequest, context: RouteContext) {
     const location = req.nextUrl.searchParams.get("location") || undefined;
 
     const agentClient = new AgentRuntimeClient(agentId, location);
-
     const sessionDetails = await agentClient.getSession(sessionId, agentId, location);
+
     if (!sessionDetails) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
     if (
       sessionDetails.userId &&
-      sessionDetails.userId !== session.user.id &&
-      sessionDetails.userId !== session.user.email
+      sessionDetails.userId !== userId &&
+      sessionDetails.userId !== userEmail
     ) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
     const events = await agentClient.listSessionEvents(sessionId, agentId, location);
 
-    // If session title is generic, derive smart title from first user message
+    // Derive smart title in-memory without mutating external backend on GET (CQS principle)
     if (
       !sessionDetails.title ||
       sessionDetails.title === "New conversation" ||
@@ -75,17 +64,7 @@ export async function GET(req: NextRequest, context: RouteContext) {
       if (firstUserEvent) {
         const clean = firstUserEvent.content.trim();
         const cap = clean.charAt(0).toUpperCase() + clean.slice(1);
-        const smartTitle = cap.length > 40 ? `${cap.substring(0, 37)}...` : cap;
-        sessionDetails.title = smartTitle;
-        agentClient
-          .updateSessionTitle(
-            sessionId,
-            smartTitle,
-            sessionDetails.userId,
-            agentId,
-            location
-          )
-          .catch(() => {});
+        sessionDetails.title = cap.length > 40 ? `${cap.substring(0, 37)}...` : cap;
       }
     }
 
@@ -103,27 +82,12 @@ export async function GET(req: NextRequest, context: RouteContext) {
         },
       }
     );
-  } catch (err: unknown) {
-    const errorMessage = err instanceof Error ? err.message : "Internal server error";
-    console.error("Error in GET /api/sessions/[sessionId]:", errorMessage);
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
-}
+);
 
-export async function PATCH(req: NextRequest, context: RouteContext) {
-  try {
-    const session = await auth.api.getSession({
-      headers: req.headers,
-    });
-
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: "Unauthorized. Please sign in to update this session." },
-        { status: 401 }
-      );
-    }
-
-    const { sessionId } = await context.params;
+export const PATCH = withAuthDynamic<SessionParams>(
+  async (req, { userId, userEmail, params }) => {
+    const sessionId = params?.sessionId;
 
     if (
       !sessionId ||
@@ -152,8 +116,8 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
 
     if (
       sessionDetails.userId &&
-      sessionDetails.userId !== session.user.id &&
-      sessionDetails.userId !== session.user.email
+      sessionDetails.userId !== userId &&
+      sessionDetails.userId !== userEmail
     ) {
       return NextResponse.json(
         { error: "Forbidden. You do not own this session." },
@@ -170,7 +134,7 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
     await agentClient.updateSessionTitle(
       sessionId,
       title.trim(),
-      session.user.id,
+      userId,
       agentId,
       location
     );
@@ -180,27 +144,12 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
       sessionId,
       title: title.trim(),
     });
-  } catch (err: unknown) {
-    const errorMessage = err instanceof Error ? err.message : "Internal server error";
-    console.error("Error in PATCH /api/sessions/[sessionId]:", errorMessage);
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
-}
+);
 
-export async function DELETE(req: NextRequest, context: RouteContext) {
-  try {
-    const session = await auth.api.getSession({
-      headers: req.headers,
-    });
-
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: "Unauthorized. Please sign in to delete this session." },
-        { status: 401 }
-      );
-    }
-
-    const { sessionId } = await context.params;
+export const DELETE = withAuthDynamic<SessionParams>(
+  async (req, { userId, userEmail, params }) => {
+    const sessionId = params?.sessionId;
 
     if (
       !sessionId ||
@@ -225,8 +174,8 @@ export async function DELETE(req: NextRequest, context: RouteContext) {
 
     if (
       sessionDetails.userId &&
-      sessionDetails.userId !== session.user.id &&
-      sessionDetails.userId !== session.user.email
+      sessionDetails.userId !== userId &&
+      sessionDetails.userId !== userEmail
     ) {
       return NextResponse.json(
         { error: "Forbidden. You do not own this session." },
@@ -240,9 +189,5 @@ export async function DELETE(req: NextRequest, context: RouteContext) {
       success: true,
       deletedSessionId: sessionId,
     });
-  } catch (err: unknown) {
-    const errorMessage = err instanceof Error ? err.message : "Internal server error";
-    console.error("Error in DELETE /api/sessions/[sessionId]:", errorMessage);
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
-}
+);

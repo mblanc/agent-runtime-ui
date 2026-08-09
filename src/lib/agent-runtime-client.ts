@@ -55,10 +55,8 @@ export class AgentRuntimeClient {
       scopes: ["https://www.googleapis.com/auth/cloud-platform"],
     });
 
-    this.provider = createAgentRuntimeProvider(
-      overrideEngineId,
-      overrideLocation,
-      () => this.getAccessToken()
+    this.provider = createAgentRuntimeProvider(overrideEngineId, overrideLocation, () =>
+      this.getAccessToken()
     );
   }
 
@@ -150,11 +148,7 @@ export class AgentRuntimeClient {
     customEngineId?: string,
     customLocation?: string
   ): Promise<AgentSessionEvent[]> {
-    return this.provider.listSessionEvents(
-      sessionId,
-      customEngineId,
-      customLocation
-    );
+    return this.provider.listSessionEvents(sessionId, customEngineId, customLocation);
   }
 
   async submitFeedback(
