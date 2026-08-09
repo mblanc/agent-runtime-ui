@@ -40,71 +40,71 @@
 
 ## Phase 2: Domain Layer Decomposition & Strategy Pattern (`IAgentRuntimeProvider`)
 
-- [ ] **Task 2.1: Domain Types & `IAgentRuntimeProvider` Contract**
+- [x] **Task 2.1: Domain Types & `IAgentRuntimeProvider` Contract**
   - **Description:** Create `src/lib/agent-runtime/types.ts` defining `IAgentRuntimeProvider` interface and contracts.
   - **Acceptance Criteria:**
-    - [ ] `src/lib/agent-runtime/types.ts` created with complete `IAgentRuntimeProvider` methods
+    - [x] `src/lib/agent-runtime/types.ts` created with complete `IAgentRuntimeProvider` methods
   - **Verification:** `bun run check`
   - **Files:** `src/lib/agent-runtime/types.ts`
   - **Scope:** S
 
-- [ ] **Task 2.2: Extract Event Normalizer Module**
+- [x] **Task 2.2: Extract Event Normalizer Module**
   - **Description:** Extract pure event normalization, turn grouping, and AST extraction helpers into `src/lib/agent-runtime/event-normalizer.ts`.
   - **Acceptance Criteria:**
-    - [ ] `parseRawSessionEvent`, `groupTurnSessionEvents`, `extractTextFromQueryOutput`, `formatSessionEventsToThreadMessages` extracted
-    - [ ] Zero network/GCP SDK dependencies in this file
+    - [x] `parseRawSessionEvent`, `groupTurnSessionEvents`, `extractTextFromQueryOutput`, `formatSessionEventsToThreadMessages` extracted
+    - [x] Zero network/GCP SDK dependencies in this file
   - **Verification:** `bun test tests/agent-client.test.ts`
   - **Files:** `src/lib/agent-runtime/event-normalizer.ts`
   - **Scope:** S
 
-- [ ] **Task 2.3: Extract SSE Stream Parser Module**
+- [x] **Task 2.3: Extract SSE Stream Parser Module**
   - **Description:** Extract line-based SSE chunk decoder and keepalive parser into `src/lib/agent-runtime/sse-parser.ts`.
   - **Acceptance Criteria:**
-    - [ ] `sse-parser.ts` handles chunk boundaries, keepalives, and `[DONE]` markers
+    - [x] `sse-parser.ts` handles chunk boundaries, keepalives, and `[DONE]` markers
   - **Verification:** `bun test tests/chat-api.test.ts`
   - **Files:** `src/lib/agent-runtime/sse-parser.ts`
   - **Scope:** S
 
-- [ ] **Task 2.4: Extract Mock Store & `MockAgentRuntimeProvider`**
+- [x] **Task 2.4: Extract Mock Store & `MockAgentRuntimeProvider`**
   - **Description:** Extract offline in-memory stores and mock streaming simulation into `src/lib/agent-runtime/mock/mock-store.ts` and `src/lib/agent-runtime/mock/mock-provider.ts` implementing `IAgentRuntimeProvider`.
   - **Acceptance Criteria:**
-    - [ ] Mock fixtures and streaming logic isolated in `src/lib/agent-runtime/mock/`
-    - [ ] `MockAgentRuntimeProvider` implements `IAgentRuntimeProvider`
+    - [x] Mock fixtures and streaming logic isolated in `src/lib/agent-runtime/mock/`
+    - [x] `MockAgentRuntimeProvider` implements `IAgentRuntimeProvider`
   - **Verification:** `bun test tests/agent-client.test.ts`
   - **Files:** `src/lib/agent-runtime/mock/mock-store.ts`, `src/lib/agent-runtime/mock/mock-provider.ts`
   - **Scope:** M
 
-- [ ] **Task 2.5: Implement `VertexAiReasoningEngineProvider`**
+- [x] **Task 2.5: Implement `VertexAiReasoningEngineProvider`**
   - **Description:** Implement real Google Cloud Vertex AI REST and streaming client in `src/lib/agent-runtime/client.ts` implementing `IAgentRuntimeProvider`.
   - **Acceptance Criteria:**
-    - [ ] `VertexAiReasoningEngineProvider` handles GoogleAuth token management and Vertex AI REST API calls
-    - [ ] Zero mock branching inside production client methods
+    - [x] `VertexAiReasoningEngineProvider` handles GoogleAuth token management and Vertex AI REST API calls
+    - [x] Zero mock branching inside production client methods
   - **Verification:** `bun run check`
   - **Files:** `src/lib/agent-runtime/client.ts`
   - **Scope:** M
 
-- [ ] **Task 2.6: Factory with Fail-Fast Configuration**
+- [x] **Task 2.6: Factory with Fail-Fast Configuration**
   - **Description:** Implement `createAgentRuntimeProvider` in `src/lib/agent-runtime/factory.ts` with explicit fail-fast validation in production mode. Create `src/lib/agent-runtime/index.ts` public export.
   - **Acceptance Criteria:**
-    - [ ] `createAgentRuntimeProvider` instantiates `VertexAiReasoningEngineProvider` or `MockAgentRuntimeProvider` based on environment
-    - [ ] Missing config in production throws an explicit `Error` immediately
-    - [ ] `src/lib/agent-runtime/index.ts` exports factory, types, and normalizers
+    - [x] `createAgentRuntimeProvider` instantiates `VertexAiReasoningEngineProvider` or `MockAgentRuntimeProvider` based on environment
+    - [x] Missing config in production throws an explicit `Error` immediately
+    - [x] `src/lib/agent-runtime/index.ts` exports factory, types, and normalizers
   - **Verification:** `bun test tests/agent-client.test.ts`
   - **Files:** `src/lib/agent-runtime/factory.ts`, `src/lib/agent-runtime/index.ts`
   - **Scope:** S
 
-- [ ] **Task 2.7: Backward-Compatible Facade in `agent-runtime-client.ts`**
+- [x] **Task 2.7: Backward-Compatible Facade in `agent-runtime-client.ts`**
   - **Description:** Refactor `src/lib/agent-runtime-client.ts` to re-export `AgentRuntimeClient` wrapping `createAgentRuntimeProvider`.
   - **Acceptance Criteria:**
-    - [ ] `src/lib/agent-runtime-client.ts` LOC reduced from 2,120 to < 80
-    - [ ] All 22 tests in `tests/agent-client.test.ts` pass without modification
+    - [x] `src/lib/agent-runtime-client.ts` LOC reduced from 2,120 to < 80
+    - [x] All 22 tests in `tests/agent-client.test.ts` pass without modification
   - **Verification:** `bun test tests/agent-client.test.ts`
   - **Files:** `src/lib/agent-runtime-client.ts`
   - **Scope:** S
 
 ### Checkpoint 2: Domain Decomposition Verified
-- [ ] TypeScript check passes (`bun run check`)
-- [ ] Tests pass (`bun test tests/agent-client.test.ts tests/agents-api.test.ts`)
+- [x] TypeScript check passes (`bun run check`)
+- [x] Tests pass (`bun test tests/agent-client.test.ts tests/agents-api.test.ts`)
 
 ---
 
