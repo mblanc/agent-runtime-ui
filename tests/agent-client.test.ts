@@ -642,6 +642,7 @@ describe("AgentRuntimeClient", () => {
       const body = JSON.parse(opts.body);
       expect(body.class_method).toBe("async_stream_query");
       expect(body.input.message).toBe("Analyze this image");
+      expect(body.input.run_config).toEqual({ streaming_mode: "sse" });
       expect(body.input.parts).toHaveLength(2);
       expect(body.input.parts[0]).toEqual({ text: "Analyze this image" });
       expect(body.input.parts[1]).toEqual({
@@ -649,6 +650,58 @@ describe("AgentRuntimeClient", () => {
           file_uri: "gs://bucket/users/u1/photo.png",
           mime_type: "image/png",
         },
+      });
+    });
+
+    it("passes custom run_config and streaming_mode when specified in ChatRequestBody", async () => {
+      process.env.MOCK_AGENT_RUNTIME = "false";
+      process.env.GOOGLE_CLOUD_PROJECT = "test-project";
+      process.env.GOOGLE_CLOUD_LOCATION = "us-central1";
+      process.env.GOOGLE_REASONING_ENGINE_ID = "multimodal-engine";
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        body: new ReadableStream({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode('data: {"text":"Done"}\n\ndata: [DONE]\n\n')
+            );
+            controller.close();
+          },
+        }),
+      });
+      vi.spyOn(globalThis, "fetch").mockImplementation(
+        mockFetch as unknown as typeof fetch
+      );
+
+      const client = new AgentRuntimeClient();
+      vi.spyOn(
+        client as unknown as { getAccessToken: () => Promise<string> },
+        "getAccessToken"
+      ).mockResolvedValue("mock-token");
+
+      const events = [];
+      for await (const event of client.streamQuery(
+        {
+          messages: [{ role: "user", content: "Test query" }],
+          runConfig: {
+            streaming_mode: "sse",
+            max_llm_calls: 100,
+            support_cfc: true,
+          },
+        },
+        "u1"
+      )) {
+        events.push(event);
+      }
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [, opts] = mockFetch.mock.calls[0];
+      const parsedBody = JSON.parse(opts.body);
+      expect(parsedBody.input.run_config).toEqual({
+        streaming_mode: "sse",
+        max_llm_calls: 100,
+        support_cfc: true,
       });
     });
 

@@ -349,6 +349,14 @@ export interface ListAgentsResponse {
 
 export type GeminiModelTier = "flash" | "pro";
 
+export interface AgentRunConfig {
+  streaming_mode?: "sse" | "none" | "bidi" | string;
+  streamingMode?: "sse" | "none" | "bidi" | string;
+  max_llm_calls?: number;
+  support_cfc?: boolean;
+  [key: string]: unknown;
+}
+
 export interface ChatRequestBody {
   messages: Array<{
     role: "user" | "assistant" | "system";
@@ -359,6 +367,8 @@ export interface ChatRequestBody {
   modelTier?: GeminiModelTier;
   reasoningEngineId?: string;
   location?: string;
+  streamingMode?: "sse" | "none" | "bidi";
+  runConfig?: AgentRunConfig;
 }
 
 export type FeedbackType = "THUMBS_UP" | "THUMBS_DOWN" | "FEEDBACK_TYPE_UNSPECIFIED";

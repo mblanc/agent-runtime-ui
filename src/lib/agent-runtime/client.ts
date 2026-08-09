@@ -774,10 +774,20 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
           ? extractSessionIdFromResourceName(body.sessionId)
           : undefined;
 
+      const resolvedRunConfig: Record<string, unknown> = {
+        streaming_mode:
+          body.streamingMode ||
+          body.runConfig?.streaming_mode ||
+          body.runConfig?.streamingMode ||
+          "sse",
+        ...(body.runConfig || {}),
+      };
+
       const inputPayload: Record<string, unknown> = {
         message: lastUserMessage,
         user_id: userId,
         ...(cleanSessionId ? { session_id: cleanSessionId } : {}),
+        run_config: resolvedRunConfig,
       };
 
       const nonTextParts = lastUserMsgObj?.parts?.filter(

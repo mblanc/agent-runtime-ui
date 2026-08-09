@@ -250,6 +250,10 @@ export function createGeminiChatAdapter(
             sessionId,
             reasoningEngineId: agentId,
             location,
+            streamingMode: "sse",
+            runConfig: {
+              streaming_mode: "sse",
+            },
           }),
           signal: abortSignal,
         });
@@ -326,8 +330,14 @@ export function createGeminiChatAdapter(
                     latestEventId
                   );
                 } else if (parsed.event_type === "thought" && parsed.thought) {
-                  accumulatedReasoning +=
-                    (accumulatedReasoning ? "\n\n" : "") + parsed.thought;
+                  if (
+                    accumulatedReasoning.endsWith(":::") ||
+                    accumulatedReasoning.endsWith(":::\n")
+                  ) {
+                    accumulatedReasoning += "\n\n" + parsed.thought;
+                  } else {
+                    accumulatedReasoning += parsed.thought;
+                  }
                   yield createYieldContent(
                     accumulatedReasoning,
                     accumulatedText,
