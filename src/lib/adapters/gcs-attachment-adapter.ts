@@ -115,6 +115,15 @@ export function createGcsAttachmentAdapter(
         };
         return;
       } catch (err: unknown) {
+        if (previewUrl && typeof URL !== "undefined" && URL.revokeObjectURL) {
+          try {
+            URL.revokeObjectURL(previewUrl);
+          } catch {
+            // Ignore
+          }
+        }
+        store.delete(tempId);
+
         const errorMsg = err instanceof Error ? err.message : "Upload failed";
         console.error("[createGcsAttachmentAdapter] Upload error:", errorMsg);
         yield {

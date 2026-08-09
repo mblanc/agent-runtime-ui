@@ -264,188 +264,198 @@ export function createGeminiChatAdapter(
         let accumulatedText = "";
         const toolCallsMap = new Map<string, ToolCallYieldItem>();
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n\n");
-          buffer = lines.pop() || "";
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n\n");
+            buffer = lines.pop() || "";
 
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith(":")) continue;
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed.startsWith(":")) continue;
 
-            const dataPrefix = "data: ";
-            if (!trimmed.startsWith(dataPrefix)) continue;
+              const dataPrefix = "data: ";
+              if (!trimmed.startsWith(dataPrefix)) continue;
 
-            const jsonStr = trimmed.substring(dataPrefix.length).trim();
-            if (jsonStr === "[DONE]") {
-              console.log("[createGeminiChatAdapter] Received [DONE]");
-              return;
-            }
+              const jsonStr = trimmed.substring(dataPrefix.length).trim();
+              if (jsonStr === "[DONE]") {
+                console.log("[createGeminiChatAdapter] Received [DONE]");
+                return;
+              }
 
-            try {
-              const parsed = JSON.parse(jsonStr);
-              console.log(
-                "[createGeminiChatAdapter] Parsed SSE event:",
-                parsed.event_type
-              );
-
-              if (parsed.event_type === "content" && parsed.content) {
-                accumulatedText += parsed.content;
-                yield createYieldContent(
-                  accumulatedReasoning,
-                  accumulatedText,
-                  Array.from(toolCallsMap.values())
-                );
-              } else if (parsed.event_type === "thought" && parsed.thought) {
-                accumulatedReasoning +=
-                  (accumulatedReasoning ? "\n\n" : "") + parsed.thought;
-                yield createYieldContent(
-                  accumulatedReasoning,
-                  accumulatedText,
-                  Array.from(toolCallsMap.values())
-                );
-              } else if (parsed.event_type === "agent_call" && parsed.agent_call) {
-                const subagent = parsed.agent_call;
-                const agentName = subagent.agent || "subagent";
-                const displayName =
-                  subagent.displayName || formatAgentDisplayName(agentName);
-                const inputStr = JSON.stringify(subagent.input || {}, null, 2);
-
-                const traceText = `\n\n:::subagent[${displayName}]{status="running" agent="${agentName}"}\n${inputStr}\n:::`;
-                accumulatedReasoning += traceText;
-
-                yield createYieldContent(
-                  accumulatedReasoning,
-                  accumulatedText,
-                  Array.from(toolCallsMap.values())
-                );
-              } else if (
-                parsed.event_type === "agent_response" &&
-                parsed.agent_response
-              ) {
-                const subagent = parsed.agent_response;
-                const agentName = subagent.agent || "subagent";
-                const displayName =
-                  subagent.displayName || formatAgentDisplayName(agentName);
-                const responseStr =
-                  typeof subagent.response === "string"
-                    ? subagent.response
-                    : JSON.stringify(subagent.response || {}, null, 2);
-
-                accumulatedReasoning = appendAgentResponseToReasoning(
-                  accumulatedReasoning,
-                  agentName,
-                  responseStr,
-                  displayName
+              try {
+                const parsed = JSON.parse(jsonStr);
+                console.log(
+                  "[createGeminiChatAdapter] Parsed SSE event:",
+                  parsed.event_type
                 );
 
-                yield createYieldContent(
-                  accumulatedReasoning,
-                  accumulatedText,
-                  Array.from(toolCallsMap.values())
-                );
-              } else if (parsed.event_type === "tool_call" && parsed.tool_call) {
-                const tc = parsed.tool_call;
-                const toolName = tc.name || "tool";
-                const toolCallId =
-                  tc.id ||
-                  `call_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-                const isReqAction =
-                  tc.status === "requires-action" ||
-                  tc.requires_action ||
-                  tc.requires_confirmation;
+                if (parsed.event_type === "content" && parsed.content) {
+                  accumulatedText += parsed.content;
+                  yield createYieldContent(
+                    accumulatedReasoning,
+                    accumulatedText,
+                    Array.from(toolCallsMap.values())
+                  );
+                } else if (parsed.event_type === "thought" && parsed.thought) {
+                  accumulatedReasoning +=
+                    (accumulatedReasoning ? "\n\n" : "") + parsed.thought;
+                  yield createYieldContent(
+                    accumulatedReasoning,
+                    accumulatedText,
+                    Array.from(toolCallsMap.values())
+                  );
+                } else if (parsed.event_type === "agent_call" && parsed.agent_call) {
+                  const subagent = parsed.agent_call;
+                  const agentName = subagent.agent || "subagent";
+                  const displayName =
+                    subagent.displayName || formatAgentDisplayName(agentName);
+                  const inputStr = JSON.stringify(subagent.input || {}, null, 2);
 
-                toolCallsMap.set(toolCallId, {
-                  toolCallId,
-                  toolName,
-                  args: tc.args || {},
-                  status: {
-                    type: isReqAction ? "requires-action" : "running",
-                    ...(isReqAction ? { reason: "composer-send" } : {}),
-                  },
-                });
+                  const traceText = `\n\n:::subagent[${displayName}]{status="running" agent="${agentName}"}\n${inputStr}\n:::`;
+                  accumulatedReasoning += traceText;
 
-                const argsStr = JSON.stringify(tc.args || {}, null, 2);
-                const statusTag = isReqAction ? "requires-action" : "running";
-                const toolBlock = `\n\n:::tool[${toolName}]{status="${statusTag}"}\n**Arguments:**\n\`\`\`json\n${argsStr}\n\`\`\`\n:::`;
-                accumulatedReasoning += toolBlock;
+                  yield createYieldContent(
+                    accumulatedReasoning,
+                    accumulatedText,
+                    Array.from(toolCallsMap.values())
+                  );
+                } else if (
+                  parsed.event_type === "agent_response" &&
+                  parsed.agent_response
+                ) {
+                  const subagent = parsed.agent_response;
+                  const agentName = subagent.agent || "subagent";
+                  const displayName =
+                    subagent.displayName || formatAgentDisplayName(agentName);
+                  const responseStr =
+                    typeof subagent.response === "string"
+                      ? subagent.response
+                      : JSON.stringify(subagent.response || {}, null, 2);
 
-                yield createYieldContent(
-                  accumulatedReasoning,
-                  accumulatedText,
-                  Array.from(toolCallsMap.values())
-                );
-              } else if (parsed.event_type === "tool_result" && parsed.tool_result) {
-                const toolName = parsed.tool_result.name || "tool";
-                const result = parsed.tool_result.result;
-                const resStr = JSON.stringify(result ?? {}, null, 2);
+                  accumulatedReasoning = appendAgentResponseToReasoning(
+                    accumulatedReasoning,
+                    agentName,
+                    responseStr,
+                    displayName
+                  );
 
-                let matched = false;
-                for (const tc of toolCallsMap.values()) {
-                  if (tc.toolName === toolName && tc.status?.type !== "complete") {
-                    tc.result = result;
-                    tc.status = { type: "complete" };
-                    matched = true;
-                    break;
-                  }
-                }
-                if (!matched) {
+                  yield createYieldContent(
+                    accumulatedReasoning,
+                    accumulatedText,
+                    Array.from(toolCallsMap.values())
+                  );
+                } else if (parsed.event_type === "tool_call" && parsed.tool_call) {
+                  const tc = parsed.tool_call;
+                  const toolName = tc.name || "tool";
                   const toolCallId =
-                    parsed.tool_result.id ||
-                    `result_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+                    tc.id ||
+                    `call_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+                  const isReqAction =
+                    tc.status === "requires-action" ||
+                    tc.requires_action ||
+                    tc.requires_confirmation;
+
                   toolCallsMap.set(toolCallId, {
                     toolCallId,
                     toolName,
-                    args: {},
-                    result,
-                    status: { type: "complete" },
+                    args: tc.args || {},
+                    status: {
+                      type: isReqAction ? "requires-action" : "running",
+                      ...(isReqAction ? { reason: "composer-send" } : {}),
+                    },
                   });
-                }
 
-                accumulatedReasoning = appendToolResultToReasoning(
-                  accumulatedReasoning,
-                  toolName,
-                  resStr
-                );
-                yield createYieldContent(
-                  accumulatedReasoning,
-                  accumulatedText,
-                  Array.from(toolCallsMap.values())
-                );
-              } else if (parsed.event_type === "error" && parsed.error) {
-                accumulatedText +=
-                  (accumulatedText ? "\n\n" : "") +
-                  `⚠️ **Agent Runtime Error:** ${parsed.error}`;
-                yield createYieldContent(
-                  accumulatedReasoning,
-                  accumulatedText,
-                  Array.from(toolCallsMap.values())
-                );
-                return;
-              } else if (parsed.event_type === "done") {
-                for (const tc of toolCallsMap.values()) {
-                  if (tc.status?.type === "running") {
-                    tc.status = { type: "complete" };
+                  const argsStr = JSON.stringify(tc.args || {}, null, 2);
+                  const statusTag = isReqAction ? "requires-action" : "running";
+                  const toolBlock = `\n\n:::tool[${toolName}]{status="${statusTag}"}\n**Arguments:**\n\`\`\`json\n${argsStr}\n\`\`\`\n:::`;
+                  accumulatedReasoning += toolBlock;
+
+                  yield createYieldContent(
+                    accumulatedReasoning,
+                    accumulatedText,
+                    Array.from(toolCallsMap.values())
+                  );
+                } else if (parsed.event_type === "tool_result" && parsed.tool_result) {
+                  const toolName = parsed.tool_result.name || "tool";
+                  const result = parsed.tool_result.result;
+                  const resStr = JSON.stringify(result ?? {}, null, 2);
+
+                  let matched = false;
+                  for (const tc of toolCallsMap.values()) {
+                    if (tc.toolName === toolName && tc.status?.type !== "complete") {
+                      tc.result = result;
+                      tc.status = { type: "complete" };
+                      matched = true;
+                      break;
+                    }
                   }
+                  if (!matched) {
+                    const toolCallId =
+                      parsed.tool_result.id ||
+                      `result_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+                    toolCallsMap.set(toolCallId, {
+                      toolCallId,
+                      toolName,
+                      args: {},
+                      result,
+                      status: { type: "complete" },
+                    });
+                  }
+
+                  accumulatedReasoning = appendToolResultToReasoning(
+                    accumulatedReasoning,
+                    toolName,
+                    resStr
+                  );
+                  yield createYieldContent(
+                    accumulatedReasoning,
+                    accumulatedText,
+                    Array.from(toolCallsMap.values())
+                  );
+                } else if (parsed.event_type === "error" && parsed.error) {
+                  accumulatedText +=
+                    (accumulatedText ? "\n\n" : "") +
+                    `⚠️ **Agent Runtime Error:** ${parsed.error}`;
+                  yield createYieldContent(
+                    accumulatedReasoning,
+                    accumulatedText,
+                    Array.from(toolCallsMap.values())
+                  );
+                  return;
+                } else if (parsed.event_type === "done") {
+                  for (const tc of toolCallsMap.values()) {
+                    if (tc.status?.type === "running") {
+                      tc.status = { type: "complete" };
+                    }
+                  }
+                  accumulatedReasoning = accumulatedReasoning.replaceAll(
+                    'status="running"',
+                    'status="complete"'
+                  );
+                  yield createYieldContent(
+                    accumulatedReasoning,
+                    accumulatedText,
+                    Array.from(toolCallsMap.values())
+                  );
+                  return;
                 }
-                accumulatedReasoning = accumulatedReasoning.replaceAll(
-                  'status="running"',
-                  'status="complete"'
-                );
-                yield createYieldContent(
-                  accumulatedReasoning,
-                  accumulatedText,
-                  Array.from(toolCallsMap.values())
-                );
-                return;
+              } catch (e: unknown) {
+                if (e instanceof Error && e.message !== "Unexpected end of JSON input") {
+                  throw e;
+                }
               }
-            } catch (e: unknown) {
-              if (e instanceof Error && e.message !== "Unexpected end of JSON input") {
-                throw e;
-              }
+            }
+          }
+        } finally {
+          if (typeof reader?.releaseLock === "function") {
+            try {
+              reader.releaseLock();
+            } catch {
+              // Ignore
             }
           }
         }

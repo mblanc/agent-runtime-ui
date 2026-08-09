@@ -17,6 +17,9 @@ export const POST = withAuth(async (req, { userId }) => {
   const customLocation = req.headers.get("x-location") || body.location;
   const agentClient = new AgentRuntimeClient(customEngineId, customLocation);
 
+  let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  let isCancelled = false;
+
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
@@ -27,35 +30,52 @@ export const POST = withAuth(async (req, { userId }) => {
         userId
       );
 
-      const heartbeatInterval = setInterval(() => {
+      heartbeatInterval = setInterval(() => {
+        if (isCancelled) return;
         try {
           controller.enqueue(encoder.encode(": keepalive\n\n"));
         } catch {
           // Stream closed
         }
-      }, 2000);
+      }, 15000);
 
       try {
         for await (const event of agentClient.streamQuery(body, userId)) {
+          if (isCancelled) break;
           console.log("[/api/chat] Yielding event:", event.event_type);
           const chunk = `data: ${JSON.stringify(event)}\n\n`;
           controller.enqueue(encoder.encode(chunk));
         }
         console.log("[/api/chat] Completed streamQuery loop normally");
       } catch (err: unknown) {
-        const errorMessage =
-          err instanceof Error ? err.message : "Streaming error occurred";
-        console.error("[/api/chat] Stream error:", errorMessage);
-        const errChunk = `data: ${JSON.stringify({
-          event_type: "error",
-          error: errorMessage,
-        })}\n\n`;
-        controller.enqueue(encoder.encode(errChunk));
+        if (!isCancelled) {
+          const errorMessage =
+            err instanceof Error ? err.message : "Streaming error occurred";
+          console.error("[/api/chat] Stream error:", errorMessage);
+          const errChunk = `data: ${JSON.stringify({
+            event_type: "error",
+            error: errorMessage,
+          })}\n\n`;
+          try {
+            controller.enqueue(encoder.encode(errChunk));
+          } catch {
+            // Controller may already be closed
+          }
+        }
       } finally {
-        clearInterval(heartbeatInterval);
+        if (heartbeatInterval) clearInterval(heartbeatInterval);
         console.log("[/api/chat] Controller closing stream");
-        controller.close();
+        try {
+          controller.close();
+        } catch {
+          // Ignore close error if already closed
+        }
       }
+    },
+    cancel(reason) {
+      console.log("[/api/chat] Client cancelled stream:", reason);
+      isCancelled = true;
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
     },
   });
 

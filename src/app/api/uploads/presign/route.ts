@@ -26,6 +26,16 @@ function isMimeTypeAllowed(mimeType: string): boolean {
   return ALLOWED_MIME_PATTERNS.some((pattern) => pattern.test(mimeType));
 }
 
+let storageClient: Storage | null = null;
+function getStorageClient(): Storage {
+  if (!storageClient) {
+    storageClient = new Storage({
+      projectId: process.env.GOOGLE_CLOUD_PROJECT,
+    });
+  }
+  return storageClient;
+}
+
 export const POST = withAuth(async (req, { userId }) => {
   let body: PresignBatchRequest;
   try {
@@ -74,11 +84,10 @@ export const POST = withAuth(async (req, { userId }) => {
   const isMock =
     process.env.MOCK_AGENT_RUNTIME === "true" || !process.env.GCS_BUCKET_NAME;
 
-  const uploads: PresignedUploadItem[] = [];
+  let uploads: PresignedUploadItem[] = [];
 
   if (isMock) {
-    for (let i = 0; i < body.files.length; i++) {
-      const file = body.files[i];
+    uploads = body.files.map((file, i) => {
       const fileId = `file-${Date.now()}-${Math.random().toString(36).substring(2, 8)}-${i}`;
       const sanitizedFilename = file.filename.replace(/[^a-zA-Z0-9_.-]/g, "_");
       const objectPath = `users/${userId}/${fileId}-${sanitizedFilename}`;
@@ -86,56 +95,55 @@ export const POST = withAuth(async (req, { userId }) => {
       const uploadUrl = `/api/uploads/mock-upload?fileId=${encodeURIComponent(fileId)}&userId=${encodeURIComponent(userId)}`;
       const readUrl = `/api/uploads/mock-upload?fileId=${encodeURIComponent(fileId)}&filename=${encodeURIComponent(sanitizedFilename)}`;
 
-      uploads.push({
+      return {
         fileId,
         filename: file.filename,
         contentType: file.contentType || "application/octet-stream",
         uploadUrl,
         readUrl,
         gcsUri,
-      });
-    }
+      };
+    });
   } else {
     const bucketName = process.env.GCS_BUCKET_NAME!;
-    const storage = new Storage({
-      projectId: process.env.GOOGLE_CLOUD_PROJECT,
-    });
+    const storage = getStorageClient();
     const bucket = storage.bucket(bucketName);
 
-    for (let i = 0; i < body.files.length; i++) {
-      const file = body.files[i];
-      const fileId =
-        typeof crypto !== "undefined" && crypto.randomUUID
-          ? crypto.randomUUID()
-          : `file-${Date.now()}-${Math.random().toString(36).substring(2, 8)}-${i}`;
-      const sanitizedFilename = file.filename.replace(/[^a-zA-Z0-9_.-]/g, "_");
-      const objectPath = `users/${userId}/${fileId}-${sanitizedFilename}`;
-      const gcsFile = bucket.file(objectPath);
+    uploads = await Promise.all(
+      body.files.map(async (file, i) => {
+        const fileId =
+          typeof crypto !== "undefined" && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `file-${Date.now()}-${Math.random().toString(36).substring(2, 8)}-${i}`;
+        const sanitizedFilename = file.filename.replace(/[^a-zA-Z0-9_.-]/g, "_");
+        const objectPath = `users/${userId}/${fileId}-${sanitizedFilename}`;
+        const gcsFile = bucket.file(objectPath);
+        const contentType = file.contentType || "application/octet-stream";
 
-      const contentType = file.contentType || "application/octet-stream";
+        const [[uploadUrl], [readUrl]] = await Promise.all([
+          gcsFile.getSignedUrl({
+            version: "v4",
+            action: "write",
+            expires: Date.now() + 5 * 60 * 1000, // 5 minutes
+            contentType,
+          }),
+          gcsFile.getSignedUrl({
+            version: "v4",
+            action: "read",
+            expires: Date.now() + 60 * 60 * 1000, // 60 minutes
+          }),
+        ]);
 
-      const [uploadUrl] = await gcsFile.getSignedUrl({
-        version: "v4",
-        action: "write",
-        expires: Date.now() + 5 * 60 * 1000, // 5 minutes
-        contentType,
-      });
-
-      const [readUrl] = await gcsFile.getSignedUrl({
-        version: "v4",
-        action: "read",
-        expires: Date.now() + 60 * 60 * 1000, // 60 minutes
-      });
-
-      uploads.push({
-        fileId,
-        filename: file.filename,
-        contentType,
-        uploadUrl,
-        readUrl,
-        gcsUri: `gs://${bucketName}/${objectPath}`,
-      });
-    }
+        return {
+          fileId,
+          filename: file.filename,
+          contentType,
+          uploadUrl,
+          readUrl,
+          gcsUri: `gs://${bucketName}/${objectPath}`,
+        };
+      })
+    );
   }
 
   return NextResponse.json({ uploads });
