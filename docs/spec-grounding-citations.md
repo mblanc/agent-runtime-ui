@@ -3,9 +3,11 @@
 ## 1. Objective & Background
 
 ### 1.1 Objective
+
 Implement a compliant, high-fidelity **Grounding & Citations Visualizer** in `agent-runtime-ui`. This feature supports **Grounding with Google Search** and **Vertex AI RAG Engine / Vector Search** ([`docs.cloud.google.com/.../grounding`](https://cloud.google.com/vertex-ai/generative-ai/docs/grounding/overview)), rendering the official Google Search suggestion entry point (`searchEntryPoint.renderedContent`), interactive inline citation badges (`[1]`, `[2]`) linked to text segments, and an Enterprise RAG Document Inspector for private corpora.
 
 ### 1.2 Target User & Problem Solved
+
 - **Target User**: Enterprise users and developers requiring verifiable truthfulness, fact attribution, and source lineage in LLM responses.
 - **Problem Solved**: Un-grounded AI responses can hallucinate facts without accountability. Even when grounded, standard UIs often fail to link specific sentences to sources or meet Google Search attribution guidelines.
 - **Solution**:
@@ -113,6 +115,7 @@ export interface AgentStreamEvent {
 ```
 
 ### 3.2 Component Details
+
 1. **`InlineCitationBadge` (`src/components/grounding/inline-citation-badge.tsx`)**:
    - Renders as a compact superscript button: `[1]`.
    - Hovering / clicking opens a Radix Popover with source title, URL link, snippet excerpt, and confidence rating.
@@ -190,6 +193,6 @@ src/
 - [ ] `bun run check` passes with zero TypeScript errors.
 - [ ] `bun run lint` passes with zero ESLint warnings/errors.
 - [ ] `bun run test` passes all unit and component tests.
-- [ ] Asking a search-related question in mock mode (e.g. *"What are the latest Vertex AI specs?"*) returns citations `[1]`, `[2]` and the Grounding summary bar.
+- [ ] Asking a search-related question in mock mode (e.g. _"What are the latest Vertex AI specs?"_) returns citations `[1]`, `[2]` and the Grounding summary bar.
 - [ ] Clicking citations opens the source preview popover.
 - [ ] The official Google Search suggestion widget renders properly in dark and light modes.

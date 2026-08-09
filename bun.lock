@@ -3,7 +3,7 @@
   "configVersion": 0,
   "workspaces": {
     "": {
-      "name": "llm-council-ui",
+      "name": "agent-runtime-ui",
       "dependencies": {
         "@assistant-ui/react": "^0.15.5",
         "@assistant-ui/react-markdown": "^0.14.8",

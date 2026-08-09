@@ -3,9 +3,11 @@
 ## 1. Objective & Background
 
 ### 1.1 Objective
+
 Implement a production-grade, Google Gemini-styled **Side-by-Side Artifacts Workspace Canvas** in the `agent-runtime-ui` application. This feature showcases the **Agent Platform Artifacts Service** (`BaseArtifactService` / `GcsArtifactService` / `InMemoryArtifactService` from [adk.dev/artifacts](https://adk.dev/artifacts/)), transforming conversational agent interactions into a collaborative workspace where users can preview, interact with, scrub versions of, and download rich digital assets (interactive HTML web applications, data tables, SVG diagrams, and syntax-highlighted code files).
 
 ### 1.2 Target User & Use Case
+
 - **Target User**: Enterprise users, engineers, and stakeholders evaluating or using Vertex AI Agent Runtime / ADK agents.
 - **Problem Solved**: Generative AI agents frequently output full HTML apps, CSV datasets, Python scripts, and SVG diagrams as raw text/markdown in chat bubbles, cluttering the message stream and preventing live testing or version comparison.
 - **Solution**: The agent creates an **Artifact**. The UI auto-opens a right-hand workspace canvas that safely renders sandboxed interactive previews, provides version scrubbing (`v0` → `v1` → `v2`), integrates with the session's artifact library via REST hydration, and offers instant export.
@@ -15,7 +17,9 @@ Implement a production-grade, Google Gemini-styled **Side-by-Side Artifacts Work
 ## 2. Architecture & Data Contracts
 
 ### 2.1 Dual-Layer Discovery Model
+
 The frontend interacts with the Artifacts Service via two complementary channels:
+
 1. **Push (Live Stream Events)**: During active reasoning and generation, the `:streamQuery` SSE stream emits `artifact_created` or `artifact_updated` events, triggering zero-latency auto-open of the canvas and real-time content streaming.
 2. **Pull (Interactive REST API Hydration)**: When a session is loaded or switched in the thread sidebar, the UI calls `GET /api/sessions/[sessionId]/artifacts` to populate the session's artifact shelf and version history.
 
@@ -140,6 +144,7 @@ export interface AgentStreamEvent {
 ```
 
 ### 3.2 Layout Mechanics & State
+
 - **Canvas State Store / Context**:
   - `isOpen: boolean` (default false, auto-opens when an artifact is received).
   - `activeArtifactId: string | null`.
@@ -155,6 +160,7 @@ export interface AgentStreamEvent {
   - **Top Bar Artifact Shelf**: A badge `[ 📁 N Artifacts ]` in the session header with dropdown to select any session artifact.
 
 ### 3.3 Multi-Format Renderers
+
 1. **Interactive HTML/Web Apps (`text/html`, `application/javascript`)**:
    - Rendered inside a sandboxed `<iframe>` (`sandbox="allow-scripts allow-forms allow-modals allow-popups"`).
    - Includes standard web styles (Tailwind / CSS-in-JS support) and dynamic charts (Chart.js / Vega / vanilla JS).
@@ -249,6 +255,6 @@ src/
 - [ ] `bun run check` passes with zero TypeScript errors.
 - [ ] `bun run lint` passes with zero ESLint warnings/errors.
 - [ ] `bun run test` passes all unit and component tests.
-- [ ] Prompting the agent in mock mode with *"Build a sales dashboard"* streams an HTML artifact and automatically opens the right-hand canvas.
+- [ ] Prompting the agent in mock mode with _"Build a sales dashboard"_ streams an HTML artifact and automatically opens the right-hand canvas.
 - [ ] Clicking the version selector switches between `v0`, `v1`, etc.
 - [ ] Refreshing the page or switching threads hydrates the artifact library from `GET /api/sessions/[sessionId]/artifacts`.

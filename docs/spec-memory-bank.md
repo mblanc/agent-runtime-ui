@@ -3,9 +3,11 @@
 ## 1. Objective & Background
 
 ### 1.1 Objective
+
 Integrate the **Google Cloud Agent Platform Memory Bank** subsystem ([`docs.cloud.google.com/.../memory-bank`](https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/memory-bank)) into `agent-runtime-ui`. This provides persistent, cross-session semantic memory and user personalization for ADK agents, allowing the agent to remember user preferences, project context, and constraints across conversations, while giving users full transparency, editing, and deletion controls over their stored memory profile.
 
 ### 1.2 Target User & Problem Solved
+
 - **Target User**: Enterprise users and developers interacting with ADK agents across multiple sessions.
 - **Problem Solved**: Standard LLM conversations are isolated. Users must repeatedly restate their coding style, enterprise roles, project IDs, or regional constraints in every new thread.
 - **Solution**:
@@ -25,7 +27,12 @@ export interface AgentMemory {
   id: string; // e.g. "mem-1" or "projects/.../locations/.../reasoningEngines/.../memories/1"
   userId: string;
   fact: string;
-  topic?: "coding_preferences" | "enterprise_context" | "communication_style" | "general" | string;
+  topic?:
+    | "coding_preferences"
+    | "enterprise_context"
+    | "communication_style"
+    | "general"
+    | string;
   createTime: string;
   updateTime: string;
   lastUsedTime?: string;
@@ -66,7 +73,9 @@ export interface GenerateMemoriesResponse {
 ```
 
 ### 2.2 ADK Out-of-the-Box Tool Handlers (`preload_memory` & `load_memory`)
+
 ADK emits memory operations as standard tool calls. The runtime adapter (`gemini-runtime-adapter.ts`) intercepts these specific tool events and maps them to the first-class `retrieved_memories` data model:
+
 1. **`preload_memory`**: Emitted at the start of a turn when the agent automatically pulls relevant memories into the prompt.
 2. **`load_memory`**: Emitted when the agent dynamically queries the Memory Bank mid-turn.
 3. **`add_session_to_memory`**: Emitted as a session callback when conversational events are added to Memory Bank.
@@ -106,7 +115,8 @@ export interface AgentStreamEvent {
 
 ## 3. UI & UX Architecture
 
-### 3.1 Entry Point: User Avatar Menu ([`user-avatar-menu.tsx`](file:///Users/mblanc/projects/llm-council-ui/src/components/auth/user-avatar-menu.tsx))
+### 3.1 Entry Point: User Avatar Menu ([`user-avatar-menu.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/auth/user-avatar-menu.tsx))
+
 - Inside the dropdown menu at the bottom-left sidebar:
   ```text
   ┌─────────────────────────────────────┐
@@ -144,6 +154,7 @@ export interface AgentStreamEvent {
 ```
 
 ### 3.3 In-Chat Memory Retrieval Badge (`src/components/assistant-ui/gemini-message.tsx`)
+
 - When the agent responds using retrieved memories, render a subtle pill above or below the message:
   ```text
   ┌──────────────────────────────────────────────────────────────┐

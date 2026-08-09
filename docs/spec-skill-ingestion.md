@@ -3,9 +3,11 @@
 ## 1. Objective & Background
 
 ### 1.1 Objective
+
 Implement a lightweight, high-fidelity **Skill Ingestion Visualizer** in `agent-runtime-ui`. This feature detects when a Google Cloud ADK agent dynamically discovers and mounts remote skills from the **Google Cloud Skill Registry** ([`adk.dev/integrations/skills-registry`](https://adk.dev/integrations/skills-registry/)) via built-in `search_skills` and `load_skill` tools, rendering a clean **`[ 🧩 Skill Loaded: name vX.Y ]`** badge with an expandable metadata card inside the agent's reasoning trace.
 
 ### 1.2 Target User & Problem Solved
+
 - **Target User**: Developers, enterprise stakeholders, and demo audiences observing complex multi-step agent reasoning.
 - **Problem Solved**: When an agent loads a remote skill package at runtime, generic tool chips only display raw JSON payloads. Users cannot easily see what domain knowledge, instructions, or tools were unlocked by that skill.
 - **Solution**: The UI intercepts `load_skill` and `search_skills` tool events, formatting them into a styled Gemini capability badge. Clicking or hovering opens an inspector detailing the skill's name, version/revision, human-readable description, and unlocked tools.
@@ -15,6 +17,7 @@ Implement a lightweight, high-fidelity **Skill Ingestion Visualizer** in `agent-
 ## 2. Architecture & Data Contracts
 
 ### 2.1 ADK Skill Tool Contract
+
 In ADK, `load_skill` emits a standard function call and response with the following structured payload:
 
 ```typescript
@@ -43,7 +46,9 @@ export interface SkillStreamEventPayload {
 ```
 
 ### 2.2 Tool Call Interception Mapping (`src/lib/gemini-runtime-adapter.ts`)
+
 When the SSE stream receives a tool event:
+
 - **`tool_call.name === "load_skill"`**:
   - Arguments: `{ "skill_name": "bigquery-analyzer", "version": "2.1.0" }`
   - Result: `{ "name": "bigquery-analyzer", "version": "2.1.0", "description": "...", "tools": ["execute_query"] }`
@@ -55,7 +60,7 @@ When the SSE stream receives a tool event:
 
 ### 3.1 Reasoning Trace & Message Integration (`src/components/skills/`)
 
-```text
+````text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │ Assistant:                                                                  │
 │ ▾ Thought: Analyzing sales database query optimization...                   │
@@ -71,9 +76,10 @@ When the SSE stream receives a tool event:
 │ SELECT * FROM `project.dataset.sales` WHERE date >= '2026-01-01'            │
 │ ```                                                                         │
 └─────────────────────────────────────────────────────────────────────────────┘
-```
+````
 
 ### 3.2 Component Details
+
 1. **`SkillLoadedBadge` (`src/components/skills/skill-loaded-badge.tsx`)**:
    - Compact pill featuring a purple/indigo jigsaw puzzle icon (`🧩`), skill display name, and version tag.
    - Expandable toggle showing summary details.
@@ -83,7 +89,7 @@ When the SSE stream receives a tool event:
      - Badges for all tools unlocked by the skill.
      - Author, license, and revision ID.
 3. **`SearchSkillsPill` (`src/components/skills/search-skills-pill.tsx`)**:
-   - Subtle indicator when the agent searches the registry: *"🔍 Searched Skill Registry for: 'bigquery optimization'"*.
+   - Subtle indicator when the agent searches the registry: _"🔍 Searched Skill Registry for: 'bigquery optimization'"_.
 
 ---
 
@@ -126,7 +132,7 @@ src/
    - Test expanding the badge renders the description and tool chips.
    - Test `SearchSkillsPill` renders search queries correctly.
 3. **Stream Integration Tests (`tests/skills-stream.test.ts`)**:
-   - Test mock stream trigger (e.g. *"Analyze this BigQuery SQL using the registry"*) producing `load_skill` events and verifying UI rendering.
+   - Test mock stream trigger (e.g. _"Analyze this BigQuery SQL using the registry"_) producing `load_skill` events and verifying UI rendering.
 
 ---
 

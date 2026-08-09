@@ -3,9 +3,11 @@
 ## 1. Objective & Background
 
 ### 1.1 Objective
+
 Implement the **A2UI Protocol** ([`a2ui.org`](https://a2ui.org/) / [`adk.dev/integrations/a2ui`](https://adk.dev/integrations/a2ui/)) in `agent-runtime-ui`. This allows Google Cloud ADK agents to stream structured JSON UI component trees (`application/json+a2ui`) that render directly inside conversational messages as interactive, Gemini-styled widgets (Cards, Stat Metrics, Forms, Action Buttons, Selection Dropdowns, and Mini-Charts) with two-way interactive dispatch back to the agent session.
 
 ### 1.2 Target User & Problem Solved
+
 - **Target User**: Enterprise users and developers interacting with ADK agents on Vertex AI.
 - **Problem Solved**: Text and markdown are passive and clumsy for structured interactions (e.g., flight booking cards, multi-field configuration forms, approval buttons, or metric cards).
 - **Solution**: The agent emits an A2UI JSON payload. The client dynamically parses and renders native React/Tailwind components directly in the message flow. Clicking buttons or submitting forms updates component state in-place and dispatches the action back to the agent to continue the multi-turn workflow.
@@ -15,6 +17,7 @@ Implement the **A2UI Protocol** ([`a2ui.org`](https://a2ui.org/) / [`adk.dev/int
 ## 2. Architecture & Data Contracts
 
 ### 2.1 A2UI Wire Format (`src/types/agent.ts`)
+
 A2UI payloads are delivered inside message parts using the official MIME type `application/json+a2ui`:
 
 ```typescript
@@ -61,7 +64,9 @@ export interface AgentMessagePart {
 ```
 
 ### 2.2 Action Dispatch Protocol (`/api/chat`)
+
 When a user interacts with an A2UI component (e.g. clicks an action button or submits a form):
+
 1. **In-Place State Lock**: The component transitions to a `submitted` / `disabled` state with a subtle loading spinner.
 2. **Automated Conversational Turn**: The component dispatches a structured user message over `/api/chat`:
    ```json
@@ -108,6 +113,7 @@ When a user interacts with an A2UI component (e.g. clicks an action button or su
 ```
 
 ### 3.2 Component Catalog Implementations (`src/components/a2ui/catalog/`)
+
 1. **Containers & Typography**:
    - `Card`: Rounded border container with subtle background `#f8fafd` / `#1a1c1e`.
    - `Heading`: Level 1-4 styled headings.
@@ -200,5 +206,5 @@ src/
 - [ ] `bun run check` passes with zero TypeScript errors.
 - [ ] `bun run lint` passes with zero ESLint warnings/errors.
 - [ ] `bun run test` passes all unit and component tests.
-- [ ] Asking the agent in mock mode: *"Show me the deployment approval card"* renders an interactive A2UI card.
+- [ ] Asking the agent in mock mode: _"Show me the deployment approval card"_ renders an interactive A2UI card.
 - [ ] Clicking **"Approve & Deploy"** updates the card state to `Submitted` and automatically sends the action to the agent.

@@ -3,15 +3,17 @@
 ## 1. Objective & Background
 
 ### 1.1 Objective
+
 Implement a dynamic **Multi-Agent Backend Switcher** in `agent-runtime-ui`. This feature allows users to discover, list, and switch between all deployed **Vertex AI Reasoning Engines** (ADK agents) across the Google Cloud project directly from the top header bar. Switching the active agent immediately resets the chat view to a fresh turn and reloads the sidebar thread list scoped to that specific agent.
 
 ### 1.2 Target User & Problem Solved
+
 - **Target User**: Developers, teams, and enterprise evaluators managing multiple specialized ADK agents (e.g., Code Reviewer, Architecture Advisor, Support Bot) in Google Cloud.
 - **Problem Solved**: Currently, the UI is hardcoded to a single environment variable (`REASONING_ENGINE_ID`), and the composer contains a static "Flash/Pro" placeholder. Users cannot test or interact with multiple deployed agents without restarting the server or editing config files.
 - **Solution**:
   1. The BFF queries Vertex AI across all active project locations and returns a unified list of deployed agents (`GET /api/agents`).
   2. The top header renders a prominent **Agent Selector Dropdown** displaying agent display names, descriptions, and region badges.
-  3. Selecting an agent unloads the current chat, starts a clean empty greeting screen, updates the sidebar header (*"Threads for [Selected Agent]"*), and scopes all `/api/sessions` and `/api/chat` requests to the selected engine.
+  3. Selecting an agent unloads the current chat, starts a clean empty greeting screen, updates the sidebar header (_"Threads for [Selected Agent]"_), and scopes all `/api/sessions` and `/api/chat` requests to the selected engine.
 
 ---
 
@@ -73,6 +75,7 @@ export interface ListAgentsResponse {
 ```
 
 ### 3.2 Component Details
+
 1. **`AgentHeaderSelector` (`src/components/agent-switcher/agent-header-selector.tsx`)**:
    - Replaces the static Flash/Pro picker and mounts at the top header.
    - Radix Dropdown showing:
@@ -84,10 +87,10 @@ export interface ListAgentsResponse {
      - `availableAgents: DeployedAgent[]`
      - `setActiveAgent: (agent: DeployedAgent) => void`
      - Persists selected agent ID in `localStorage` for continuity across page refreshes.
-3. **Sidebar Scoping Integration ([`thread-sidebar.tsx`](file:///Users/mblanc/projects/llm-council-ui/src/components/assistant-ui/thread-sidebar.tsx))**:
+3. **Sidebar Scoping Integration ([`thread-sidebar.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/thread-sidebar.tsx))**:
    - Thread list automatically re-fetches `/api/sessions?agentId=...` when `activeAgent` changes.
    - Header displays subtitle indicating the current agent context.
-4. **Empty State Dynamic Greeting ([`gemini-thread.tsx`](file:///Users/mblanc/projects/llm-council-ui/src/components/assistant-ui/gemini-thread.tsx))**:
+4. **Empty State Dynamic Greeting ([`gemini-thread.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/gemini-thread.tsx))**:
    - The subtitle and placeholder dynamically reflect the active agent's name and description.
 
 ---
@@ -163,7 +166,7 @@ src/
 - [ ] `bun run lint` passes with zero ESLint warnings/errors.
 - [ ] `bun run test` passes all unit and component tests.
 - [ ] In mock mode, the top header dropdown lists 3 realistic agents:
-  1. *ADK Architecture Advisor (us-central1)*
-  2. *Code Reviewer & Auditor (europe-west4)*
-  3. *Cloud Ops Assistant (us-central1)*
+  1. _ADK Architecture Advisor (us-central1)_
+  2. _Code Reviewer & Auditor (europe-west4)_
+  3. _Cloud Ops Assistant (us-central1)_
 - [ ] Switching between agents clears the active chat, updates the thread list, and routes subsequent prompts to the newly selected agent.

@@ -72,62 +72,62 @@ Use this index to quickly locate specific subsystems and implementations across 
 
 ### Core Pages & Layouts
 
-- [`src/app/page.tsx`](file:///Users/mblanc/projects/llm-council-ui/src/app/page.tsx): Main chat page wiring `useRemoteThreadListRuntime`, `useLocalRuntime`, and layout primitives.
-- [`src/app/login/page.tsx`](file:///Users/mblanc/projects/llm-council-ui/src/app/login/page.tsx): Gemini-styled Google SSO login page.
-- [`src/app/layout.tsx`](file:///Users/mblanc/projects/llm-council-ui/src/app/layout.tsx): Root layout with theme provider and session context.
-- [`src/app/globals.css`](file:///Users/mblanc/projects/llm-council-ui/src/app/globals.css): Global Tailwind styles, ambient glow tokens, and custom scrollbars.
+- [`src/app/page.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/page.tsx): Main chat page wiring `useRemoteThreadListRuntime`, `useLocalRuntime`, and layout primitives.
+- [`src/app/login/page.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/login/page.tsx): Gemini-styled Google SSO login page.
+- [`src/app/layout.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/layout.tsx): Root layout with theme provider and session context.
+- [`src/app/globals.css`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/globals.css): Global Tailwind styles, ambient glow tokens, and custom scrollbars.
 
 ### API Routes (Backend-For-Frontend)
 
-- [`src/app/api/chat/route.ts`](file:///Users/mblanc/projects/llm-council-ui/src/app/api/chat/route.ts): SSE streaming endpoint connecting to Vertex AI Reasoning Engine `:streamQuery`.
-- [`src/app/api/sessions/route.ts`](file:///Users/mblanc/projects/llm-council-ui/src/app/api/sessions/route.ts): List user sessions (`GET`) and create new session (`POST`).
-- [`src/app/api/sessions/[sessionId]/route.ts`](file:///Users/mblanc/projects/llm-council-ui/src/app/api/sessions/[sessionId]/route.ts): Fetch session event history (`GET`) and delete session (`DELETE`).
-- [`src/app/api/auth/sign-in/google/route.ts`](file:///Users/mblanc/projects/llm-council-ui/src/app/api/auth/sign-in/google/route.ts): Initiates Google OAuth 2.0 PKCE flow.
-- [`src/app/api/auth/callback/google/route.ts`](file:///Users/mblanc/projects/llm-council-ui/src/app/api/auth/callback/google/route.ts): Handles OAuth redirect, issues signed JWT session cookie.
-- [`src/app/api/auth/session/route.ts`](file:///Users/mblanc/projects/llm-council-ui/src/app/api/auth/session/route.ts): Validates JWT session cookie and returns user profile.
-- [`src/app/api/auth/sign-out/route.ts`](file:///Users/mblanc/projects/llm-council-ui/src/app/api/auth/sign-out/route.ts): Clears session cookie.
+- [`src/app/api/chat/route.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/api/chat/route.ts): SSE streaming endpoint connecting to Vertex AI Reasoning Engine `:streamQuery`.
+- [`src/app/api/sessions/route.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/api/sessions/route.ts): List user sessions (`GET`) and create new session (`POST`).
+- [`src/app/api/sessions/[sessionId]/route.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/api/sessions/[sessionId]/route.ts): Fetch session event history (`GET`) and delete session (`DELETE`).
+- [`src/app/api/auth/sign-in/google/route.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/api/auth/sign-in/google/route.ts): Initiates Google OAuth 2.0 PKCE flow.
+- [`src/app/api/auth/callback/google/route.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/api/auth/callback/google/route.ts): Handles OAuth redirect, issues signed JWT session cookie.
+- [`src/app/api/auth/session/route.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/api/auth/session/route.ts): Validates JWT session cookie and returns user profile.
+- [`src/app/api/auth/sign-out/route.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/api/auth/sign-out/route.ts): Clears session cookie.
 
 ### Assistant UI Components
 
-- [`src/components/assistant-ui/gemini-thread.tsx`](file:///Users/mblanc/projects/llm-council-ui/src/components/assistant-ui/gemini-thread.tsx): Active conversation view, empty state greeting, and viewport footer.
-- [`src/components/assistant-ui/gemini-composer.tsx`](file:///Users/mblanc/projects/llm-council-ui/src/components/assistant-ui/gemini-composer.tsx): Single-row pill composer with model selector (Flash/Pro) and controls.
-- [`src/components/assistant-ui/gemini-message.tsx`](file:///Users/mblanc/projects/llm-council-ui/src/components/assistant-ui/gemini-message.tsx): Message part rendering (user bubbles, markdown text, thinking indicators).
-- [`src/components/assistant-ui/gemini-reasoning.tsx`](file:///Users/mblanc/projects/llm-council-ui/src/components/assistant-ui/gemini-reasoning.tsx): Collapsible reasoning/thought accordion block.
-- [`src/components/assistant-ui/gemini-tools.tsx`](file:///Users/mblanc/projects/llm-council-ui/src/components/assistant-ui/gemini-tools.tsx): Tool call execution chips and output payloads.
-- [`src/components/assistant-ui/subagent-collapsible.tsx`](file:///Users/mblanc/projects/llm-council-ui/src/components/assistant-ui/subagent-collapsible.tsx): Subagent execution trace accordion.
-- [`src/components/assistant-ui/thread-sidebar.tsx`](file:///Users/mblanc/projects/llm-council-ui/src/components/assistant-ui/thread-sidebar.tsx): Multi-thread sidebar list with delete and new chat actions.
-- [`src/components/assistant-ui/markdown-text.tsx`](file:///Users/mblanc/projects/llm-council-ui/src/components/assistant-ui/markdown-text.tsx): Markdown text primitive integration with syntax highlighting.
-- [`src/components/assistant-ui/shiki-highlighter.tsx`](file:///Users/mblanc/projects/llm-council-ui/src/components/assistant-ui/shiki-highlighter.tsx): Code block syntax highlighting component.
+- [`src/components/assistant-ui/gemini-thread.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/gemini-thread.tsx): Active conversation view, empty state greeting, and viewport footer.
+- [`src/components/assistant-ui/gemini-composer.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/gemini-composer.tsx): Single-row pill composer with model selector (Flash/Pro) and controls.
+- [`src/components/assistant-ui/gemini-message.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/gemini-message.tsx): Message part rendering (user bubbles, markdown text, thinking indicators).
+- [`src/components/assistant-ui/gemini-reasoning.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/gemini-reasoning.tsx): Collapsible reasoning/thought accordion block.
+- [`src/components/assistant-ui/gemini-tools.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/gemini-tools.tsx): Tool call execution chips and output payloads.
+- [`src/components/assistant-ui/subagent-collapsible.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/subagent-collapsible.tsx): Subagent execution trace accordion.
+- [`src/components/assistant-ui/thread-sidebar.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/thread-sidebar.tsx): Multi-thread sidebar list with delete and new chat actions.
+- [`src/components/assistant-ui/markdown-text.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/markdown-text.tsx): Markdown text primitive integration with syntax highlighting.
+- [`src/components/assistant-ui/shiki-highlighter.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/shiki-highlighter.tsx): Code block syntax highlighting component.
 
 ### Auth & UI Primitives
 
-- [`src/components/auth/user-avatar-menu.tsx`](file:///Users/mblanc/projects/llm-council-ui/src/components/auth/user-avatar-menu.tsx): User profile dropdown with logout button.
-- [`src/components/auth/login-button.tsx`](file:///Users/mblanc/projects/llm-council-ui/src/components/auth/login-button.tsx): Google SSO sign-in button.
-- [`src/components/ui/`](file:///Users/mblanc/projects/llm-council-ui/src/components/ui): Radix/shadcn UI primitives ([`button.tsx`](file:///Users/mblanc/projects/llm-council-ui/src/components/ui/button.tsx), [`dropdown-menu.tsx`](file:///Users/mblanc/projects/llm-council-ui/src/components/ui/dropdown-menu.tsx), [`avatar.tsx`](file:///Users/mblanc/projects/llm-council-ui/src/components/ui/avatar.tsx), [`tooltip.tsx`](file:///Users/mblanc/projects/llm-council-ui/src/components/ui/tooltip.tsx)).
+- [`src/components/auth/user-avatar-menu.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/auth/user-avatar-menu.tsx): User profile dropdown with logout button.
+- [`src/components/auth/login-button.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/auth/login-button.tsx): Google SSO sign-in button.
+- [`src/components/ui/`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/ui): Radix/shadcn UI primitives ([`button.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/ui/button.tsx), [`dropdown-menu.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/ui/dropdown-menu.tsx), [`avatar.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/ui/avatar.tsx), [`tooltip.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/ui/tooltip.tsx)).
 
 ### Business Logic & Services
 
-- [`src/lib/agent-runtime-client.ts`](file:///Users/mblanc/projects/llm-council-ui/src/lib/agent-runtime-client.ts): Vertex AI Reasoning Engine REST API client, SSE stream handler, and mock store.
-- [`src/lib/gemini-runtime-adapter.ts`](file:///Users/mblanc/projects/llm-council-ui/src/lib/gemini-runtime-adapter.ts): `ChatModelAdapter` translating `/api/chat` SSE stream to assistant-ui runtime.
-- [`src/lib/session-adapter.tsx`](file:///Users/mblanc/projects/llm-council-ui/src/lib/session-adapter.tsx): `RemoteThreadListAdapter` connecting assistant-ui thread list to `/api/sessions`.
-- [`src/lib/auth.ts`](file:///Users/mblanc/projects/llm-council-ui/src/lib/auth.ts): Server-side authentication and session extraction.
-- [`src/lib/auth-client.ts`](file:///Users/mblanc/projects/llm-council-ui/src/lib/auth-client.ts): Client-side authentication state hook.
-- [`src/lib/jwt.ts`](file:///Users/mblanc/projects/llm-council-ui/src/lib/jwt.ts): Web Crypto API HMAC-SHA256 JWT signing and verification.
+- [`src/lib/agent-runtime-client.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/agent-runtime-client.ts): Vertex AI Reasoning Engine REST API client, SSE stream handler, and mock store.
+- [`src/lib/gemini-runtime-adapter.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/gemini-runtime-adapter.ts): `ChatModelAdapter` translating `/api/chat` SSE stream to assistant-ui runtime.
+- [`src/lib/session-adapter.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/session-adapter.tsx): `RemoteThreadListAdapter` connecting assistant-ui thread list to `/api/sessions`.
+- [`src/lib/auth.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/auth.ts): Server-side authentication and session extraction.
+- [`src/lib/auth-client.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/auth-client.ts): Client-side authentication state hook.
+- [`src/lib/jwt.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/jwt.ts): Web Crypto API HMAC-SHA256 JWT signing and verification.
 
 ### Types & Specs
 
-- [`src/types/agent.ts`](file:///Users/mblanc/projects/llm-council-ui/src/types/agent.ts): Data contracts for streams, sessions, subagents, and requests.
-- [`docs/spec.md`](file:///Users/mblanc/projects/llm-council-ui/docs/spec.md): Overall application specification and architecture diagram.
-- [`docs/spec-session-service-thread-list.md`](file:///Users/mblanc/projects/llm-council-ui/docs/spec-session-service-thread-list.md): Detailed specification for session service and sidebar thread list integration.
+- [`src/types/agent.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/types/agent.ts): Data contracts for streams, sessions, subagents, and requests.
+- [`docs/spec.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/spec.md): Overall application specification and architecture diagram.
+- [`docs/spec-session-service-thread-list.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/spec-session-service-thread-list.md): Detailed specification for session service and sidebar thread list integration.
 
 ### Test Suite
 
-- [`tests/sessions-api.test.ts`](file:///Users/mblanc/projects/llm-council-ui/tests/sessions-api.test.ts): Integration tests for session REST endpoints.
-- [`tests/chat-api.test.ts`](file:///Users/mblanc/projects/llm-council-ui/tests/chat-api.test.ts): Unit tests for `/api/chat` SSE streaming proxy.
-- [`tests/thread-sidebar.test.tsx`](file:///Users/mblanc/projects/llm-council-ui/tests/thread-sidebar.test.tsx): React testing for thread sidebar primitives.
-- [`tests/components.test.tsx`](file:///Users/mblanc/projects/llm-council-ui/tests/components.test.tsx): Gemini UI components tests.
-- [`tests/agent-client.test.ts`](file:///Users/mblanc/projects/llm-council-ui/tests/agent-client.test.ts): Agent Runtime REST & streaming client tests.
-- [`tests/e2e/`](file:///Users/mblanc/projects/llm-council-ui/tests/e2e): Playwright end-to-end test specifications.
+- [`tests/sessions-api.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/sessions-api.test.ts): Integration tests for session REST endpoints.
+- [`tests/chat-api.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/chat-api.test.ts): Unit tests for `/api/chat` SSE streaming proxy.
+- [`tests/thread-sidebar.test.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/tests/thread-sidebar.test.tsx): React testing for thread sidebar primitives.
+- [`tests/components.test.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/tests/components.test.tsx): Gemini UI components tests.
+- [`tests/agent-client.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/agent-client.test.ts): Agent Runtime REST & streaming client tests.
+- [`tests/e2e/`](file:///Users/mblanc/projects/agent-runtime-ui/tests/e2e): Playwright end-to-end test specifications.
 
 ---
 
@@ -136,12 +136,12 @@ Use this index to quickly locate specific subsystems and implementations across 
 ### Do's
 
 - **Run Quality Gates**: Always run `bun run preflight` (or `bun run check`, `bun run lint`, `bun run test`) before completing a task to ensure zero type errors or broken tests.
-- **Strict TypeScript Types**: Maintain 100% strict typing. Avoid `any` at all costs. Define clean interfaces in [`src/types/agent.ts`](file:///Users/mblanc/projects/llm-council-ui/src/types/agent.ts) when extending functionality.
-- **Use `cn()` Utility**: Use the `cn()` helper from [`src/lib/utils.ts`](file:///Users/mblanc/projects/llm-council-ui/src/lib/utils.ts) when merging Tailwind classes.
+- **Strict TypeScript Types**: Maintain 100% strict typing. Avoid `any` at all costs. Define clean interfaces in [`src/types/agent.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/types/agent.ts) when extending functionality.
+- **Use `cn()` Utility**: Use the `cn()` helper from [`src/lib/utils.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/utils.ts) when merging Tailwind classes.
 - **Stateless Serverless Architecture**: Keep session management strictly stateless via cryptographic JWT cookies.
 - **User Identity Scoping**: Ensure all backend API endpoints (`/api/sessions`, `/api/chat`) strictly validate user authentication and filter resources by `userId`.
 - **Maintain `@assistant-ui/react` v0.15 Patterns**: Use current accessor APIs (`aui.thread`, `aui.composer`, `aui.message`) and unified state hooks (`useAui()`, `useAuiState()`).
-- **Support Mock Mode**: Keep mock data handlers in [`src/lib/agent-runtime-client.ts`](file:///Users/mblanc/projects/llm-council-ui/src/lib/agent-runtime-client.ts) in sync whenever adding new stream event types or tool representations.
+- **Support Mock Mode**: Keep mock data handlers in [`src/lib/agent-runtime-client.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/agent-runtime-client.ts) in sync whenever adding new stream event types or tool representations.
 
 ### Don'ts
 
