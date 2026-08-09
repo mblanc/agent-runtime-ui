@@ -17,10 +17,16 @@ export function createAgentRuntimeProvider(
     (projectId || isFullResource) && effectiveAgentId && !isMockAgent
   );
 
-  // Fail-fast assertion in production mode
+  // Fail-fast assertion in production mode with granular diagnostics
   if (!isExplicitMock && !isConfigured && process.env.NODE_ENV === "production") {
+    const missingVars: string[] = [];
+    if (!projectId && !isFullResource) missingVars.push("GOOGLE_CLOUD_PROJECT");
+    if (!effectiveAgentId) missingVars.push("GOOGLE_REASONING_ENGINE_ID");
+
     throw new Error(
-      "Configuration Error: GOOGLE_CLOUD_PROJECT and GOOGLE_REASONING_ENGINE_ID must be configured in production."
+      `Configuration Error: Required Google Cloud environment variables missing in production: ${missingVars.join(
+        ", "
+      )}.`
     );
   }
 
