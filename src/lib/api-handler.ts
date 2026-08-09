@@ -13,40 +13,48 @@ export type AuthenticatedRouteHandler<TParams = Record<string, string>> = (
   context: AuthenticatedContext<TParams>
 ) => Promise<Response>;
 
+async function authenticateRequest(
+  req: NextRequest
+): Promise<{ session: AuthSession; userId: string; userEmail: string } | NextResponse> {
+  const session = await auth.api.getSession({
+    headers: req.headers,
+  });
+
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized. Please sign in." }, { status: 401 });
+  }
+
+  return {
+    session,
+    userId: session.user.id,
+    userEmail: session.user.email || "",
+  };
+}
+
+function handleApiError(req: NextRequest, err: unknown): NextResponse {
+  const errorMessage = err instanceof Error ? err.message : "Internal server error";
+  console.error(`[API Error] ${req.nextUrl?.pathname || "route"}:`, errorMessage);
+  return NextResponse.json({ error: errorMessage }, { status: 500 });
+}
+
 /**
  * Higher-order wrapper that enforces authentication for static Next.js App Router routes.
- * Takes (req: NextRequest) -> Promise<Response>.
  */
 export function withAuth(handler: AuthenticatedRouteHandler<Record<string, never>>) {
   return async (req: NextRequest): Promise<Response> => {
     try {
-      const session = await auth.api.getSession({
-        headers: req.headers,
-      });
+      const authResult = await authenticateRequest(req);
+      if (authResult instanceof NextResponse) return authResult;
 
-      if (!session?.user?.id) {
-        return NextResponse.json(
-          { error: "Unauthorized. Please sign in." },
-          { status: 401 }
-        );
-      }
-
-      return await handler(req, {
-        session,
-        userId: session.user.id,
-        userEmail: session.user.email || "",
-      });
+      return await handler(req, authResult);
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : "Internal server error";
-      console.error(`[API Error] ${req.nextUrl?.pathname || "route"}:`, errorMessage);
-      return NextResponse.json({ error: errorMessage }, { status: 500 });
+      return handleApiError(req, err);
     }
   };
 }
 
 /**
  * Higher-order wrapper that enforces authentication for dynamic Next.js App Router routes.
- * Takes (req: NextRequest, context: { params: Promise<TParams> }) -> Promise<Response>.
  */
 export function withAuthDynamic<TParams extends Record<string, string>>(
   handler: AuthenticatedRouteHandler<TParams>
@@ -56,29 +64,13 @@ export function withAuthDynamic<TParams extends Record<string, string>>(
     context: { params: Promise<TParams> }
   ): Promise<Response> => {
     try {
-      const session = await auth.api.getSession({
-        headers: req.headers,
-      });
-
-      if (!session?.user?.id) {
-        return NextResponse.json(
-          { error: "Unauthorized. Please sign in." },
-          { status: 401 }
-        );
-      }
+      const authResult = await authenticateRequest(req);
+      if (authResult instanceof NextResponse) return authResult;
 
       const params = await context.params;
-
-      return await handler(req, {
-        session,
-        userId: session.user.id,
-        userEmail: session.user.email || "",
-        params,
-      });
+      return await handler(req, { ...authResult, params });
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : "Internal server error";
-      console.error(`[API Error] ${req.nextUrl?.pathname || "route"}:`, errorMessage);
-      return NextResponse.json({ error: errorMessage }, { status: 500 });
+      return handleApiError(req, err);
     }
   };
 }
