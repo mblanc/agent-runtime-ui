@@ -30,13 +30,27 @@ export async function* parseSseStream(
 
         try {
           const parsed = JSON.parse(dataStr);
+          const eventId =
+            (typeof parsed.id === "string" ? parsed.id : undefined) ||
+            (typeof parsed.event_id === "string" ? parsed.event_id : undefined) ||
+            (typeof parsed.eventId === "string" ? parsed.eventId : undefined) ||
+            (typeof parsed.invocation_id === "string"
+              ? parsed.invocation_id
+              : undefined) ||
+            (typeof parsed.invocationId === "string" ? parsed.invocationId : undefined) ||
+            undefined;
 
           if (parsed.agent_call) {
-            yield { event_type: "agent_call", agent_call: parsed.agent_call };
+            yield {
+              event_type: "agent_call",
+              agent_call: parsed.agent_call,
+              ...(eventId ? { eventId } : {}),
+            };
           } else if (parsed.agent_response) {
             yield {
               event_type: "agent_response",
               agent_response: parsed.agent_response,
+              ...(eventId ? { eventId } : {}),
             };
           } else if (parsed.content?.parts && Array.isArray(parsed.content.parts)) {
             const author =
@@ -48,7 +62,11 @@ export async function* parseSseStream(
             for (const part of parsed.content.parts) {
               if (part.text) {
                 if (part.thought) {
-                  yield { event_type: "thought", thought: part.text };
+                  yield {
+                    event_type: "thought",
+                    thought: part.text,
+                    ...(eventId ? { eventId } : {}),
+                  };
                 } else if (isSubAgent) {
                   yield {
                     event_type: "agent_response",
@@ -57,9 +75,15 @@ export async function* parseSseStream(
                       displayName: formatAgentDisplayName(author),
                       response: part.text,
                     },
+                    ...(eventId ? { eventId } : {}),
                   };
                 } else {
-                  yield { event_type: "content", content: part.text, author };
+                  yield {
+                    event_type: "content",
+                    content: part.text,
+                    author,
+                    ...(eventId ? { eventId } : {}),
+                  };
                 }
               }
               const fnCall = part.function_call || part.functionCall;
@@ -71,6 +95,7 @@ export async function* parseSseStream(
                     name,
                     args: fnCall.args,
                   },
+                  ...(eventId ? { eventId } : {}),
                 };
               }
               const fnResp = part.function_response || part.functionResponse;
@@ -82,6 +107,7 @@ export async function* parseSseStream(
                     name,
                     result: (fnResp.response as Record<string, unknown>) || {},
                   },
+                  ...(eventId ? { eventId } : {}),
                 };
               }
             }
@@ -100,18 +126,29 @@ export async function* parseSseStream(
                   displayName: formatAgentDisplayName(author),
                   response: parsed.text,
                 },
+                ...(eventId ? { eventId } : {}),
               };
             } else {
-              yield { event_type: "content", content: parsed.text, author };
+              yield {
+                event_type: "content",
+                content: parsed.text,
+                author,
+                ...(eventId ? { eventId } : {}),
+              };
             }
           } else if (parsed.thought) {
-            yield { event_type: "thought", thought: parsed.thought };
+            yield {
+              event_type: "thought",
+              thought: parsed.thought,
+              ...(eventId ? { eventId } : {}),
+            };
           } else if (parsed.function_call || parsed.functionCall) {
             const fnCall = parsed.function_call || parsed.functionCall;
             const name = String(fnCall.name || "");
             yield {
               event_type: "tool_call",
               tool_call: { name, args: fnCall.args },
+              ...(eventId ? { eventId } : {}),
             };
           } else if (parsed.function_response || parsed.functionResponse) {
             const fnResp = parsed.function_response || parsed.functionResponse;
@@ -122,15 +159,25 @@ export async function* parseSseStream(
                 name,
                 result: (fnResp.response as Record<string, unknown>) || {},
               },
+              ...(eventId ? { eventId } : {}),
             };
           } else if (parsed.tool_call) {
-            yield { event_type: "tool_call", tool_call: parsed.tool_call };
+            yield {
+              event_type: "tool_call",
+              tool_call: parsed.tool_call,
+              ...(eventId ? { eventId } : {}),
+            };
           } else if (parsed.tool_result) {
-            yield { event_type: "tool_result", tool_result: parsed.tool_result };
+            yield {
+              event_type: "tool_result",
+              tool_result: parsed.tool_result,
+              ...(eventId ? { eventId } : {}),
+            };
           } else if (parsed.error_message) {
             yield {
               event_type: "content",
               content: `\n\n*Agent message: ${parsed.error_message}*`,
+              ...(eventId ? { eventId } : {}),
             };
           }
         } catch {

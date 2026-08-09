@@ -5,6 +5,9 @@ import { ChevronDown, ChevronRight, BrainCircuit, CheckCircle2 } from "lucide-re
 import { cn } from "@/lib/utils";
 import { SubAgentCollapsible } from "./subagent-collapsible";
 import { ToolCollapsible } from "./tool-collapsible";
+import { ThoughtCollapsible } from "./thought-collapsible";
+
+export { SubAgentCollapsible, ToolCollapsible, ThoughtCollapsible };
 
 interface ReasoningRootProps {
   children: ReactNode;
@@ -133,7 +136,7 @@ export function ReasoningContent({
 }
 
 interface ParsedReasoningBlock {
-  type: "text" | "subagent" | "tool";
+  type: "thought" | "subagent" | "tool";
   title?: string;
   meta?: Record<string, string>;
   content: string;
@@ -188,18 +191,18 @@ function parseToolBlockContent(content: string): {
 function parseReasoningBlocks(rawText: string): ParsedReasoningBlock[] {
   const blocks: ParsedReasoningBlock[] = [];
   const regex =
-    /:::(subagent|tool)\[([^\]]+)\](?:\{([^}]*)\})?\s*\r?\n([\s\S]*?)(?:\r?\n:::|$)/g;
+    /:::(subagent|tool|thought)\[([^\]]*)\](?:\{([^}]*)\})?\s*\r?\n([\s\S]*?)(?:\r?\n:::|$)/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
   while ((match = regex.exec(rawText)) !== null) {
     const textBefore = rawText.substring(lastIndex, match.index).trim();
     if (textBefore) {
-      blocks.push({ type: "text", content: textBefore });
+      blocks.push({ type: "thought", content: textBefore });
     }
 
-    const blockType = match[1] as "subagent" | "tool";
-    const title = match[2];
+    const blockType = match[1] as "subagent" | "tool" | "thought";
+    const title = match[2]?.trim() || undefined;
     const metaStr = match[3] || "";
     const body = match[4];
 
@@ -214,7 +217,7 @@ function parseReasoningBlocks(rawText: string): ParsedReasoningBlock[] {
       type: blockType,
       title,
       meta,
-      content: body,
+      content: body.trim(),
     });
 
     lastIndex = regex.lastIndex;
@@ -222,7 +225,7 @@ function parseReasoningBlocks(rawText: string): ParsedReasoningBlock[] {
 
   const textAfter = rawText.substring(lastIndex).trim();
   if (textAfter) {
-    blocks.push({ type: "text", content: textAfter });
+    blocks.push({ type: "thought", content: textAfter });
   }
 
   return blocks;
@@ -296,12 +299,16 @@ export function parseLegacyToolTraces(text: string): string {
 export function ReasoningText({
   text,
   children,
+  defaultOpen = false,
   className,
 }: {
   text?: string;
   children?: ReactNode;
+  defaultOpen?: boolean;
   className?: string;
 }) {
+  const { streaming } = useContext(ReasoningContext);
+
   const raw = useMemo(() => {
     return text !== undefined ? text : getTextFromChildren(children);
   }, [text, children]);
@@ -309,42 +316,37 @@ export function ReasoningText({
   const rawString = useMemo(() => parseLegacyToolTraces(raw), [raw]);
 
   const blocks = useMemo(() => {
-    if (!rawString.includes(":::subagent[") && !rawString.includes(":::tool[")) {
-      return null;
+    if (!rawString.trim()) {
+      return [];
     }
     return parseReasoningBlocks(rawString);
   }, [rawString]);
 
-  // If no structured blocks are present, render directly with original styling
-  if (!blocks) {
-    return (
-      <div
-        className={cn(
-          "font-mono text-[11.5px] leading-5 text-[#575b5f] dark:text-[#9aa0a6] whitespace-pre-wrap",
-          className
-        )}
-      >
-        {children ?? text}
-      </div>
-    );
+  if (blocks.length === 0) {
+    return null;
   }
 
   return (
     <div className={cn("space-y-2", className)}>
       {blocks.map((block, idx) => {
+        const isLastBlock = idx === blocks.length - 1;
+        const isBlockRunning =
+          block.meta?.status === "running" || (streaming && isLastBlock);
+
         if (block.type === "subagent") {
           const { input, output } = parseSubAgentBlockContent(block.content);
           return (
             <SubAgentCollapsible
-              key={`subagent-${idx}-${block.title}`}
+              key={`subagent-${idx}-${block.title || idx}`}
               displayName={block.title}
               agentName={block.meta?.agent}
               status={
-                (block.meta?.status as "running" | "complete" | "error") || "complete"
+                (block.meta?.status as "running" | "complete" | "error") ||
+                (isBlockRunning ? "running" : "complete")
               }
               callInput={input || block.meta?.input}
               output={output}
-              defaultOpen={false}
+              defaultOpen={defaultOpen}
             />
           );
         }
@@ -353,23 +355,24 @@ export function ReasoningText({
           const { args, result } = parseToolBlockContent(block.content);
           return (
             <ToolCollapsible
-              key={`tool-${idx}-${block.title}`}
+              key={`tool-${idx}-${block.title || idx}`}
               toolName={block.title}
               args={args}
               result={result}
-              status={block.meta?.status || "complete"}
-              defaultOpen={false}
+              status={block.meta?.status || (isBlockRunning ? "running" : "complete")}
+              defaultOpen={defaultOpen}
             />
           );
         }
 
         return (
-          <div
-            key={`text-${idx}`}
-            className="my-1 whitespace-pre-wrap font-mono text-[11.5px] leading-5 text-[#575b5f] dark:text-[#9aa0a6]"
-          >
-            {block.content}
-          </div>
+          <ThoughtCollapsible
+            key={`thought-${idx}`}
+            title={block.title || "Thought"}
+            thought={block.content}
+            status={block.meta?.status || (isBlockRunning ? "running" : "complete")}
+            defaultOpen={defaultOpen || (streaming && isLastBlock)}
+          />
         );
       })}
     </div>

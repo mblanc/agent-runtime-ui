@@ -87,8 +87,14 @@ export class AgentRuntimeClient {
     return `https://${loc}-aiplatform.googleapis.com/v1beta1/${this.getNormalizedEngineResource(targetEngine)}/sessions`;
   }
 
-  getFeedbackBaseUrl(): string {
-    return `https://${this.location}-aiplatform.googleapis.com/v1beta1/${this.getNormalizedEngineResource()}/feedbackEntries`;
+  getFeedbackBaseUrl(customEngineId?: string, customLocation?: string): string {
+    const targetEngine = customEngineId || this.reasoningEngineId;
+    let loc = customLocation || this.location;
+    if (targetEngine.startsWith("projects/")) {
+      const match = targetEngine.match(/^projects\/[^/]+\/locations\/([^/]+)\//);
+      if (match && match[1]) loc = match[1];
+    }
+    return `https://${loc}-aiplatform.googleapis.com/v1beta1/${this.getNormalizedEngineResource(targetEngine)}/feedbackEntries`;
   }
 
   async listReasoningEngines(locations?: string[]): Promise<ListAgentsResponse> {

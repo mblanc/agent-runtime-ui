@@ -61,6 +61,12 @@ export const POST = withAuth(async (req, { userId }) => {
     ...(Array.isArray(body.feedbackLabels)
       ? { feedbackLabels: body.feedbackLabels.filter((l) => typeof l === "string") }
       : {}),
+    ...(body.reasoningEngineId && typeof body.reasoningEngineId === "string"
+      ? { reasoningEngineId: body.reasoningEngineId.trim() }
+      : {}),
+    ...(body.location && typeof body.location === "string"
+      ? { location: body.location.trim() }
+      : {}),
   };
 
   const agentClient = new AgentRuntimeClient();

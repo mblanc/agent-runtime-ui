@@ -24,7 +24,8 @@ beforeAll(() => {
 
 function createMockAssistantMessage(
   id: string,
-  text = "Test reply"
+  text = "Test reply",
+  customMetadata: Record<string, unknown> = {}
 ): ThreadAssistantMessage {
   return {
     id,
@@ -37,7 +38,7 @@ function createMockAssistantMessage(
       unstable_annotations: [],
       unstable_data: [],
       steps: [],
-      custom: {},
+      custom: customMetadata,
     },
   };
 }
@@ -155,6 +156,42 @@ describe("Feedback UI and Runtime Adapter", () => {
       expect(body.sessionId).toBe("session-test-789");
       expect(body.eventId).toBe("msg-888");
       expect(body.feedbackType).toBe("THUMBS_DOWN");
+    });
+
+    it("prioritizes message.metadata.custom.eventId when present", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          name: "feedback-3",
+          createTime: "now",
+          feedbackType: "THUMBS_UP",
+        }),
+      });
+      vi.spyOn(globalThis, "fetch").mockImplementation(
+        mockFetch as unknown as typeof fetch
+      );
+
+      const mockMsg = createMockAssistantMessage("m-1", "Assistant reply", {
+        eventId: "2a18cb74-f654-47f3-86ac-dbb6223bbf8b",
+      });
+
+      const adapter = createGeminiFeedbackAdapter(
+        () => "session-test-custom",
+        () => "engine-123",
+        () => "us-central1"
+      );
+      await adapter.submit({
+        message: mockMsg,
+        type: "positive",
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [, opts] = mockFetch.mock.calls[0];
+      const body = JSON.parse(opts.body);
+      expect(body.sessionId).toBe("session-test-custom");
+      expect(body.eventId).toBe("2a18cb74-f654-47f3-86ac-dbb6223bbf8b");
+      expect(body.reasoningEngineId).toBe("engine-123");
+      expect(body.location).toBe("us-central1");
     });
 
     it("handles fetch error gracefully without unhandled rejection", async () => {

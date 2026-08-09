@@ -7,6 +7,7 @@ import {
   ReasoningTrigger,
   ReasoningContent,
   ReasoningText,
+  ThoughtCollapsible,
 } from "@/components/assistant-ui/reasoning";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import {
@@ -60,7 +61,9 @@ describe("UI Components", () => {
     expect(screen.getByText("Agent is working...")).toBeDefined();
     expect(screen.getByText("Detailed Agent Deliberation Trace")).toBeDefined();
 
-    const trigger = screen.getByRole("button", { name: /thinking/i });
+    const trigger = screen.getByRole("button", {
+      name: /thinking\.\.\.|thinking process/i,
+    });
     fireEvent.click(trigger);
     expect(screen.queryByText("Detailed Agent Deliberation Trace")).toBeNull();
   });
@@ -94,7 +97,38 @@ describe("UI Components", () => {
     expect(screen.queryByText("Alpha individual analysis opinion")).toBeNull();
   });
 
-  it("renders ReasoningText and parses structured subagent and tool tags into interactive components", () => {
+  it("renders ThoughtCollapsible with disclosure toggle and badges", () => {
+    render(
+      <ThoughtCollapsible
+        title="Analysis Plan"
+        thought="First retrieve 10-K filings, then synthesize revenue metrics."
+        status="complete"
+      />
+    );
+
+    expect(screen.getByText("Analysis Plan")).toBeDefined();
+    expect(screen.getByText("Complete")).toBeDefined();
+
+    // Collapsed by default
+    expect(
+      screen.queryByText("First retrieve 10-K filings, then synthesize revenue metrics.")
+    ).toBeNull();
+
+    // Click disclosure trigger to expand
+    const trigger = screen.getByRole("button", { name: /analysis plan/i });
+    fireEvent.click(trigger);
+    expect(
+      screen.getByText("First retrieve 10-K filings, then synthesize revenue metrics.")
+    ).toBeDefined();
+
+    // Click disclosure trigger to collapse
+    fireEvent.click(trigger);
+    expect(
+      screen.queryByText("First retrieve 10-K filings, then synthesize revenue metrics.")
+    ).toBeNull();
+  });
+
+  it("renders ReasoningText and parses structured subagent, tool, and thought tags into interactive components", () => {
     const rawReasoning = `Workflow starting...
 
 :::subagent[Council Member Beta]{id="evt-3" agent="council_member_beta" status="complete"}
@@ -115,15 +149,24 @@ Synthesis completed.`;
       </ReasoningRoot>
     );
 
-    expect(screen.getByText("Workflow starting...")).toBeDefined();
     expect(screen.getByText("Council Member Beta")).toBeDefined();
     expect(screen.getByText("search_documents")).toBeDefined();
-    expect(screen.getByText("Synthesis completed.")).toBeDefined();
+
+    const thoughtTriggers = screen.getAllByRole("button", { name: /thought/i });
+    expect(thoughtTriggers.length).toBe(2);
+
+    // Expand first thought card
+    fireEvent.click(thoughtTriggers[0]);
+    expect(screen.getByText("Workflow starting...")).toBeDefined();
 
     // Expand subagent card
     const agentTrigger = screen.getByRole("button", { name: /council member beta/i });
     fireEvent.click(agentTrigger);
     expect(screen.getByText("Beta opinion on agentic systems")).toBeDefined();
+
+    // Expand second thought card
+    fireEvent.click(thoughtTriggers[1]);
+    expect(screen.getByText("Synthesis completed.")).toBeDefined();
   });
 
   it("renders ToolFallback with arguments and result inspection", () => {

@@ -204,13 +204,14 @@ describe("Feedback API Route (POST /api/feedback)", () => {
       expect(calledOptions.method).toBe("POST");
       expect(calledOptions.headers.Authorization).toBe("Bearer mock-gcp-bearer-token");
       const parsedBody = JSON.parse(calledOptions.body);
-      expect(parsedBody.session_id).toBe("session-456");
-      expect(parsedBody.event_id).toBe("evt-789");
-      expect(parsedBody.feedback_type).toBe("THUMBS_UP");
-      expect(parsedBody.config.user_id).toBe("test-user-id");
-      expect(parsedBody.config.source).toBe("Agent Runtime UI");
-      expect(parsedBody.config.feedback_text).toBe("Very helpful explanation.");
-      expect(parsedBody.config.feedback_labels).toEqual(["helpful"]);
+      expect(parsedBody.sessionId).toBe("session-456");
+      expect(parsedBody.eventId).toBe("evt-789");
+      expect(parsedBody.feedbackType).toBe("THUMBS_UP");
+      expect(parsedBody.userId).toBe("test-user-id");
+      expect(parsedBody.source).toBe("Agent Runtime UI");
+      expect(parsedBody.feedbackText).toBe("Very helpful explanation.");
+      expect(parsedBody.feedbackLabels).toEqual(["helpful"]);
+      expect(parsedBody.config).toBeUndefined();
     });
 
     it("returns 500 when GCP Vertex AI responds with an error", async () => {

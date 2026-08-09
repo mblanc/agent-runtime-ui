@@ -54,7 +54,12 @@ function ChatContent() {
   );
 
   const feedbackAdapter = useMemo(
-    () => createGeminiFeedbackAdapter(() => activeThreadIdRef.current),
+    () =>
+      createGeminiFeedbackAdapter(
+        () => activeThreadIdRef.current,
+        () => activeAgentIdRef.current,
+        () => activeLocationRef.current
+      ),
     []
   );
 

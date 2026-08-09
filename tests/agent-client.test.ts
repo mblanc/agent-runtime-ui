@@ -514,9 +514,69 @@ describe("AgentRuntimeClient", () => {
       );
       expect(opts.headers.Authorization).toBe("Bearer mock-access-token");
       const parsedBody = JSON.parse(opts.body);
-      expect(parsedBody.session_id).toBe("sess-1");
-      expect(parsedBody.event_id).toBe("evt-2");
-      expect(parsedBody.feedback_type).toBe("THUMBS_DOWN");
+      expect(parsedBody.sessionId).toBe("sess-1");
+      expect(parsedBody.eventId).toBe("evt-2");
+      expect(parsedBody.feedbackType).toBe("THUMBS_DOWN");
+      expect(parsedBody.userId).toBe("user-1");
+      expect(parsedBody.source).toBe("Agent Runtime UI");
+      expect(parsedBody.feedbackText).toBe("Too brief");
+      expect(parsedBody.config).toBeUndefined();
+    });
+
+    it("resolves numerical event IDs to OpenTelemetry UUIDs from session events", async () => {
+      process.env.MOCK_AGENT_RUNTIME = "false";
+      process.env.GOOGLE_CLOUD_PROJECT = "my-gcp-project";
+      process.env.GOOGLE_CLOUD_LOCATION = "us-central1";
+      process.env.GOOGLE_REASONING_ENGINE_ID = "engine-888";
+
+      const mockFetch = vi.fn().mockImplementation(async (url: string) => {
+        if (url.includes("/events")) {
+          return {
+            ok: true,
+            json: async () => ({
+              sessionEvents: [
+                {
+                  name: "projects/my-gcp-project/locations/us-central1/reasoningEngines/engine-888/sessions/sess-100/events/5194088076300779520",
+                  rawEvent: {
+                    id: "3319ac19-7ca8-4990-9e79-b38e1ec785f6",
+                    content: { parts: [{ text: "Analysis" }] },
+                  },
+                },
+              ],
+            }),
+          };
+        }
+        return {
+          ok: true,
+          json: async () => ({
+            name: "projects/my-gcp-project/locations/us-central1/reasoningEngines/engine-888/feedbackEntries/fb-002",
+            createTime: "2026-08-09T10:00:00Z",
+            feedbackType: "THUMBS_UP",
+          }),
+        };
+      });
+
+      vi.spyOn(globalThis, "fetch").mockImplementation(
+        mockFetch as unknown as typeof fetch
+      );
+
+      const client = new AgentRuntimeClient();
+      await client.submitFeedback(
+        {
+          sessionId: "sess-100",
+          eventId: "5194088076300779520",
+          feedbackType: "THUMBS_UP",
+        },
+        "user-1"
+      );
+
+      const postCall = mockFetch.mock.calls.find((c) =>
+        c[0].includes("/feedbackEntries")
+      );
+      expect(postCall).toBeDefined();
+      const body = JSON.parse(postCall![1].body);
+      expect(body.sessionId).toBe("sess-100");
+      expect(body.eventId).toBe("3319ac19-7ca8-4990-9e79-b38e1ec785f6");
     });
   });
 

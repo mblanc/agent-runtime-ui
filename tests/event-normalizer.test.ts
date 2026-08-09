@@ -154,11 +154,13 @@ describe("Agent Runtime Event Normalizer", () => {
       expect(threadMessages.length).toBe(2);
       expect(threadMessages[0].role).toBe("user");
       expect(threadMessages[0].content).toBe("What is Google Cloud Agent Runtime?");
+      expect(threadMessages[0].metadata?.custom?.eventId).toBe("msg-1");
       expect(threadMessages[1].role).toBe("assistant");
       expect(threadMessages[1].content).toBe(
         "Agent Runtime provides managed agent execution."
       );
       expect(threadMessages[1].thought).toBe("Decomposing query...");
+      expect(threadMessages[1].metadata?.custom?.eventId).toBe("msg-2");
     });
 
     it("identifies root workflow outputs and subagent nodes correctly", () => {
@@ -178,6 +180,26 @@ describe("Agent Runtime Event Normalizer", () => {
         })
       ).toBe(true);
       expect(isSubagentNode({})).toBe(false);
+    });
+
+    it("prioritizes rawEvent.id OpenTelemetry UUID over numerical resource segment in parseRawSessionEvent", () => {
+      const rawGcpEvent = {
+        name: "projects/125188993477/locations/us-central1/reasoningEngines/1295472637392191488/sessions/5437844143411822592/events/5194088076300779520",
+        invocationId: "e-4c95513b-95b8-4a70-8a67-73964abed08d",
+        author: "root_agent",
+        rawEvent: {
+          id: "3319ac19-7ca8-4990-9e79-b38e1ec785f6",
+          invocationId: "e-4c95513b-95b8-4a70-8a67-73964abed08d",
+          content: {
+            parts: [{ text: "Intel and AMD market analysis" }],
+          },
+        },
+      };
+
+      const parsed = parseRawSessionEvent(rawGcpEvent, "5437844143411822592", 0);
+      expect(parsed.id).toBe("3319ac19-7ca8-4990-9e79-b38e1ec785f6");
+      expect(parsed.content).toBe("Intel and AMD market analysis");
+      expect(parsed.invocationId).toBe("e-4c95513b-95b8-4a70-8a67-73964abed08d");
     });
   });
 });

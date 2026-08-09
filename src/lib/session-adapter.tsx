@@ -70,7 +70,35 @@ export function useSessionThreadHistoryAdapter(agentId?: string): ThreadHistoryA
           }
 
           const data = await res.json();
-          const remoteMessages: ThreadMessageLike[] = data.messages || [];
+          const rawRemoteMessages: Array<Record<string, unknown>> = data.messages || [];
+          const remoteMessages: ThreadMessageLike[] = rawRemoteMessages.map((m) => {
+            if (Array.isArray(m.content)) {
+              return m as unknown as ThreadMessageLike;
+            }
+            const parts: Array<{ type: "text" | "reasoning"; text: string }> = [];
+            const thoughtStr = typeof m.thought === "string" ? m.thought.trim() : "";
+            const contentStr = typeof m.content === "string" ? m.content.trim() : "";
+
+            if (thoughtStr) {
+              parts.push({ type: "reasoning", text: thoughtStr });
+            }
+            if (contentStr) {
+              parts.push({ type: "text", text: contentStr });
+            }
+            if (parts.length === 0) {
+              parts.push({ type: "text", text: "" });
+            }
+
+            return {
+              id: (m.id as string) || `msg-${Date.now()}`,
+              role: (m.role as "user" | "assistant" | "system") || "assistant",
+              createdAt: m.createdAt ? new Date(m.createdAt as string) : new Date(),
+              content: parts,
+              metadata: (m.metadata as Record<string, unknown>) || {
+                custom: { ...(m.id ? { eventId: m.id } : {}) },
+              },
+            } as unknown as ThreadMessageLike;
+          });
 
           // If the remote session has 0 messages (e.g. freshly initialized),
           // but the thread is currently generating or has local in-memory messages,

@@ -79,4 +79,7 @@ export interface FormattedSessionThreadMessage {
     result: Record<string, unknown>;
   };
   thought?: string;
+  metadata?: {
+    custom?: Record<string, unknown>;
+  };
 }

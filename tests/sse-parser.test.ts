@@ -121,4 +121,29 @@ describe("Agent Runtime SSE Parser", () => {
     expect(events[0].tool_call?.args).toEqual({ query: "SELECT * FROM users" });
     expect(events[1].event_type).toBe("done");
   });
+
+  it("extracts and propagates eventId from chunk id and event_id attributes", async () => {
+    const ssePayload = [
+      'data: {"id":"2a18cb74-f654-47f3-86ac-dbb6223bbf8b","content":{"parts":[{"text":"Hello from agent"}]}}\n\n',
+      'data: {"event_id":"evt-999","thought":"Thinking..."}\n\n',
+      'data: {"invocation_id":"inv-123","agent_call":{"agent":"subagent"}}\n\n',
+      "data: [DONE]\n\n",
+    ];
+
+    const stream = createReadableStream(ssePayload);
+    const events: AgentStreamEvent[] = [];
+
+    for await (const evt of parseSseStream(stream)) {
+      events.push(evt);
+    }
+
+    expect(events.length).toBe(4);
+    expect(events[0].eventId).toBe("2a18cb74-f654-47f3-86ac-dbb6223bbf8b");
+    expect(events[0].content).toBe("Hello from agent");
+    expect(events[1].eventId).toBe("evt-999");
+    expect(events[1].thought).toBe("Thinking...");
+    expect(events[2].eventId).toBe("inv-123");
+    expect(events[2].agent_call?.agent).toBe("subagent");
+    expect(events[3].event_type).toBe("done");
+  });
 });

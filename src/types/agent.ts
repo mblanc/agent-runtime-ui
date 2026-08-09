@@ -259,6 +259,7 @@ export interface AgentStreamEvent {
     | "tool_result"
     | "error"
     | "done";
+  eventId?: string;
   author?: string;
   content?: string;
   thought?: string;
@@ -368,6 +369,8 @@ export interface AgentFeedbackRequest {
   feedbackType: FeedbackType;
   feedbackText?: string;
   feedbackLabels?: string[];
+  reasoningEngineId?: string;
+  location?: string;
 }
 
 export interface AgentFeedbackResponse {

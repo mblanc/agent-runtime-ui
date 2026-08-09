@@ -86,8 +86,28 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
     return `https://${loc}-aiplatform.googleapis.com/v1beta1/${this.getNormalizedEngineResource(targetEngine)}/sessions`;
   }
 
-  private getFeedbackBaseUrl(): string {
-    return `https://${this.location}-aiplatform.googleapis.com/v1beta1/${this.getNormalizedEngineResource()}/feedbackEntries`;
+  private getFeedbackBaseUrl(
+    sessionId?: string,
+    customEngineId?: string,
+    customLocation?: string
+  ): string {
+    if (sessionId && sessionId.startsWith("projects/")) {
+      const match = sessionId.match(
+        /^projects\/([^/]+)\/locations\/([^/]+)\/reasoningEngines\/([^/]+)/
+      );
+      if (match) {
+        const [, proj, loc, engine] = match;
+        return `https://${loc}-aiplatform.googleapis.com/v1beta1/projects/${proj}/locations/${loc}/reasoningEngines/${engine}/feedbackEntries`;
+      }
+    }
+
+    const targetEngine = customEngineId || this.reasoningEngineId;
+    let loc = customLocation || this.location;
+    if (targetEngine.startsWith("projects/")) {
+      const match = targetEngine.match(/^projects\/[^/]+\/locations\/([^/]+)\//);
+      if (match && match[1]) loc = match[1];
+    }
+    return `https://${loc}-aiplatform.googleapis.com/v1beta1/${this.getNormalizedEngineResource(targetEngine)}/feedbackEntries`;
   }
 
   private getSessionEndpoint(
@@ -638,24 +658,66 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
   ): Promise<AgentFeedbackResponse> {
     try {
       const accessToken = await this.getAccessToken();
-      const endpoint = this.getFeedbackBaseUrl();
+      const endpoint = this.getFeedbackBaseUrl(
+        request.sessionId,
+        request.reasoningEngineId,
+        request.location
+      );
 
       const cleanSessionId =
         extractSessionIdFromResourceName(request.sessionId) || request.sessionId;
 
-      const payload = {
-        session_id: cleanSessionId,
-        ...(request.eventId ? { event_id: request.eventId } : {}),
-        feedback_type: request.feedbackType,
-        config: {
-          ...(request.feedbackText ? { feedback_text: request.feedbackText } : {}),
-          ...(request.feedbackLabels && request.feedbackLabels.length > 0
-            ? { feedback_labels: request.feedbackLabels }
-            : {}),
-          user_id: userId,
-          source: "Agent Runtime UI",
-        },
+      let resolvedEventId = request.eventId;
+      const isNumericalOrPlaceholder =
+        resolvedEventId &&
+        (/^\d+$/.test(resolvedEventId) ||
+          resolvedEventId.startsWith("m-") ||
+          resolvedEventId.startsWith("msg-") ||
+          resolvedEventId.startsWith("local-"));
+
+      if (isNumericalOrPlaceholder && cleanSessionId) {
+        try {
+          const events = await this.listSessionEvents(
+            cleanSessionId,
+            request.reasoningEngineId,
+            request.location
+          );
+          const matchBySegment = events.find(
+            (e) =>
+              e.name?.endsWith(`/${resolvedEventId}`) ||
+              e.name?.includes(`/events/${resolvedEventId}`)
+          );
+          if (matchBySegment?.id) {
+            resolvedEventId = matchBySegment.id;
+          } else {
+            const assistantTurns = events.filter(
+              (e) => e.role === "assistant" && e.id && !/^\d+$/.test(e.id)
+            );
+            if (assistantTurns.length > 0) {
+              resolvedEventId = assistantTurns[assistantTurns.length - 1].id;
+            }
+          }
+        } catch {
+          // If session event lookup fails, continue with original eventId
+        }
+      }
+
+      const payload: Record<string, unknown> = {
+        sessionId: cleanSessionId,
+        feedbackType: request.feedbackType,
+        userId: userId,
+        source: "Agent Runtime UI",
       };
+
+      if (resolvedEventId) {
+        payload.eventId = resolvedEventId;
+      }
+      if (request.feedbackText) {
+        payload.feedbackText = request.feedbackText;
+      }
+      if (request.feedbackLabels && request.feedbackLabels.length > 0) {
+        payload.feedbackLabels = request.feedbackLabels;
+      }
 
       const response = await fetch(endpoint, {
         method: "POST",
@@ -698,11 +760,6 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
     userId: string
   ): AsyncGenerator<AgentStreamEvent, void, unknown> {
     try {
-      yield {
-        event_type: "thought",
-        thought: `Connecting to Agent Runtime (${this.location}) and analyzing prompt...`,
-      };
-
       const accessToken = await this.getAccessToken();
       const endpoint = `https://${this.location}-aiplatform.googleapis.com/v1/${this.getNormalizedEngineResource()}:streamQuery`;
 

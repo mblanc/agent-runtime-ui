@@ -385,6 +385,12 @@ export function formatSessionEventsToThreadMessages(
           role: "user",
           content,
           createdAt: e.createTime,
+          metadata: {
+            custom: {
+              ...(e.id ? { eventId: e.id } : {}),
+              ...(e.invocationId ? { invocationId: e.invocationId } : {}),
+            },
+          },
         });
       }
       continue;
@@ -403,6 +409,12 @@ export function formatSessionEventsToThreadMessages(
         toolResults: e.tool_results,
         toolCall: e.tool_call,
         toolResult: e.tool_result,
+        metadata: {
+          custom: {
+            ...(e.id ? { eventId: e.id } : {}),
+            ...(e.invocationId ? { invocationId: e.invocationId } : {}),
+          },
+        },
       });
       accumulatedThoughts = [];
     }
@@ -550,6 +562,15 @@ export function parseRawSessionEvent(
       if (typeof record.response === "string" && record.response.trim()) {
         textPieces.push(record.response.trim());
       }
+      if (record.content && record.content !== obj) {
+        inspectObject(record.content);
+      }
+      if (
+        (record.raw_event || record.rawEvent) &&
+        (record.raw_event || record.rawEvent) !== obj
+      ) {
+        inspectObject(record.raw_event || record.rawEvent);
+      }
     }
   };
 
@@ -569,6 +590,26 @@ export function parseRawSessionEvent(
   const uniqueTextPieces = Array.from(new Set(textPieces));
   const uniqueThoughtPieces = Array.from(new Set(thoughtPieces));
 
+  const uniqueToolCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const seenCalls = new Set<string>();
+  for (const tc of parsedToolCalls) {
+    const key = `${tc.name}:${JSON.stringify(tc.args || {})}`;
+    if (!seenCalls.has(key)) {
+      seenCalls.add(key);
+      uniqueToolCalls.push(tc);
+    }
+  }
+
+  const uniqueToolResults: Array<{ name: string; result: Record<string, unknown> }> = [];
+  const seenResults = new Set<string>();
+  for (const tr of parsedToolResults) {
+    const key = `${tr.name}:${JSON.stringify(tr.result || {})}`;
+    if (!seenResults.has(key)) {
+      seenResults.add(key);
+      uniqueToolResults.push(tr);
+    }
+  }
+
   const content = uniqueTextPieces.join("\n").trim();
   const thought =
     uniqueThoughtPieces.length > 0 ? uniqueThoughtPieces.join("\n").trim() : undefined;
@@ -576,7 +617,14 @@ export function parseRawSessionEvent(
   const nameStr = (root.name as string) || "";
   const parts = nameStr.split("/");
   const id =
-    (root.id as string) || parts[parts.length - 1] || `event-${sessionId}-${fallbackIdx}`;
+    (typeof rawEvent.id === "string" && rawEvent.id ? rawEvent.id : undefined) ||
+    (typeof rawEvent.event_id === "string" && rawEvent.event_id
+      ? rawEvent.event_id
+      : undefined) ||
+    (typeof root.id === "string" && root.id ? root.id : undefined) ||
+    (typeof root.event_id === "string" && root.event_id ? root.event_id : undefined) ||
+    parts[parts.length - 1] ||
+    `event-${sessionId}-${fallbackIdx}`;
 
   const createTime =
     (root.timestamp as string) ||
@@ -586,7 +634,7 @@ export function parseRawSessionEvent(
     new Date().toISOString();
 
   const finalRole =
-    parsedToolCalls.length > 0 || parsedToolResults.length > 0 ? "assistant" : role;
+    uniqueToolCalls.length > 0 || uniqueToolResults.length > 0 ? "assistant" : role;
 
   return {
     id,
@@ -598,10 +646,10 @@ export function parseRawSessionEvent(
     invocationId: invocationIdStr,
     content,
     ...(thought ? { thought } : {}),
-    ...(parsedToolCalls.length > 0 ? { tool_calls: parsedToolCalls } : {}),
-    ...(parsedToolResults.length > 0 ? { tool_results: parsedToolResults } : {}),
-    ...(parsedToolCalls.length > 0 ? { tool_call: parsedToolCalls[0] } : {}),
-    ...(parsedToolResults.length > 0 ? { tool_result: parsedToolResults[0] } : {}),
+    ...(uniqueToolCalls.length > 0 ? { tool_calls: uniqueToolCalls } : {}),
+    ...(uniqueToolResults.length > 0 ? { tool_results: uniqueToolResults } : {}),
+    ...(uniqueToolCalls.length > 0 ? { tool_call: uniqueToolCalls[0] } : {}),
+    ...(uniqueToolResults.length > 0 ? { tool_result: uniqueToolResults[0] } : {}),
     rawEvent: Object.keys(rawEvent).length > 0 ? rawEvent : root,
   };
 }

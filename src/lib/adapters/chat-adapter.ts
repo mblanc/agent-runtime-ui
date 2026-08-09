@@ -91,7 +91,8 @@ type ToolCallContentPart = Extract<
 export function createYieldContent(
   reasoning: string,
   text: string,
-  toolCalls?: ToolCallYieldItem[]
+  toolCalls?: ToolCallYieldItem[],
+  eventId?: string
 ): ChatModelRunResult {
   return {
     content: [
@@ -107,6 +108,15 @@ export function createYieldContent(
       })),
       ...(text ? [{ type: "text" as const, text }] : []),
     ],
+    ...(eventId
+      ? {
+          metadata: {
+            custom: {
+              eventId,
+            },
+          },
+        }
+      : {}),
   };
 }
 
@@ -262,6 +272,7 @@ export function createGeminiChatAdapter(
 
         let accumulatedReasoning = "";
         let accumulatedText = "";
+        let latestEventId: string | undefined;
         const toolCallsMap = new Map<string, ToolCallYieldItem>();
 
         try {
@@ -293,12 +304,26 @@ export function createGeminiChatAdapter(
                   parsed.event_type
                 );
 
+                if (
+                  parsed.eventId ||
+                  parsed.event_id ||
+                  parsed.id ||
+                  parsed.invocation_id
+                ) {
+                  latestEventId =
+                    parsed.eventId ||
+                    parsed.event_id ||
+                    parsed.id ||
+                    parsed.invocation_id;
+                }
+
                 if (parsed.event_type === "content" && parsed.content) {
                   accumulatedText += parsed.content;
                   yield createYieldContent(
                     accumulatedReasoning,
                     accumulatedText,
-                    Array.from(toolCallsMap.values())
+                    Array.from(toolCallsMap.values()),
+                    latestEventId
                   );
                 } else if (parsed.event_type === "thought" && parsed.thought) {
                   accumulatedReasoning +=
@@ -306,7 +331,8 @@ export function createGeminiChatAdapter(
                   yield createYieldContent(
                     accumulatedReasoning,
                     accumulatedText,
-                    Array.from(toolCallsMap.values())
+                    Array.from(toolCallsMap.values()),
+                    latestEventId
                   );
                 } else if (parsed.event_type === "agent_call" && parsed.agent_call) {
                   const subagent = parsed.agent_call;
@@ -321,7 +347,8 @@ export function createGeminiChatAdapter(
                   yield createYieldContent(
                     accumulatedReasoning,
                     accumulatedText,
-                    Array.from(toolCallsMap.values())
+                    Array.from(toolCallsMap.values()),
+                    latestEventId
                   );
                 } else if (
                   parsed.event_type === "agent_response" &&
@@ -346,7 +373,8 @@ export function createGeminiChatAdapter(
                   yield createYieldContent(
                     accumulatedReasoning,
                     accumulatedText,
-                    Array.from(toolCallsMap.values())
+                    Array.from(toolCallsMap.values()),
+                    latestEventId
                   );
                 } else if (parsed.event_type === "tool_call" && parsed.tool_call) {
                   const tc = parsed.tool_call;
@@ -377,7 +405,8 @@ export function createGeminiChatAdapter(
                   yield createYieldContent(
                     accumulatedReasoning,
                     accumulatedText,
-                    Array.from(toolCallsMap.values())
+                    Array.from(toolCallsMap.values()),
+                    latestEventId
                   );
                 } else if (parsed.event_type === "tool_result" && parsed.tool_result) {
                   const toolName = parsed.tool_result.name || "tool";
@@ -414,7 +443,8 @@ export function createGeminiChatAdapter(
                   yield createYieldContent(
                     accumulatedReasoning,
                     accumulatedText,
-                    Array.from(toolCallsMap.values())
+                    Array.from(toolCallsMap.values()),
+                    latestEventId
                   );
                 } else if (parsed.event_type === "error" && parsed.error) {
                   accumulatedText +=
@@ -423,7 +453,8 @@ export function createGeminiChatAdapter(
                   yield createYieldContent(
                     accumulatedReasoning,
                     accumulatedText,
-                    Array.from(toolCallsMap.values())
+                    Array.from(toolCallsMap.values()),
+                    latestEventId
                   );
                   return;
                 } else if (parsed.event_type === "done") {
@@ -439,7 +470,8 @@ export function createGeminiChatAdapter(
                   yield createYieldContent(
                     accumulatedReasoning,
                     accumulatedText,
-                    Array.from(toolCallsMap.values())
+                    Array.from(toolCallsMap.values()),
+                    latestEventId
                   );
                   return;
                 }
