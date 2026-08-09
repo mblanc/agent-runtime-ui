@@ -2,39 +2,39 @@
 
 ## Phase 1: Codebase Hygiene, Dead Code Removal & Discriminated Union Types
 
-- [ ] **Task 1.1: Dead Component Deletion**
+- [x] **Task 1.1: Dead Component Deletion**
   - **Description:** Delete unimported legacy components (`gemini-tools.tsx`, `gemini-reasoning.tsx`, `gemini-thinking-indicator.tsx`).
   - **Acceptance Criteria:**
-    - [ ] `src/components/assistant-ui/gemini-tools.tsx` deleted
-    - [ ] `src/components/assistant-ui/gemini-reasoning.tsx` deleted
-    - [ ] `src/components/assistant-ui/gemini-thinking-indicator.tsx` deleted
-    - [ ] Zero broken imports
+    - [x] `src/components/assistant-ui/gemini-tools.tsx` deleted
+    - [x] `src/components/assistant-ui/gemini-reasoning.tsx` deleted
+    - [x] `src/components/assistant-ui/gemini-thinking-indicator.tsx` deleted
+    - [x] Zero broken imports
   - **Verification:** `bun run check && bun test tests/components.test.tsx`
   - **Files:** `src/components/assistant-ui/gemini-tools.tsx`, `src/components/assistant-ui/gemini-reasoning.tsx`, `src/components/assistant-ui/gemini-thinking-indicator.tsx`
   - **Scope:** XS
 
-- [ ] **Task 1.2: Discriminated Union Types in `src/types/agent.ts`**
+- [x] **Task 1.2: Discriminated Union Types in `src/types/agent.ts`**
   - **Description:** Refactor `AgentMessagePart` into strict discriminated unions with `normalizeAgentMessagePart` runtime helper. Clean up `AgentSessionEvent`.
   - **Acceptance Criteria:**
-    - [ ] `AgentMessagePart` converted to discriminated union (`AgentTextPart`, `AgentFileDataPart`, `AgentFunctionCallPart`, etc.)
-    - [ ] `normalizeAgentMessagePart` helper exported
-    - [ ] `AgentSessionEvent` normalized
+    - [x] `AgentMessagePart` converted to discriminated union (`AgentTextPart`, `AgentFileDataPart`, `AgentFunctionCallPart`, etc.)
+    - [x] `normalizeAgentMessagePart` helper exported
+    - [x] `AgentSessionEvent` normalized
   - **Verification:** `bun run check`
   - **Files:** `src/types/agent.ts`
   - **Scope:** S
 
-- [ ] **Task 1.3: Update Type Consumers & Verify Tests**
+- [x] **Task 1.3: Update Type Consumers & Verify Tests**
   - **Description:** Update consumers in `gemini-runtime-adapter.ts` and `agent-runtime-client.ts` to utilize discriminated union patterns.
   - **Acceptance Criteria:**
-    - [ ] All consumers typecheck cleanly without `any` casts
-    - [ ] Test suites pass with 100% success
+    - [x] All consumers typecheck cleanly without `any` casts
+    - [x] Test suites pass with 100% success
   - **Verification:** `bun test tests/chat-api.test.ts tests/tools-hitl.test.tsx`
   - **Files:** `src/lib/gemini-runtime-adapter.ts`, `src/lib/agent-runtime-client.ts`
   - **Scope:** S
 
 ### Checkpoint 1: Hygiene & Types Verified
-- [ ] TypeScript check passes (`bun run check`)
-- [ ] Test suite passes (`bun run test`)
+- [x] TypeScript check passes (`bun run check`)
+- [x] Test suite passes (`bun run test`)
 
 ---
 

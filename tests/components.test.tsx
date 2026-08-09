@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { AssistantRuntimeProvider, useLocalRuntime } from "@assistant-ui/react";
 import { Button } from "@/components/ui/button";
-import { GeminiThinkingIndicator } from "@/components/assistant-ui/gemini-thinking-indicator";
 import {
   ReasoningRoot,
   ReasoningTrigger,
@@ -46,11 +45,6 @@ describe("UI Components", () => {
     const button = screen.getByRole("button", { name: /ask agent/i });
     expect(button).toBeDefined();
     expect(button.textContent).toBe("Ask Agent");
-  });
-
-  it("renders GeminiThinkingIndicator with status text and timer", () => {
-    render(<GeminiThinkingIndicator statusText="Consulting agent..." />);
-    expect(screen.getByText("Consulting agent...")).toBeDefined();
   });
 
   it("renders ReasoningRoot and expands with animated dots during streaming", () => {
