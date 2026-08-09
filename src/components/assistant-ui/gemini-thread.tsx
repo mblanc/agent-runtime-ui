@@ -5,12 +5,18 @@ import { GeminiComposer } from "./gemini-composer";
 import { ChatMessage } from "./gemini-message";
 import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useOptionalActiveAgent } from "@/lib/agent-context";
 
 export function GeminiThread() {
   const isEmpty = useAuiState(
     (s: { thread?: { messages?: readonly unknown[] } }) =>
       (s.thread?.messages?.length ?? 0) === 0
   );
+
+  const agentCtx = useOptionalActiveAgent();
+  const activeAgentName = agentCtx?.activeAgent?.displayName;
+  const activeAgentDesc = agentCtx?.activeAgent?.description;
+  const activeAgentLoc = agentCtx?.activeAgent?.location;
 
   return (
     <ThreadPrimitive.Root className="relative flex h-full w-full flex-col overflow-hidden bg-[#fdfcfc] text-[#1f1f1f] dark:bg-[#0c0c0c] dark:text-[#e3e3e3]">
@@ -50,13 +56,26 @@ export function GeminiThread() {
               {/* Sparkle Tag */}
               <div className="mb-4 flex items-center gap-2 text-sm font-medium text-[#1a73e8] dark:text-[#8ab4f8]">
                 <Sparkles className="h-5 w-5" />
-                <span>Google Cloud Agent Runtime</span>
+                <span>{activeAgentName || "Google Cloud Agent Runtime"}</span>
+                {activeAgentLoc && (
+                  <span className="rounded-full bg-[#1a73e8]/10 px-2 py-0.5 text-xs text-[#1a73e8] dark:bg-[#8ab4f8]/15 dark:text-[#8ab4f8]">
+                    {activeAgentLoc}
+                  </span>
+                )}
               </div>
 
               {/* Centered Greeting */}
-              <h1 className="mb-8 text-4xl font-normal tracking-tight text-[#1f1f1f] dark:text-white md:text-5xl">
+              <h1 className="mb-3 text-4xl font-normal tracking-tight text-[#1f1f1f] dark:text-white md:text-5xl">
                 How can I help you today?
               </h1>
+
+              {activeAgentDesc ? (
+                <p className="mb-8 max-w-lg text-center text-sm text-muted-foreground">
+                  {activeAgentDesc}
+                </p>
+              ) : (
+                <div className="mb-8" />
+              )}
             </div>
           </div>
         )}

@@ -6,8 +6,52 @@ import {
   AgentSessionEvent,
   AgentStreamEvent,
   ChatRequestBody,
+  DeployedAgent,
   FeedbackType,
+  ListAgentsResponse,
 } from "@/types/agent";
+
+export const mockAgentsStore: DeployedAgent[] = [
+  {
+    id: "mock-arch-advisor",
+    resourceName:
+      "projects/mock-project/locations/us-central1/reasoningEngines/mock-arch-advisor",
+    displayName: "ADK Architecture Advisor",
+    description:
+      "Specialized in cloud architecture patterns, scalability, and security best practices",
+    location: "us-central1",
+    model: "gemini-2.5-pro",
+    isDefault: true,
+    createTime: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+    updateTime: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: "mock-code-reviewer",
+    resourceName:
+      "projects/mock-project/locations/europe-west4/reasoningEngines/mock-code-reviewer",
+    displayName: "Code Reviewer & Auditor",
+    description:
+      "Automated code review, security audits, and style compliance for enterprise repos",
+    location: "europe-west4",
+    model: "gemini-2.5-flash",
+    isDefault: false,
+    createTime: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
+    updateTime: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: "mock-cloud-ops",
+    resourceName:
+      "projects/mock-project/locations/us-central1/reasoningEngines/mock-cloud-ops",
+    displayName: "Cloud Ops Assistant",
+    description:
+      "Infrastructure monitoring, log analysis, and incident triage for GCP environments",
+    location: "us-central1",
+    model: "gemini-2.5-flash",
+    isDefault: false,
+    createTime: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
+    updateTime: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+  },
+];
 
 // In-memory mock store for local development and unit tests
 const mockSessionsStore = new Map<string, AgentSession>([
@@ -15,7 +59,7 @@ const mockSessionsStore = new Map<string, AgentSession>([
     "1",
     {
       id: "1",
-      name: "projects/mock-project/locations/us-central1/reasoningEngines/mock-engine/sessions/1",
+      name: "projects/mock-project/locations/us-central1/reasoningEngines/mock-arch-advisor/sessions/1",
       userId: "test-user",
       title: "ADK Agent Architecture",
       createTime: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
@@ -26,11 +70,33 @@ const mockSessionsStore = new Map<string, AgentSession>([
     "2",
     {
       id: "2",
-      name: "projects/mock-project/locations/us-central1/reasoningEngines/mock-engine/sessions/2",
+      name: "projects/mock-project/locations/us-central1/reasoningEngines/mock-arch-advisor/sessions/2",
       userId: "test-user",
       title: "Architecture Review",
       createTime: new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString(),
       updateTime: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+    },
+  ],
+  [
+    "3",
+    {
+      id: "3",
+      name: "projects/mock-project/locations/europe-west4/reasoningEngines/mock-code-reviewer/sessions/3",
+      userId: "test-user",
+      title: "PR #42 Security Audit",
+      createTime: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
+      updateTime: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
+    },
+  ],
+  [
+    "4",
+    {
+      id: "4",
+      name: "projects/mock-project/locations/us-central1/reasoningEngines/mock-cloud-ops/sessions/4",
+      userId: "test-user",
+      title: "GKE Cluster High Memory Alert",
+      createTime: new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString(),
+      updateTime: new Date(Date.now() - 7 * 60 * 60 * 1000).toISOString(),
     },
   ],
 ]);
@@ -75,6 +141,51 @@ const mockSessionEventsStore = new Map<string, AgentSessionEvent[]>([
         content:
           "Container security review completed: Non-root execution enabled, read-only root filesystem configured, and minimal IAM permissions verified.",
         createTime: new Date(Date.now() - 26 * 60 * 60 * 1000 + 4000).toISOString(),
+      },
+    ],
+  ],
+  [
+    "3",
+    [
+      {
+        id: "evt-3-1",
+        sessionId: "3",
+        role: "user",
+        content:
+          "Please audit the authentication middleware PR #42 for potential vulnerabilities.",
+        createTime: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: "evt-3-2",
+        sessionId: "3",
+        role: "assistant",
+        content:
+          "Security audit of PR #42 completed. Found 0 critical issues and 1 suggestion regarding token expiration handling.",
+        thought: "Reviewing AST, checking JWT verification and timing attack vectors...",
+        createTime: new Date(Date.now() - 5 * 60 * 60 * 1000 + 4000).toISOString(),
+      },
+    ],
+  ],
+  [
+    "4",
+    [
+      {
+        id: "evt-4-1",
+        sessionId: "4",
+        role: "user",
+        content:
+          "Check why nodes in us-central1-a are experiencing high memory pressure.",
+        createTime: new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: "evt-4-2",
+        sessionId: "4",
+        role: "assistant",
+        content:
+          "Identified a memory leak in the metrics-collector daemonset causing buffer bloat. Recommend restarting the pod and updating resource limits.",
+        thought:
+          "Querying Cloud Monitoring metrics and node daemonset memory consumption logs...",
+        createTime: new Date(Date.now() - 8 * 60 * 60 * 1000 + 3500).toISOString(),
       },
     ],
   ],
@@ -151,6 +262,16 @@ export function extractSessionIdFromResourceName(nameStr: string): string {
   if (nameStr.includes("/sessions/")) {
     const afterSessions = nameStr.split("/sessions/")[1];
     return afterSessions.split("/")[0];
+  }
+  const parts = nameStr.split("/");
+  return parts[parts.length - 1] || nameStr;
+}
+
+export function extractReasoningEngineIdFromResourceName(nameStr: string): string {
+  if (!nameStr) return "";
+  if (nameStr.includes("/reasoningEngines/")) {
+    const after = nameStr.split("/reasoningEngines/")[1];
+    return after.split("/")[0];
   }
   const parts = nameStr.split("/");
   return parts[parts.length - 1] || nameStr;
@@ -722,9 +843,10 @@ export class AgentRuntimeClient {
   private reasoningEngineId: string;
   private isMock: boolean;
 
-  constructor(overrideEngineId?: string) {
+  constructor(overrideEngineId?: string, overrideLocation?: string) {
     this.projectId = process.env.GOOGLE_CLOUD_PROJECT || "";
-    this.location = process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
+    this.location =
+      overrideLocation || process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
     this.reasoningEngineId =
       overrideEngineId || process.env.GOOGLE_REASONING_ENGINE_ID || "";
 
@@ -737,6 +859,14 @@ export class AgentRuntimeClient {
         if (match[1]) this.projectId = match[1];
         if (match[2]) this.location = match[2];
       }
+    }
+
+    // Auto-sync location if a mock agent ID was passed
+    const matchingMockAgent = mockAgentsStore.find(
+      (a) => a.id === this.reasoningEngineId
+    );
+    if (matchingMockAgent) {
+      this.location = matchingMockAgent.location;
     }
 
     this.isMock =
@@ -758,15 +888,22 @@ export class AgentRuntimeClient {
     return tokenResponse.token;
   }
 
-  private getNormalizedEngineResource(): string {
-    if (this.reasoningEngineId.startsWith("projects/")) {
-      return this.reasoningEngineId;
+  private getNormalizedEngineResource(customEngineId?: string): string {
+    const targetEngine = customEngineId || this.reasoningEngineId;
+    if (targetEngine.startsWith("projects/")) {
+      return targetEngine;
     }
-    return `projects/${this.projectId}/locations/${this.location}/reasoningEngines/${this.reasoningEngineId}`;
+    return `projects/${this.projectId}/locations/${this.location}/reasoningEngines/${targetEngine}`;
   }
 
-  private getSessionsBaseUrl(): string {
-    return `https://${this.location}-aiplatform.googleapis.com/v1beta1/${this.getNormalizedEngineResource()}/sessions`;
+  private getSessionsBaseUrl(customEngineId?: string): string {
+    const targetEngine = customEngineId || this.reasoningEngineId;
+    let loc = this.location;
+    if (targetEngine.startsWith("projects/")) {
+      const match = targetEngine.match(/^projects\/[^/]+\/locations\/([^/]+)\//);
+      if (match && match[1]) loc = match[1];
+    }
+    return `https://${loc}-aiplatform.googleapis.com/v1beta1/${this.getNormalizedEngineResource(targetEngine)}/sessions`;
   }
 
   private getFeedbackBaseUrl(): string {
@@ -774,19 +911,177 @@ export class AgentRuntimeClient {
   }
 
   /**
-   * Retrieves past conversation sessions for the authenticated user.
-   * Supports both Google sub ID and email filters.
+   * Discovers and lists deployed Reasoning Engines across configured locations.
    */
-  async listSessions(userId: string, userEmail?: string): Promise<AgentSession[]> {
+  async listReasoningEngines(locations?: string[]): Promise<ListAgentsResponse> {
+    if (this.isMock) {
+      const activeAgentId =
+        this.reasoningEngineId &&
+        mockAgentsStore.some((a) => a.id === this.reasoningEngineId)
+          ? this.reasoningEngineId
+          : mockAgentsStore[0].id;
+
+      return {
+        agents: mockAgentsStore.map((a) => ({
+          ...a,
+          isDefault: a.id === activeAgentId,
+        })),
+        activeAgentId,
+      };
+    }
+
+    try {
+      const accessToken = await this.getAccessToken();
+      const envLocations = process.env.GOOGLE_CLOUD_LOCATIONS
+        ? process.env.GOOGLE_CLOUD_LOCATIONS.split(",")
+            .map((l) => l.trim())
+            .filter(Boolean)
+        : [this.location || "us-central1"];
+      const targetLocations =
+        locations && locations.length > 0 ? locations : envLocations;
+
+      const fetchLocationEngines = async (loc: string): Promise<DeployedAgent[]> => {
+        const url = `https://${loc}-aiplatform.googleapis.com/v1beta1/projects/${this.projectId}/locations/${loc}/reasoningEngines`;
+        const response = await fetch(url, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          signal: AbortSignal.timeout(5000),
+        });
+
+        if (!response.ok) {
+          const errText = await response.text();
+          console.warn(
+            `Reasoning Engines query for location ${loc} returned ${response.status}: ${errText}`
+          );
+          return [];
+        }
+
+        const data = await response.json();
+        const rawEngines = (data.reasoningEngines || []) as Array<
+          Record<string, unknown>
+        >;
+
+        return rawEngines.map((raw) => {
+          const resourceName = (raw.name as string) || "";
+          const id =
+            extractReasoningEngineIdFromResourceName(resourceName) || resourceName;
+          const displayName =
+            (raw.displayName as string) ||
+            (raw.display_name as string) ||
+            formatAgentDisplayName(id) ||
+            `Agent ${id.substring(0, 8)}`;
+          const description = (raw.description as string) || undefined;
+          const createTime =
+            (raw.createTime as string) || (raw.create_time as string) || undefined;
+          const updateTime =
+            (raw.updateTime as string) || (raw.update_time as string) || undefined;
+          const spec = (raw.spec || {}) as Record<string, unknown>;
+          const model = (spec.model as string) || (raw.model as string) || undefined;
+
+          return {
+            id,
+            resourceName,
+            displayName,
+            description,
+            location: loc,
+            createTime,
+            updateTime,
+            model,
+          };
+        });
+      };
+
+      const results = await Promise.allSettled(
+        targetLocations.map((loc) => fetchLocationEngines(loc))
+      );
+
+      const engines: DeployedAgent[] = [];
+      for (const res of results) {
+        if (res.status === "fulfilled") {
+          engines.push(...res.value);
+        }
+      }
+
+      if (engines.length === 0) {
+        const configuredId = this.reasoningEngineId || "default-agent";
+        engines.push({
+          id: configuredId,
+          resourceName: this.getNormalizedEngineResource(),
+          displayName: formatAgentDisplayName(configuredId) || "Deployed Agent",
+          description: "Primary Vertex AI Reasoning Engine",
+          location: this.location || "us-central1",
+          isDefault: true,
+        });
+      }
+
+      const defaultEngineId =
+        this.reasoningEngineId ||
+        process.env.GOOGLE_REASONING_ENGINE_ID ||
+        engines[0]?.id;
+      const activeAgent =
+        engines.find(
+          (e) => e.id === defaultEngineId || e.resourceName === defaultEngineId
+        ) || engines[0];
+      const activeAgentId = activeAgent?.id || engines[0]?.id;
+
+      return {
+        agents: engines.map((e) => ({
+          ...e,
+          isDefault: e.id === activeAgentId,
+        })),
+        activeAgentId,
+      };
+    } catch (err: unknown) {
+      console.error("Error listing reasoning engines from Vertex AI:", err);
+      throw err;
+    }
+  }
+
+  /**
+   * Retrieves past conversation sessions for the authenticated user.
+   * Supports both Google sub ID and email filters, scoped by reasoningEngineId.
+   */
+  async listSessions(
+    userId: string,
+    userEmail?: string,
+    reasoningEngineId?: string
+  ): Promise<AgentSession[]> {
+    const targetEngine = reasoningEngineId
+      ? extractReasoningEngineIdFromResourceName(reasoningEngineId)
+      : this.reasoningEngineId
+        ? extractReasoningEngineIdFromResourceName(this.reasoningEngineId)
+        : "";
+
     if (this.isMock) {
       return Array.from(mockSessionsStore.values())
-        .filter(
-          (s) =>
+        .filter((s) => {
+          const matchesUser =
             s.userId === userId ||
             (userEmail && s.userId === userEmail) ||
             userId === "test-user" ||
-            s.userId === "mock-user"
-        )
+            s.userId === "mock-user";
+          if (!matchesUser) return false;
+
+          if (targetEngine) {
+            const sessionEngine = extractReasoningEngineIdFromResourceName(s.name);
+            if (targetEngine === sessionEngine) {
+              return true;
+            }
+
+            const isDefaultSession =
+              sessionEngine === "mock-arch-advisor" || sessionEngine === "mock-engine";
+            const isDefaultTarget =
+              targetEngine === "mock-arch-advisor" ||
+              targetEngine === "mock-engine" ||
+              !mockAgentsStore.some((a) => a.id === targetEngine);
+
+            return isDefaultSession && isDefaultTarget;
+          }
+
+          return true;
+        })
         .sort(
           (a, b) => new Date(b.updateTime).getTime() - new Date(a.updateTime).getTime()
         );
@@ -796,7 +1091,7 @@ export class AgentRuntimeClient {
       const accessToken = await this.getAccessToken();
 
       const fetchSessionsByFilter = async (filterVal: string) => {
-        const url = new URL(this.getSessionsBaseUrl());
+        const url = new URL(this.getSessionsBaseUrl(reasoningEngineId));
         if (filterVal) {
           url.searchParams.set("filter", `user_id="${filterVal}"`);
         }
@@ -880,13 +1175,24 @@ export class AgentRuntimeClient {
   /**
    * Creates a new conversation session on Agent Runtime.
    */
-  async createSession(userId: string, title?: string): Promise<AgentSession> {
+  async createSession(
+    userId: string,
+    title?: string,
+    reasoningEngineId?: string
+  ): Promise<AgentSession> {
+    const targetEngine =
+      reasoningEngineId || this.reasoningEngineId || "mock-arch-advisor";
+    const normalizedEngine = extractReasoningEngineIdFromResourceName(targetEngine);
+
     if (this.isMock) {
       const id = `session-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
       const now = new Date().toISOString();
+      const mockAgent = mockAgentsStore.find((a) => a.id === normalizedEngine);
+      const loc = mockAgent?.location || this.location || "us-central1";
+
       const newSession: AgentSession = {
         id,
-        name: `projects/mock-project/locations/us-central1/reasoningEngines/mock-engine/sessions/${id}`,
+        name: `projects/mock-project/locations/${loc}/reasoningEngines/${normalizedEngine}/sessions/${id}`,
         userId,
         title: title || "New conversation",
         createTime: now,
@@ -899,7 +1205,7 @@ export class AgentRuntimeClient {
 
     try {
       const accessToken = await this.getAccessToken();
-      const response = await fetch(this.getSessionsBaseUrl(), {
+      const response = await fetch(this.getSessionsBaseUrl(reasoningEngineId), {
         method: "POST",
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -950,16 +1256,42 @@ export class AgentRuntimeClient {
     }
   }
 
-  private getSessionEndpoint(sessionId: string, subPath?: string): string {
+  private getSessionEndpoint(
+    sessionId: string,
+    subPath?: string,
+    customEngineId?: string,
+    customLocation?: string
+  ): string {
+    if (sessionId.startsWith("projects/")) {
+      const match = sessionId.match(
+        /^projects\/([^/]+)\/locations\/([^/]+)\/reasoningEngines\/([^/]+)\/sessions\/([^/]+)/
+      );
+      if (match) {
+        const [, proj, loc, engine, sId] = match;
+        const base = `https://${loc}-aiplatform.googleapis.com/v1beta1/projects/${proj}/locations/${loc}/reasoningEngines/${engine}/sessions/${encodeURIComponent(sId)}`;
+        return subPath ? `${base}/${subPath}` : base;
+      }
+    }
+
     const cleanId = extractSessionIdFromResourceName(sessionId);
-    const base = `${this.getSessionsBaseUrl()}/${encodeURIComponent(cleanId)}`;
+    const targetEngine = customEngineId || this.reasoningEngineId;
+    let loc = customLocation || this.location;
+    if (targetEngine.startsWith("projects/")) {
+      const match = targetEngine.match(/^projects\/[^/]+\/locations\/([^/]+)\//);
+      if (match && match[1]) loc = match[1];
+    }
+    const base = `https://${loc}-aiplatform.googleapis.com/v1beta1/${this.getNormalizedEngineResource(targetEngine)}/sessions/${encodeURIComponent(cleanId)}`;
     return subPath ? `${base}/${subPath}` : base;
   }
 
   /**
    * Retrieves a single session by ID.
    */
-  async getSession(sessionId: string): Promise<AgentSession | null> {
+  async getSession(
+    sessionId: string,
+    customEngineId?: string,
+    customLocation?: string
+  ): Promise<AgentSession | null> {
     if (isLocalSessionId(sessionId)) {
       return null;
     }
@@ -970,12 +1302,66 @@ export class AgentRuntimeClient {
 
     try {
       const accessToken = await this.getAccessToken();
-      const response = await fetch(this.getSessionEndpoint(sessionId), {
+      const endpoint = this.getSessionEndpoint(
+        sessionId,
+        undefined,
+        customEngineId,
+        customLocation
+      );
+      const response = await fetch(endpoint, {
         headers: {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
       });
+
+      if (
+        response.status === 404 &&
+        !customEngineId &&
+        !sessionId.startsWith("projects/")
+      ) {
+        // If not found on default engine, search across deployed reasoning engines
+        const agentsResult = await this.listReasoningEngines().catch(() => ({
+          agents: [],
+        }));
+        for (const agent of agentsResult.agents) {
+          if (agent.id === this.reasoningEngineId) continue;
+          try {
+            const fallbackEndpoint = this.getSessionEndpoint(
+              sessionId,
+              undefined,
+              agent.resourceName || agent.id,
+              agent.location
+            );
+            const fallbackRes = await fetch(fallbackEndpoint, {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "Content-Type": "application/json",
+              },
+            });
+            if (fallbackRes.ok) {
+              const raw = (await fallbackRes.json()) as Record<string, unknown>;
+              const nameStr = (raw.name as string) || "";
+              const parts = nameStr.split("/");
+              const id = parts[parts.length - 1] || sessionId;
+              return {
+                id,
+                name: nameStr,
+                userId: (raw.userId as string) || "",
+                title:
+                  (raw.displayName as string) ||
+                  (raw.title as string) ||
+                  `Chat ${id.substring(0, 8)}`,
+                createTime: (raw.createTime as string) || new Date().toISOString(),
+                updateTime: (raw.updateTime as string) || new Date().toISOString(),
+              };
+            }
+          } catch {
+            // try next agent
+          }
+        }
+        return null;
+      }
 
       if (response.status === 404) return null;
       if (!response.ok) {
@@ -992,7 +1378,10 @@ export class AgentRuntimeClient {
         id,
         name: nameStr,
         userId: (raw.userId as string) || "",
-        title: (raw.displayName as string) || `Chat ${id.substring(0, 8)}`,
+        title:
+          (raw.displayName as string) ||
+          (raw.title as string) ||
+          `Chat ${id.substring(0, 8)}`,
         createTime: (raw.createTime as string) || new Date().toISOString(),
         updateTime: (raw.updateTime as string) || new Date().toISOString(),
       };
@@ -1008,7 +1397,9 @@ export class AgentRuntimeClient {
   async updateSessionTitle(
     sessionId: string,
     title: string,
-    userId?: string
+    userId?: string,
+    customEngineId?: string,
+    customLocation?: string
   ): Promise<void> {
     if (isLocalSessionId(sessionId)) {
       return;
@@ -1025,7 +1416,12 @@ export class AgentRuntimeClient {
 
     try {
       const accessToken = await this.getAccessToken();
-      const endpoint = `${this.getSessionEndpoint(sessionId)}?updateMask=displayName`;
+      const endpoint = `${this.getSessionEndpoint(
+        sessionId,
+        undefined,
+        customEngineId,
+        customLocation
+      )}?updateMask=displayName`;
       const response = await fetch(endpoint, {
         method: "PATCH",
         headers: {
@@ -1052,7 +1448,11 @@ export class AgentRuntimeClient {
   /**
    * Deletes a session and all its associated events.
    */
-  async deleteSession(sessionId: string): Promise<void> {
+  async deleteSession(
+    sessionId: string,
+    customEngineId?: string,
+    customLocation?: string
+  ): Promise<void> {
     if (isLocalSessionId(sessionId)) {
       return;
     }
@@ -1065,12 +1465,15 @@ export class AgentRuntimeClient {
 
     try {
       const accessToken = await this.getAccessToken();
-      const response = await fetch(this.getSessionEndpoint(sessionId), {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
+      const response = await fetch(
+        this.getSessionEndpoint(sessionId, undefined, customEngineId, customLocation),
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }
+      );
 
       if (!response.ok && response.status !== 404) {
         const errText = await response.text();
@@ -1085,7 +1488,11 @@ export class AgentRuntimeClient {
   /**
    * Lists history events for a given session.
    */
-  async listSessionEvents(sessionId: string): Promise<AgentSessionEvent[]> {
+  async listSessionEvents(
+    sessionId: string,
+    customEngineId?: string,
+    customLocation?: string
+  ): Promise<AgentSessionEvent[]> {
     if (isLocalSessionId(sessionId)) {
       return [];
     }
@@ -1096,12 +1503,58 @@ export class AgentRuntimeClient {
 
     try {
       const accessToken = await this.getAccessToken();
-      const response = await fetch(this.getSessionEndpoint(sessionId, "events"), {
+      const endpoint = this.getSessionEndpoint(
+        sessionId,
+        "events",
+        customEngineId,
+        customLocation
+      );
+      const response = await fetch(endpoint, {
         headers: {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
       });
+
+      if (
+        response.status === 404 &&
+        !customEngineId &&
+        !sessionId.startsWith("projects/")
+      ) {
+        // Fallback across deployed engines if not found on primary engine
+        const agentsResult = await this.listReasoningEngines().catch(() => ({
+          agents: [],
+        }));
+        for (const agent of agentsResult.agents) {
+          if (agent.id === this.reasoningEngineId) continue;
+          try {
+            const fallbackEndpoint = this.getSessionEndpoint(
+              sessionId,
+              "events",
+              agent.resourceName || agent.id,
+              agent.location
+            );
+            const fallbackRes = await fetch(fallbackEndpoint, {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "Content-Type": "application/json",
+              },
+            });
+            if (fallbackRes.ok) {
+              const data = await fallbackRes.json();
+              const rawEvents = (
+                data.sessionEvents && data.sessionEvents.length > 0
+                  ? data.sessionEvents
+                  : data.events || []
+              ) as Array<Record<string, unknown>>;
+              return groupTurnSessionEvents(rawEvents, sessionId);
+            }
+          } catch {
+            // try next agent
+          }
+        }
+        return [];
+      }
 
       if (response.status === 404) return [];
       if (!response.ok) {

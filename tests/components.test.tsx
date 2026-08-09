@@ -21,6 +21,14 @@ import { GeminiMessageTiming } from "@/components/assistant-ui/gemini-message-ti
 import { SubAgentCollapsible } from "@/components/assistant-ui/subagent-collapsible";
 import { ToolCollapsible } from "@/components/assistant-ui/tool-collapsible";
 
+if (typeof global.ResizeObserver === "undefined") {
+  global.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
+
 function TestWrapper({ children }: { children: React.ReactNode }) {
   const runtime = useLocalRuntime({
     async *run() {
@@ -323,5 +331,45 @@ All evidence collected.`;
     // Expand first tool card
     fireEvent.click(toolButtons[0]);
     expect(screen.getByText(/INTC/)).toBeDefined();
+  });
+
+  it("renders dynamic agent greeting, badge, and description in GeminiThread empty state", async () => {
+    const { GeminiThread } = await import("@/components/assistant-ui/gemini-thread");
+    const { AgentProvider } = await import("@/lib/agent-context");
+
+    function TestThreadWrapper() {
+      const runtime = useLocalRuntime({
+        async *run() {
+          yield { content: [{ type: "text", text: "" }] };
+        },
+      });
+
+      return (
+        <AgentProvider
+          initialAgents={[
+            {
+              id: "mock-cloud-ops",
+              resourceName:
+                "projects/p/locations/us-central1/reasoningEngines/mock-cloud-ops",
+              displayName: "Cloud Ops Assistant",
+              description: "Infrastructure monitoring and log analysis",
+              location: "us-central1",
+              isDefault: true,
+            },
+          ]}
+        >
+          <AssistantRuntimeProvider runtime={runtime}>
+            <GeminiThread />
+          </AssistantRuntimeProvider>
+        </AgentProvider>
+      );
+    }
+
+    render(<TestThreadWrapper />);
+
+    expect(screen.getByText("Cloud Ops Assistant")).toBeDefined();
+    expect(screen.getByText("us-central1")).toBeDefined();
+    expect(screen.getByText("Infrastructure monitoring and log analysis")).toBeDefined();
+    expect(screen.getByPlaceholderText("Ask Cloud Ops Assistant...")).toBeDefined();
   });
 });

@@ -41,9 +41,15 @@ export async function GET(req: NextRequest, context: RouteContext) {
       );
     }
 
-    const agentClient = new AgentRuntimeClient();
+    const agentId =
+      req.nextUrl.searchParams.get("agentId") ||
+      req.nextUrl.searchParams.get("reasoningEngineId") ||
+      undefined;
+    const location = req.nextUrl.searchParams.get("location") || undefined;
 
-    const sessionDetails = await agentClient.getSession(sessionId);
+    const agentClient = new AgentRuntimeClient(agentId, location);
+
+    const sessionDetails = await agentClient.getSession(sessionId, agentId, location);
     if (!sessionDetails) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
@@ -56,7 +62,7 @@ export async function GET(req: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    const events = await agentClient.listSessionEvents(sessionId);
+    const events = await agentClient.listSessionEvents(sessionId, agentId, location);
 
     // If session title is generic, derive smart title from first user message
     if (
@@ -72,7 +78,13 @@ export async function GET(req: NextRequest, context: RouteContext) {
         const smartTitle = cap.length > 40 ? `${cap.substring(0, 37)}...` : cap;
         sessionDetails.title = smartTitle;
         agentClient
-          .updateSessionTitle(sessionId, smartTitle, sessionDetails.userId)
+          .updateSessionTitle(
+            sessionId,
+            smartTitle,
+            sessionDetails.userId,
+            agentId,
+            location
+          )
           .catch(() => {});
       }
     }
@@ -121,8 +133,18 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
       return NextResponse.json({ success: true, sessionId });
     }
 
-    const agentClient = new AgentRuntimeClient();
-    const sessionDetails = await agentClient.getSession(sessionId);
+    const body = await req.json().catch(() => ({}));
+    const agentId =
+      req.nextUrl.searchParams.get("agentId") ||
+      req.nextUrl.searchParams.get("reasoningEngineId") ||
+      body?.agentId ||
+      body?.reasoningEngineId ||
+      undefined;
+    const location =
+      req.nextUrl.searchParams.get("location") || body?.location || undefined;
+
+    const agentClient = new AgentRuntimeClient(agentId, location);
+    const sessionDetails = await agentClient.getSession(sessionId, agentId, location);
 
     if (!sessionDetails) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
@@ -139,14 +161,19 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
       );
     }
 
-    const body = await req.json();
     const title = body?.title || body?.displayName;
 
     if (!title || typeof title !== "string") {
       return NextResponse.json({ error: "Valid title is required" }, { status: 400 });
     }
 
-    await agentClient.updateSessionTitle(sessionId, title.trim(), session.user.id);
+    await agentClient.updateSessionTitle(
+      sessionId,
+      title.trim(),
+      session.user.id,
+      agentId,
+      location
+    );
 
     return NextResponse.json({
       success: true,
@@ -183,8 +210,14 @@ export async function DELETE(req: NextRequest, context: RouteContext) {
       return NextResponse.json({ success: true, deletedSessionId: sessionId });
     }
 
-    const agentClient = new AgentRuntimeClient();
-    const sessionDetails = await agentClient.getSession(sessionId);
+    const agentId =
+      req.nextUrl.searchParams.get("agentId") ||
+      req.nextUrl.searchParams.get("reasoningEngineId") ||
+      undefined;
+    const location = req.nextUrl.searchParams.get("location") || undefined;
+
+    const agentClient = new AgentRuntimeClient(agentId, location);
+    const sessionDetails = await agentClient.getSession(sessionId, agentId, location);
 
     if (!sessionDetails) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
@@ -201,7 +234,7 @@ export async function DELETE(req: NextRequest, context: RouteContext) {
       );
     }
 
-    await agentClient.deleteSession(sessionId);
+    await agentClient.deleteSession(sessionId, agentId, location);
 
     return NextResponse.json({
       success: true,

@@ -35,7 +35,8 @@ export async function POST(req: NextRequest) {
     const userId = session.user.id;
     const customEngineId =
       req.headers.get("x-reasoning-engine-id") || body.reasoningEngineId;
-    const agentClient = new AgentRuntimeClient(customEngineId);
+    const customLocation = req.headers.get("x-location") || body.location;
+    const agentClient = new AgentRuntimeClient(customEngineId, customLocation);
 
     const stream = new ReadableStream({
       async start(controller) {

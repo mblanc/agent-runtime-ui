@@ -631,4 +631,71 @@ describe("AgentRuntimeClient", () => {
       expect(fullText).toContain("gs://mock-bucket/users/u1/chart.png");
     });
   });
+
+  describe("Multi-Agent Backend Discovery & Scoping", () => {
+    it("discovers available reasoning engines in mock mode", async () => {
+      const client = new AgentRuntimeClient();
+      const result = await client.listReasoningEngines();
+
+      expect(result).toBeDefined();
+      expect(Array.isArray(result.agents)).toBe(true);
+      expect(result.agents.length).toBe(3);
+      expect(result.agents.some((a) => a.id === "mock-arch-advisor")).toBe(true);
+      expect(result.agents.some((a) => a.id === "mock-code-reviewer")).toBe(true);
+      expect(result.agents.some((a) => a.id === "mock-cloud-ops")).toBe(true);
+      expect(result.activeAgentId).toBe("mock-arch-advisor");
+    });
+
+    it("filters sessions strictly by reasoningEngineId in mock mode", async () => {
+      const client = new AgentRuntimeClient();
+      const archSessions = await client.listSessions(
+        "test-user",
+        undefined,
+        "mock-arch-advisor"
+      );
+      const codeSessions = await client.listSessions(
+        "test-user",
+        undefined,
+        "mock-code-reviewer"
+      );
+      const opsSessions = await client.listSessions(
+        "test-user",
+        undefined,
+        "mock-cloud-ops"
+      );
+
+      expect(archSessions.length).toBeGreaterThanOrEqual(2);
+      expect(
+        archSessions.every(
+          (s) => s.name.includes("mock-arch-advisor") || s.name.includes("mock-engine")
+        )
+      ).toBe(true);
+
+      expect(codeSessions.length).toBeGreaterThanOrEqual(1);
+      expect(codeSessions.every((s) => s.name.includes("mock-code-reviewer"))).toBe(true);
+
+      expect(opsSessions.length).toBeGreaterThanOrEqual(1);
+      expect(opsSessions.every((s) => s.name.includes("mock-cloud-ops"))).toBe(true);
+    });
+
+    it("creates session scoped to the selected reasoningEngineId in mock mode", async () => {
+      const client = new AgentRuntimeClient();
+      const newSession = await client.createSession(
+        "test-user",
+        "Security Audit #99",
+        "mock-code-reviewer"
+      );
+
+      expect(newSession).toBeDefined();
+      expect(newSession.name).toContain("mock-code-reviewer");
+      expect(newSession.title).toBe("Security Audit #99");
+
+      const codeSessions = await client.listSessions(
+        "test-user",
+        undefined,
+        "mock-code-reviewer"
+      );
+      expect(codeSessions.some((s) => s.id === newSession.id)).toBe(true);
+    });
+  });
 });

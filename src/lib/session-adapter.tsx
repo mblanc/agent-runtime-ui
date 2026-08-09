@@ -27,9 +27,12 @@ interface SessionApiItem {
   updateTime: string;
 }
 
-export function useSessionThreadHistoryAdapter(): ThreadHistoryAdapter {
+export function useSessionThreadHistoryAdapter(agentId?: string): ThreadHistoryAdapter {
   const aui = useAui();
   const auiRef = useRef(aui);
+  const agentIdRef = useRef(agentId);
+  agentIdRef.current = agentId;
+
   useEffect(() => {
     auiRef.current = aui;
   });
@@ -49,13 +52,20 @@ export function useSessionThreadHistoryAdapter(): ThreadHistoryAdapter {
         }
 
         try {
+          const currentAgentId = agentIdRef.current;
+          const query = currentAgentId
+            ? `?agentId=${encodeURIComponent(currentAgentId)}`
+            : "";
           const res = await fetch(
-            getApiUrl(`/api/sessions/${encodeURIComponent(remoteId)}`),
+            getApiUrl(`/api/sessions/${encodeURIComponent(remoteId)}${query}`),
             {
               cache: "no-store",
             }
           );
           if (!res.ok) {
+            console.warn(
+              `[session-adapter] GET /api/sessions/${remoteId} returned ${res.status}`
+            );
             return { messages: [] };
           }
 
@@ -104,24 +114,31 @@ function getApiUrl(path: string): string {
   return `http://localhost:3000${path}`;
 }
 
-export function useSessionThreadListAdapter(userId?: string): RemoteThreadListAdapter {
-  const unstable_Provider: FC<PropsWithChildren> = useCallback(function Provider({
-    children,
-  }) {
-    const history = useSessionThreadHistoryAdapter();
-    const adapters = useMemo(() => ({ history }), [history]);
-    return (
-      <RuntimeAdapterProvider adapters={adapters}>{children}</RuntimeAdapterProvider>
-    );
-  }, []);
+export function useSessionThreadListAdapter(
+  userId?: string,
+  agentId?: string
+): RemoteThreadListAdapter {
+  const unstable_Provider: FC<PropsWithChildren> = useCallback(
+    function Provider({ children }) {
+      const history = useSessionThreadHistoryAdapter(agentId);
+      const adapters = useMemo(() => ({ history }), [history]);
+      return (
+        <RuntimeAdapterProvider adapters={adapters}>{children}</RuntimeAdapterProvider>
+      );
+    },
+    [agentId]
+  );
 
   return useMemo<RemoteThreadListAdapter>(() => {
     return {
       list: async () => {
         try {
-          const url = userId
-            ? getApiUrl(`/api/sessions?userId=${encodeURIComponent(userId)}`)
-            : getApiUrl("/api/sessions");
+          const params = new URLSearchParams();
+          if (userId) params.set("userId", userId);
+          if (agentId) params.set("agentId", agentId);
+          const queryStr = params.toString();
+          const url = getApiUrl(queryStr ? `/api/sessions?${queryStr}` : "/api/sessions");
+
           const res = await fetch(url, {
             cache: "no-store",
             headers: {
@@ -157,7 +174,10 @@ export function useSessionThreadListAdapter(userId?: string): RemoteThreadListAd
           const res = await fetch(getApiUrl("/api/sessions"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ title: "New conversation" }),
+            body: JSON.stringify({
+              title: "New conversation",
+              ...(agentId ? { agentId } : {}),
+            }),
           });
 
           if (!res.ok) {
@@ -175,8 +195,9 @@ export function useSessionThreadListAdapter(userId?: string): RemoteThreadListAd
 
       fetch: async (threadId: string) => {
         try {
+          const query = agentId ? `?agentId=${encodeURIComponent(agentId)}` : "";
           const res = await fetch(
-            getApiUrl(`/api/sessions/${encodeURIComponent(threadId)}`),
+            getApiUrl(`/api/sessions/${encodeURIComponent(threadId)}${query}`),
             {
               cache: "no-store",
             }
@@ -211,9 +232,13 @@ export function useSessionThreadListAdapter(userId?: string): RemoteThreadListAd
 
       delete: async (remoteId: string) => {
         try {
-          await fetch(getApiUrl(`/api/sessions/${encodeURIComponent(remoteId)}`), {
-            method: "DELETE",
-          });
+          const query = agentId ? `?agentId=${encodeURIComponent(agentId)}` : "";
+          await fetch(
+            getApiUrl(`/api/sessions/${encodeURIComponent(remoteId)}${query}`),
+            {
+              method: "DELETE",
+            }
+          );
         } catch (err) {
           console.error(`Error deleting session ${remoteId}:`, err);
         }
@@ -221,11 +246,15 @@ export function useSessionThreadListAdapter(userId?: string): RemoteThreadListAd
 
       rename: async (remoteId: string, newTitle: string) => {
         try {
-          await fetch(getApiUrl(`/api/sessions/${encodeURIComponent(remoteId)}`), {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ title: newTitle }),
-          });
+          const query = agentId ? `?agentId=${encodeURIComponent(agentId)}` : "";
+          await fetch(
+            getApiUrl(`/api/sessions/${encodeURIComponent(remoteId)}${query}`),
+            {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ title: newTitle }),
+            }
+          );
         } catch (err) {
           console.error(`Error renaming session ${remoteId}:`, err);
         }
@@ -269,11 +298,15 @@ export function useSessionThreadListAdapter(userId?: string): RemoteThreadListAd
             "to:",
             title
           );
-          await fetch(getApiUrl(`/api/sessions/${encodeURIComponent(remoteId)}`), {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ title }),
-          });
+          const query = agentId ? `?agentId=${encodeURIComponent(agentId)}` : "";
+          await fetch(
+            getApiUrl(`/api/sessions/${encodeURIComponent(remoteId)}${query}`),
+            {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ title }),
+            }
+          );
         } catch (err) {
           console.warn(`Could not persist generated title for ${remoteId}:`, err);
         }
@@ -286,5 +319,5 @@ export function useSessionThreadListAdapter(userId?: string): RemoteThreadListAd
 
       unstable_Provider,
     };
-  }, [unstable_Provider, userId]);
+  }, [unstable_Provider, userId, agentId]);
 }

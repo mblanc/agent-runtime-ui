@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { UserAvatarMenu } from "@/components/auth/user-avatar-menu";
 import { SettingsMenu } from "@/components/settings/settings-menu";
 import { ThreadListPrimitive, ThreadListItemPrimitive } from "@assistant-ui/react";
+import { useOptionalActiveAgent } from "@/lib/agent-context";
 
 interface ThreadSidebarProps {
   className?: string;
@@ -50,6 +51,9 @@ function SidebarThreadItem({ isOpen }: { isOpen: boolean }) {
 
 export function ThreadSidebar({ className }: ThreadSidebarProps) {
   const [isOpen, setIsOpen] = useState(true);
+
+  const agentCtx = useOptionalActiveAgent();
+  const activeAgentName = agentCtx?.activeAgent?.displayName;
 
   const renderThreadListItem = useCallback(
     () => <SidebarThreadItem isOpen={isOpen} />,
@@ -105,8 +109,15 @@ export function ThreadSidebar({ className }: ThreadSidebarProps) {
         {/* Recent Chats List */}
         <div className="flex-1 overflow-y-auto px-2 py-3 space-y-1">
           {isOpen && (
-            <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Recent
+            <div className="flex flex-col gap-0.5 px-2 py-1">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Recent
+              </div>
+              {activeAgentName && (
+                <div className="truncate text-[10px] text-muted-foreground/80 font-normal">
+                  Threads for {activeAgentName}
+                </div>
+              )}
             </div>
           )}
           <ThreadListPrimitive.Items

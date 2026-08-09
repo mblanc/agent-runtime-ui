@@ -171,6 +171,23 @@ export interface AgentSessionEvent {
   rawEvent?: Record<string, unknown>;
 }
 
+export interface DeployedAgent {
+  id: string; // e.g. "4567890123456789012" or "mock-arch-advisor"
+  resourceName: string; // "projects/{project}/locations/{location}/reasoningEngines/{id}"
+  displayName: string; // e.g. "ADK Architecture Advisor"
+  description?: string; // e.g. "Specialized in cloud architecture patterns and security"
+  location: string; // e.g. "us-central1", "europe-west4"
+  createTime?: string;
+  updateTime?: string;
+  model?: string; // e.g. "gemini-2.5-flash", "gemini-2.5-pro"
+  isDefault?: boolean;
+}
+
+export interface ListAgentsResponse {
+  agents: DeployedAgent[];
+  activeAgentId: string;
+}
+
 export type GeminiModelTier = "flash" | "pro";
 
 export interface ChatRequestBody {
@@ -182,6 +199,7 @@ export interface ChatRequestBody {
   sessionId?: string;
   modelTier?: GeminiModelTier;
   reasoningEngineId?: string;
+  location?: string;
 }
 
 export type FeedbackType = "THUMBS_UP" | "THUMBS_DOWN" | "FEEDBACK_TYPE_UNSPECIFIED";

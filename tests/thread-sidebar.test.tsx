@@ -185,6 +185,28 @@ describe("ThreadSidebar Component", () => {
     }
   });
 
+  it("renders active agent subtitle when wrapped in AgentProvider", async () => {
+    const { AgentProvider } = await import("@/lib/agent-context");
+    render(
+      <AgentProvider
+        initialAgents={[
+          {
+            id: "mock-code-reviewer",
+            resourceName: "projects/p/locations/l/reasoningEngines/mock-code-reviewer",
+            displayName: "Code Reviewer & Auditor",
+            description: "Code review agent",
+            location: "europe-west4",
+            isDefault: true,
+          },
+        ]}
+      >
+        <TestSidebarWrapper />
+      </AgentProvider>
+    );
+
+    expect(screen.getByText("Threads for Code Reviewer & Auditor")).toBeDefined();
+  });
+
   it("exports unstable_Provider in useSessionThreadListAdapter", async () => {
     const { renderHook } = await import("@testing-library/react");
     const { result } = renderHook(() => useSessionThreadListAdapter("test-user"));

@@ -46,6 +46,33 @@ describe("Sessions API Routes", () => {
       expect(data.sessions[0]).toHaveProperty("id");
       expect(data.sessions[0]).toHaveProperty("title");
     });
+
+    it("filters sessions by agentId query parameter", async () => {
+      vi.spyOn(auth.api, "getSession").mockResolvedValueOnce({
+        user: {
+          id: "test-user",
+          name: "Test User",
+          email: "test@example.com",
+        },
+        session: {
+          expiresAt: new Date(Date.now() + 86400000).toISOString(),
+        },
+      });
+
+      const req = new NextRequest(
+        "http://localhost:3000/api/sessions?agentId=mock-code-reviewer"
+      );
+      const res = await listSessions(req);
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(Array.isArray(data.sessions)).toBe(true);
+      expect(
+        data.sessions.every((s: { name: string }) =>
+          s.name.includes("mock-code-reviewer")
+        )
+      ).toBe(true);
+    });
   });
 
   describe("POST /api/sessions", () => {
@@ -75,7 +102,7 @@ describe("Sessions API Routes", () => {
 
       const req = new NextRequest("http://localhost:3000/api/sessions", {
         method: "POST",
-        body: JSON.stringify({ title: "BFF Test Thread" }),
+        body: JSON.stringify({ title: "BFF Test Thread", agentId: "mock-cloud-ops" }),
       });
       const res = await createSession(req);
 
@@ -84,6 +111,7 @@ describe("Sessions API Routes", () => {
       expect(data.session).toBeDefined();
       expect(data.session.title).toBe("BFF Test Thread");
       expect(data.session.userId).toBe("test-user");
+      expect(data.session.name).toContain("mock-cloud-ops");
     });
   });
 
@@ -113,6 +141,33 @@ describe("Sessions API Routes", () => {
       expect(data.events.length).toBeGreaterThanOrEqual(2);
       expect(Array.isArray(data.messages)).toBe(true);
       expect(data.messages.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("returns session details and event history when agentId is provided", async () => {
+      vi.spyOn(auth.api, "getSession").mockResolvedValueOnce({
+        user: {
+          id: "test-user",
+          name: "Test User",
+          email: "test@example.com",
+        },
+        session: {
+          expiresAt: new Date(Date.now() + 86400000).toISOString(),
+        },
+      });
+
+      const req = new NextRequest(
+        "http://localhost:3000/api/sessions/3?agentId=mock-code-reviewer"
+      );
+      const res = await getSessionDetail(req, {
+        params: Promise.resolve({ sessionId: "3" }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.session).toBeDefined();
+      expect(data.session.id).toBe("3");
+      expect(Array.isArray(data.events)).toBe(true);
+      expect(Array.isArray(data.messages)).toBe(true);
     });
 
     it("returns 404 for non-existent session", async () => {

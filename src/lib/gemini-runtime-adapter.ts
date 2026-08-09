@@ -128,7 +128,9 @@ function createYieldContent(
 }
 
 export function createGeminiChatAdapter(
-  getSessionId?: () => string | undefined
+  getSessionId?: () => string | undefined,
+  getAgentId?: () => string | undefined,
+  getLocation?: () => string | undefined
 ): ChatModelAdapter {
   return {
     async *run({
@@ -267,9 +269,18 @@ export function createGeminiChatAdapter(
       });
 
       const sessionId = getSessionId?.();
+      const reasoningEngineId = getAgentId?.();
+      const location = getLocation?.();
 
       try {
-        console.log("[createGeminiChatAdapter] Starting run for sessionId:", sessionId);
+        console.log(
+          "[createGeminiChatAdapter] Starting run for sessionId:",
+          sessionId,
+          "agentId:",
+          reasoningEngineId,
+          "location:",
+          location
+        );
         abortSignal?.addEventListener("abort", () => {
           console.warn(
             "[createGeminiChatAdapter] AbortSignal triggered! Reason:",
@@ -283,6 +294,8 @@ export function createGeminiChatAdapter(
           body: JSON.stringify({
             messages: formattedMessages,
             ...(sessionId ? { sessionId } : {}),
+            ...(reasoningEngineId ? { reasoningEngineId } : {}),
+            ...(location ? { location } : {}),
           }),
           signal: abortSignal,
         });
