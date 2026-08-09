@@ -155,47 +155,47 @@
 
 ## Phase 4: UI Tool Stream Direct Wire Protocol & Scoped Attachment Store
 
-- [ ] **Task 4.1: Scoped `SessionAttachmentStore`**
+- [x] **Task 4.1: Scoped `SessionAttachmentStore`**
   - **Description:** Create `src/lib/attachments/attachment-store.ts` implementing `SessionAttachmentStore` with automatic `URL.revokeObjectURL` cleanup when attachments are removed.
   - **Acceptance Criteria:**
-    - [ ] `SessionAttachmentStore` provides `get`, `set`, `delete`, and `clear`
-    - [ ] Removing an attachment automatically revokes its object URL to prevent memory leaks
+    - [x] `SessionAttachmentStore` provides `get`, `set`, `delete`, and `clear`
+    - [x] Removing an attachment automatically revokes its object URL to prevent memory leaks
   - **Verification:** `bun test tests/multimodal-attachments.test.tsx`
   - **Files:** `src/lib/attachments/attachment-store.ts`
   - **Scope:** S
 
-- [ ] **Task 4.2: Direct Structured Tool Call Emission in Chat Adapter**
+- [x] **Task 4.2: Direct Structured Tool Call Emission in Chat Adapter**
   - **Description:** Refactor `createGeminiChatAdapter` to emit native `tool-call` parts directly into `@assistant-ui/react` runtime without serializing into `:::tool[...]` string pseudo-tags.
   - **Acceptance Criteria:**
-    - [ ] `tool_call` and `tool_result` SSE events yield directly as structured `tool-call` parts in `createYieldContent`
-    - [ ] String tag manipulation helpers deleted from chat adapter
+    - [x] `tool_call` and `tool_result` SSE events yield directly as structured `tool-call` parts in `createYieldContent`
+    - [x] String tag manipulation helpers deleted from chat adapter
   - **Verification:** `bun test tests/tools-hitl.test.tsx`
   - **Files:** `src/lib/gemini-runtime-adapter.ts`
   - **Scope:** M
 
-- [ ] **Task 4.3: Simplify `reasoning.tsx` Component**
+- [x] **Task 4.3: Simplify `reasoning.tsx` Component**
   - **Description:** Remove complex regex parsers from `src/components/assistant-ui/reasoning.tsx`, rendering reasoning text purely as styled monospace text/markdown.
   - **Acceptance Criteria:**
-    - [ ] `reasoning.tsx` LOC reduced from 382 to < 120
-    - [ ] Brittle regex parsing logic eliminated
-    - [ ] Tool calls rendered by `MessagePrimitive.GroupedParts` and `ToolFallback`
+    - [x] `reasoning.tsx` LOC reduced from 382 to < 120
+    - [x] Brittle regex parsing logic eliminated
+    - [x] Tool calls rendered by `MessagePrimitive.GroupedParts` and `ToolFallback`
   - **Verification:** `bun test tests/components.test.tsx tests/tools-hitl.test.tsx`
   - **Files:** `src/components/assistant-ui/reasoning.tsx`
   - **Scope:** S
 
-- [ ] **Task 4.4: Decompose `gemini-runtime-adapter.ts` into Modular Adapters**
+- [x] **Task 4.4: Decompose `gemini-runtime-adapter.ts` into Modular Adapters**
   - **Description:** Decompose `src/lib/gemini-runtime-adapter.ts` into focused submodules in `src/lib/adapters/`: `chat-adapter.ts`, `feedback-adapter.ts`, `gcs-attachment-adapter.ts`, `speech-adapters.ts`.
   - **Acceptance Criteria:**
-    - [ ] Each adapter file under `src/lib/adapters/` has a single responsibility (< 200 LOC)
-    - [ ] Re-export facade maintains backward compatibility for all existing imports
+    - [x] Each adapter file under `src/lib/adapters/` has a single responsibility (< 200 LOC)
+    - [x] Re-export facade maintains backward compatibility for all existing imports
   - **Verification:** `bun test tests/multimodal-attachments.test.tsx tests/voice-tts.test.tsx tests/feedback-ui.test.tsx`
   - **Files:** `src/lib/adapters/chat-adapter.ts`, `src/lib/adapters/feedback-adapter.ts`, `src/lib/adapters/gcs-attachment-adapter.ts`, `src/lib/adapters/speech-adapters.ts`, `src/lib/adapters/index.ts`, `src/lib/gemini-runtime-adapter.ts`
   - **Scope:** M
 
 ### Checkpoint 4: Tool Stream & Memory Management Verified
 
-- [ ] All component and adapter tests pass (`bun test tests/*.test.tsx`)
-- [ ] Zero memory leaks from revoked attachment URLs
+- [x] All component and adapter tests pass (`bun test tests/*.test.tsx`)
+- [x] Zero memory leaks from revoked attachment URLs
 
 ---
 

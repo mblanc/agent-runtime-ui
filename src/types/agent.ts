@@ -31,7 +31,8 @@ export interface BaseAgentMessagePart {
   file?: {
     filename?: string;
     data: string;
-    mimeType: string;
+    mimeType?: string;
+    mime_type?: string;
   };
   functionCall?: {
     id?: string;
@@ -84,7 +85,8 @@ export interface AgentFileBlobPart extends BaseAgentMessagePart {
   file: {
     filename?: string;
     data: string;
-    mimeType: string;
+    mimeType?: string;
+    mime_type?: string;
   };
 }
 
