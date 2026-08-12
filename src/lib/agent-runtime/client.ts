@@ -1332,6 +1332,32 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
                 },
               };
             }
+            if (p.image) {
+              let fileUri = p.image;
+              if (fileUri.startsWith("https://storage.googleapis.com/")) {
+                const match = fileUri.match(
+                  /^https:\/\/storage\.googleapis\.com\/([^/?#]+)\/([^?#]+)/
+                );
+                if (match) {
+                  fileUri = `gs://${match[1]}/${match[2]}`;
+                }
+              }
+              return {
+                file_data: {
+                  file_uri: fileUri,
+                  mime_type: "image/jpeg",
+                },
+              };
+            }
+            if (p.file) {
+              return {
+                file_data: {
+                  file_uri: p.file.data,
+                  mime_type:
+                    p.file.mimeType || p.file.mime_type || "application/octet-stream",
+                },
+              };
+            }
             if (p.function_response || p.functionResponse) {
               return {
                 function_response: p.function_response || p.functionResponse,
@@ -1348,9 +1374,13 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
       }
 
       const inputPayload: Record<string, unknown> = {
-        message: resolvedMessage,
+        message: resolvedParts
+          ? {
+              role: "user",
+              parts: resolvedParts,
+            }
+          : resolvedMessage,
         user_id: userId,
-        ...(resolvedParts ? { parts: resolvedParts } : {}),
         ...(cleanSessionId ? { session_id: cleanSessionId } : {}),
         run_config: resolvedRunConfig,
       };

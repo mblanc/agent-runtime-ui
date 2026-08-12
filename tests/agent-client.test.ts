@@ -720,11 +720,22 @@ describe("AgentRuntimeClient", () => {
       expect(url).toContain(":streamQuery");
       const body = JSON.parse(opts.body);
       expect(body.class_method).toBe("async_stream_query");
-      expect(body.input.message).toBe("Analyze this image");
+      expect(body.input.message).toEqual({
+        role: "user",
+        parts: [
+          { text: "Analyze this image" },
+          {
+            file_data: {
+              file_uri: "gs://bucket/users/u1/photo.png",
+              mime_type: "image/png",
+            },
+          },
+        ],
+      });
       expect(body.input.run_config).toEqual({ streaming_mode: "sse" });
-      expect(body.input.parts).toHaveLength(2);
-      expect(body.input.parts[0]).toEqual({ text: "Analyze this image" });
-      expect(body.input.parts[1]).toEqual({
+      expect(body.input.message.parts).toHaveLength(2);
+      expect(body.input.message.parts[0]).toEqual({ text: "Analyze this image" });
+      expect(body.input.message.parts[1]).toEqual({
         file_data: {
           file_uri: "gs://bucket/users/u1/photo.png",
           mime_type: "image/png",

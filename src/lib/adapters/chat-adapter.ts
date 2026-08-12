@@ -6,6 +6,8 @@ import type {
 } from "@assistant-ui/react";
 import type { AgentMessage, AgentMessagePart, MemoryRetrievalItem } from "@/types/agent";
 import { formatAgentDisplayName } from "@/lib/utils";
+import { defaultAttachmentStore } from "../attachments/attachment-store";
+import { inferMimeType } from "../attachments/mime-types";
 
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -219,26 +221,74 @@ export function createGeminiChatAdapter(
           } else if (part.type === "image") {
             const imgPart = part as { image?: string; filename?: string };
             const imgUrl = imgPart.image || "";
+            let resolvedUri = "";
+            let resolvedMimeType = inferMimeType(imgPart.filename, "image/jpeg");
+
             if (imgUrl.startsWith("gs://")) {
+              resolvedUri = imgUrl;
+            } else {
+              // 1. Look in message attachments
+              const attMatch = m.attachments?.find(
+                (a) =>
+                  a.type === "image" || (imgPart.filename && a.name === imgPart.filename)
+              );
+              if (attMatch) {
+                const meta = defaultAttachmentStore.get(attMatch.id);
+                if (meta?.gcsUri) {
+                  resolvedUri = meta.gcsUri;
+                  if (meta.contentType)
+                    resolvedMimeType = inferMimeType(imgPart.filename, meta.contentType);
+                }
+              }
+
+              // 2. Look in attachment store by URL or filename
+              if (!resolvedUri) {
+                const meta =
+                  defaultAttachmentStore.getByUrl?.(imgUrl) ||
+                  (imgPart.filename
+                    ? defaultAttachmentStore.getByFilename?.(imgPart.filename)
+                    : undefined) ||
+                  defaultAttachmentStore.findByAny?.(imgUrl);
+                if (meta?.gcsUri) {
+                  resolvedUri = meta.gcsUri;
+                  if (meta.contentType)
+                    resolvedMimeType = inferMimeType(imgPart.filename, meta.contentType);
+                }
+              }
+
+              // 3. Extract gcsUri query param if present
+              if (!resolvedUri && imgUrl.startsWith("http")) {
+                try {
+                  const urlObj = new URL(imgUrl);
+                  const gcsQuery = urlObj.searchParams.get("gcsUri");
+                  if (gcsQuery && gcsQuery.startsWith("gs://")) {
+                    resolvedUri = gcsQuery;
+                  }
+                } catch {
+                  // ignore invalid URLs
+                }
+              }
+
+              // 4. Parse Google Cloud Storage signed / public URL
+              if (!resolvedUri) {
+                const gcsMatch = imgUrl.match(
+                  /^https:\/\/storage\.googleapis\.com\/([^/?#]+)\/([^?#]+)/
+                );
+                if (gcsMatch) {
+                  resolvedUri = `gs://${gcsMatch[1]}/${gcsMatch[2]}`;
+                }
+              }
+            }
+
+            resolvedMimeType = inferMimeType(imgPart.filename, resolvedMimeType);
+
+            if (resolvedUri) {
               parts.push({
                 file_data: {
-                  file_uri: imgUrl,
-                  mime_type: "image/jpeg",
+                  file_uri: resolvedUri,
+                  mime_type: resolvedMimeType,
                 },
               });
-            } else if (imgUrl.startsWith("http")) {
-              const urlObj = new URL(imgUrl);
-              const gcsQuery = urlObj.searchParams.get("gcsUri");
-              if (gcsQuery && gcsQuery.startsWith("gs://")) {
-                parts.push({
-                  file_data: {
-                    file_uri: gcsQuery,
-                    mime_type: "image/jpeg",
-                  },
-                });
-              } else {
-                parts.push({ image: imgUrl });
-              }
             } else {
               parts.push({ image: imgUrl });
             }
@@ -248,19 +298,65 @@ export function createGeminiChatAdapter(
               mimeType?: string;
               filename?: string;
             };
-            const gcsUri = filePart.data || "";
+            let gcsUri = filePart.data || "";
+            let mimeType = inferMimeType(filePart.filename, filePart.mimeType);
+
+            if (!gcsUri.startsWith("gs://")) {
+              // 1. Look in message attachments
+              const attMatch = m.attachments?.find(
+                (a) =>
+                  a.type === "document" ||
+                  (filePart.filename && a.name === filePart.filename)
+              );
+              if (attMatch) {
+                const meta = defaultAttachmentStore.get(attMatch.id);
+                if (meta?.gcsUri) {
+                  gcsUri = meta.gcsUri;
+                  if (meta.contentType)
+                    mimeType = inferMimeType(filePart.filename, meta.contentType);
+                }
+              }
+
+              // 2. Look in attachment store by URL or filename
+              if (!gcsUri.startsWith("gs://")) {
+                const meta =
+                  defaultAttachmentStore.getByUrl?.(gcsUri) ||
+                  (filePart.filename
+                    ? defaultAttachmentStore.getByFilename?.(filePart.filename)
+                    : undefined) ||
+                  defaultAttachmentStore.findByAny?.(gcsUri);
+                if (meta?.gcsUri) {
+                  gcsUri = meta.gcsUri;
+                  if (meta.contentType)
+                    mimeType = inferMimeType(filePart.filename, meta.contentType);
+                }
+              }
+
+              // 3. Parse Google Cloud Storage signed URL
+              if (!gcsUri.startsWith("gs://")) {
+                const gcsMatch = gcsUri.match(
+                  /^https:\/\/storage\.googleapis\.com\/([^/?#]+)\/([^?#]+)/
+                );
+                if (gcsMatch) {
+                  gcsUri = `gs://${gcsMatch[1]}/${gcsMatch[2]}`;
+                }
+              }
+            }
+
+            mimeType = inferMimeType(filePart.filename, mimeType);
+
             if (gcsUri.startsWith("gs://")) {
               parts.push({
                 file_data: {
                   file_uri: gcsUri,
-                  mime_type: filePart.mimeType || "application/octet-stream",
+                  mime_type: mimeType,
                 },
               });
             } else {
               parts.push({
                 file: {
                   data: gcsUri,
-                  mime_type: filePart.mimeType || "application/octet-stream",
+                  mime_type: mimeType,
                 },
               });
             }
@@ -303,6 +399,76 @@ export function createGeminiChatAdapter(
           }
         }
 
+        // Process message attachments if present
+        if (m.attachments && Array.isArray(m.attachments)) {
+          for (const att of m.attachments) {
+            let attGcsUri = "";
+            let attMimeType = inferMimeType(att.name, att.contentType || att.file?.type);
+
+            // 1. Check content parts inside attachment
+            if (att.content && Array.isArray(att.content)) {
+              for (const cp of att.content) {
+                if (cp.type === "image") {
+                  const imgPart = cp as { image?: string; filename?: string };
+                  const imgUrl = imgPart.image || "";
+                  if (imgUrl.startsWith("gs://")) {
+                    attGcsUri = imgUrl;
+                  } else {
+                    const meta =
+                      defaultAttachmentStore.get(att.id) ||
+                      defaultAttachmentStore.getByUrl?.(imgUrl) ||
+                      defaultAttachmentStore.findByAny?.(att.id);
+                    if (meta?.gcsUri) {
+                      attGcsUri = meta.gcsUri;
+                      if (meta.contentType)
+                        attMimeType = inferMimeType(att.name, meta.contentType);
+                    }
+                  }
+                } else if (cp.type === "file") {
+                  const filePart = cp as { data?: string; mimeType?: string };
+                  if (filePart.data?.startsWith("gs://")) {
+                    attGcsUri = filePart.data;
+                  }
+                  if (filePart.mimeType)
+                    attMimeType = inferMimeType(att.name, filePart.mimeType);
+                }
+              }
+            }
+
+            // 2. Direct lookup in attachment store
+            if (!attGcsUri) {
+              const meta =
+                defaultAttachmentStore.get(att.id) ||
+                defaultAttachmentStore.findByAny?.(att.id) ||
+                defaultAttachmentStore.getByFilename?.(att.name);
+              if (meta?.gcsUri) {
+                attGcsUri = meta.gcsUri;
+                if (meta.contentType)
+                  attMimeType = inferMimeType(att.name, meta.contentType);
+              }
+            }
+
+            attMimeType = inferMimeType(att.name, attMimeType);
+
+            if (attGcsUri && attGcsUri.startsWith("gs://")) {
+              const alreadyExists = parts.some(
+                (p) =>
+                  p.file_data?.file_uri === attGcsUri ||
+                  p.fileData?.file_uri === attGcsUri ||
+                  p.fileData?.fileUri === attGcsUri
+              );
+              if (!alreadyExists) {
+                parts.push({
+                  file_data: {
+                    file_uri: attGcsUri,
+                    mime_type: attMimeType,
+                  },
+                });
+              }
+            }
+          }
+        }
+
         if (toolApproval) {
           const respData = {
             id: toolApproval.id,
@@ -330,14 +496,22 @@ export function createGeminiChatAdapter(
             });
           }
         } else {
-          formattedMessages.push({
-            role: "assistant",
-            content: text,
-            parts: parts.length > 0 ? parts : undefined,
-          });
+          // Skip empty assistant message if it's the last message (placeholder for streaming response)
+          const isLastMessage = mIdx === sourceMessages.length - 1;
+          if (
+            !isLastMessage ||
+            text ||
+            parts.length > 0 ||
+            userFunctionResponseParts.length > 0
+          ) {
+            formattedMessages.push({
+              role: "assistant",
+              content: text,
+              parts: parts.length > 0 ? parts : undefined,
+            });
+          }
 
           // Only append trailing userFunctionResponseParts if this assistant message is the last message in sourceMessages
-          const isLastMessage = mIdx === sourceMessages.length - 1;
           if (isLastMessage && userFunctionResponseParts.length > 0) {
             formattedMessages.push({
               role: "user",

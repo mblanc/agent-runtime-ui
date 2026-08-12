@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { inferMimeType } from "@/lib/attachments/mime-types";
 
 export const runtime = "nodejs";
 
@@ -16,18 +17,13 @@ export async function PUT(_req: NextRequest) {
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const filename = searchParams.get("filename") || "";
+  const mimeType = inferMimeType(filename);
 
-  if (
-    filename.endsWith(".png") ||
-    filename.endsWith(".jpg") ||
-    filename.endsWith(".jpeg") ||
-    filename.endsWith(".webp") ||
-    filename.endsWith(".gif")
-  ) {
+  if (mimeType.startsWith("image/")) {
     return new Response(TRANSPARENT_PNG, {
       status: 200,
       headers: {
-        "Content-Type": "image/png",
+        "Content-Type": mimeType,
         "Cache-Control": "public, max-age=3600",
       },
     });
@@ -36,7 +32,7 @@ export async function GET(req: NextRequest) {
   return new NextResponse("Mock uploaded file content", {
     status: 200,
     headers: {
-      "Content-Type": "text/plain",
+      "Content-Type": mimeType,
       "Cache-Control": "public, max-age=3600",
     },
   });

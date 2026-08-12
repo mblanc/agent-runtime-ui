@@ -7,6 +7,9 @@ export interface AttachmentMetadata {
 
 export interface IAttachmentMetadataStore {
   get(id: string): AttachmentMetadata | undefined;
+  getByUrl?(url: string): AttachmentMetadata | undefined;
+  getByFilename?(filename: string): AttachmentMetadata | undefined;
+  findByAny?(query: string): AttachmentMetadata | undefined;
   set(id: string, meta: AttachmentMetadata): void;
   has(id: string): boolean;
   delete(id: string): void;
@@ -23,6 +26,36 @@ export class SessionAttachmentStore implements IAttachmentMetadataStore {
 
   get(id: string): AttachmentMetadata | undefined {
     return this.store.get(id);
+  }
+
+  getByUrl(url: string): AttachmentMetadata | undefined {
+    if (!url) return undefined;
+    for (const meta of this.store.values()) {
+      if (meta.readUrl === url || meta.previewUrl === url || meta.gcsUri === url) {
+        return meta;
+      }
+    }
+    return undefined;
+  }
+
+  getByFilename(filename: string): AttachmentMetadata | undefined {
+    if (!filename) return undefined;
+    for (const meta of this.store.values()) {
+      if (
+        meta.gcsUri.endsWith(`/${filename}`) ||
+        meta.gcsUri.endsWith(`-${filename}`) ||
+        meta.gcsUri.includes(filename)
+      ) {
+        return meta;
+      }
+    }
+    return undefined;
+  }
+
+  findByAny(query: string): AttachmentMetadata | undefined {
+    if (!query) return undefined;
+    if (this.store.has(query)) return this.store.get(query);
+    return this.getByUrl(query) || this.getByFilename(query);
   }
 
   set(id: string, meta: AttachmentMetadata): void {

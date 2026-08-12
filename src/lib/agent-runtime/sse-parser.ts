@@ -202,10 +202,18 @@ export async function* parseSseStream(
               tool_result: parsed.tool_result,
               ...(eventId ? { eventId } : {}),
             };
-          } else if (parsed.error_message) {
+          } else if (parsed.error || parsed.error_message) {
+            const errStr =
+              typeof parsed.error === "string"
+                ? parsed.error
+                : typeof parsed.error?.message === "string"
+                  ? parsed.error.message
+                  : typeof parsed.error_message === "string"
+                    ? parsed.error_message
+                    : JSON.stringify(parsed.error || parsed.error_message);
             yield {
-              event_type: "content",
-              content: `\n\n*Agent message: ${parsed.error_message}*`,
+              event_type: "error",
+              error: errStr,
               ...(eventId ? { eventId } : {}),
             };
           }

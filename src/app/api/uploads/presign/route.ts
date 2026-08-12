@@ -2,29 +2,11 @@ import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-handler";
 import { Storage } from "@google-cloud/storage";
 import { PresignBatchRequest, PresignedUploadItem } from "@/types/agent";
+import { isSupportedMimeType, inferMimeType } from "@/lib/attachments/mime-types";
 
 export const runtime = "nodejs";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
-
-const ALLOWED_MIME_PATTERNS = [
-  /^image\//i,
-  /^audio\//i,
-  /^video\//i,
-  /^text\//i,
-  /^application\/pdf$/i,
-  /^application\/json$/i,
-  /^application\/xml$/i,
-  /^application\/octet-stream$/i,
-  /^application\/zip$/i,
-  /^application\/msword$/i,
-  /^application\/vnd\.openxmlformats-officedocument\./i,
-];
-
-function isMimeTypeAllowed(mimeType: string): boolean {
-  if (!mimeType) return true; // Default fallback allowed
-  return ALLOWED_MIME_PATTERNS.some((pattern) => pattern.test(mimeType));
-}
 
 let storageClient: Storage | null = null;
 function getStorageClient(): Storage {
@@ -73,16 +55,24 @@ export const POST = withAuth(async (req, { userId }) => {
       );
     }
 
-    if (file.contentType && !isMimeTypeAllowed(file.contentType)) {
+    const resolvedMime = inferMimeType(file.filename, file.contentType);
+    if (!isSupportedMimeType(resolvedMime)) {
       return NextResponse.json(
-        { error: `File type "${file.contentType}" is not supported` },
+        {
+          error: `File type "${file.contentType || file.filename}" is not supported. Supported types: images (PNG, JPEG, WebP, HEIC, HEIF), PDF, videos (MP4, WebM, MOV, MPEG, etc.), and audio (MP3, WAV, AAC, FLAC, M4A, OGG, etc.)`,
+        },
         { status: 400 }
       );
     }
   }
 
-  const isMock =
-    process.env.MOCK_AGENT_RUNTIME === "true" || !process.env.GCS_BUCKET_NAME;
+  const bucketName =
+    process.env.GCS_BUCKET_NAME ||
+    (process.env.GOOGLE_CLOUD_PROJECT
+      ? `${process.env.GOOGLE_CLOUD_PROJECT}-staging`
+      : undefined);
+
+  const isMock = process.env.MOCK_AGENT_RUNTIME === "true" || !bucketName;
 
   let uploads: PresignedUploadItem[] = [];
 
@@ -94,18 +84,18 @@ export const POST = withAuth(async (req, { userId }) => {
       const gcsUri = `gs://mock-bucket/${objectPath}`;
       const uploadUrl = `/api/uploads/mock-upload?fileId=${encodeURIComponent(fileId)}&userId=${encodeURIComponent(userId)}`;
       const readUrl = `/api/uploads/mock-upload?fileId=${encodeURIComponent(fileId)}&filename=${encodeURIComponent(sanitizedFilename)}`;
+      const contentType = inferMimeType(file.filename, file.contentType);
 
       return {
         fileId,
         filename: file.filename,
-        contentType: file.contentType || "application/octet-stream",
+        contentType,
         uploadUrl,
         readUrl,
         gcsUri,
       };
     });
   } else {
-    const bucketName = process.env.GCS_BUCKET_NAME!;
     const storage = getStorageClient();
     const bucket = storage.bucket(bucketName);
 
@@ -118,7 +108,7 @@ export const POST = withAuth(async (req, { userId }) => {
         const sanitizedFilename = file.filename.replace(/[^a-zA-Z0-9_.-]/g, "_");
         const objectPath = `users/${userId}/${fileId}-${sanitizedFilename}`;
         const gcsFile = bucket.file(objectPath);
-        const contentType = file.contentType || "application/octet-stream";
+        const contentType = inferMimeType(file.filename, file.contentType);
 
         const [[uploadUrl], [readUrl]] = await Promise.all([
           gcsFile.getSignedUrl({

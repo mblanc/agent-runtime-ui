@@ -10,13 +10,17 @@ import {
   defaultAttachmentStore,
   IAttachmentMetadataStore,
 } from "../attachments/attachment-store";
+import {
+  SUPPORTED_ACCEPT_STRING,
+  inferMimeType,
+  getAttachmentCategory,
+} from "../attachments/mime-types";
 
 export function createGcsAttachmentAdapter(
   store: IAttachmentMetadataStore = defaultAttachmentStore
 ): AttachmentAdapter {
   return {
-    accept:
-      "image/*,application/pdf,text/*,audio/*,video/*,application/json,application/xml",
+    accept: SUPPORTED_ACCEPT_STRING,
     async *add({
       file,
     }: {
@@ -27,14 +31,15 @@ export function createGcsAttachmentAdapter(
           ? URL.createObjectURL(file)
           : "";
       const tempId = `att_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      const isImage = file.type.startsWith("image/");
-      const attachmentType = isImage ? "image" : "document";
+      const resolvedMime = inferMimeType(file.name, file.type);
+      const category = getAttachmentCategory(resolvedMime);
+      const attachmentType = category === "image" ? "image" : "document";
 
       yield {
         id: tempId,
         type: attachmentType,
         name: file.name,
-        contentType: file.type || "application/octet-stream",
+        contentType: resolvedMime,
         file,
         status: {
           type: "running",
@@ -51,7 +56,7 @@ export function createGcsAttachmentAdapter(
             files: [
               {
                 filename: file.name,
-                contentType: file.type || "application/octet-stream",
+                contentType: resolvedMime,
                 sizeBytes: file.size,
               },
             ],
@@ -70,10 +75,10 @@ export function createGcsAttachmentAdapter(
         }
 
         yield {
-          id: uploadItem.fileId || tempId,
+          id: tempId,
           type: attachmentType,
           name: file.name,
-          contentType: file.type || "application/octet-stream",
+          contentType: resolvedMime,
           file,
           status: {
             type: "running",
@@ -85,7 +90,7 @@ export function createGcsAttachmentAdapter(
         const uploadRes = await fetch(uploadItem.uploadUrl, {
           method: "PUT",
           headers: {
-            "Content-Type": file.type || "application/octet-stream",
+            "Content-Type": resolvedMime,
           },
           body: file,
         });
@@ -94,19 +99,22 @@ export function createGcsAttachmentAdapter(
           throw new Error(`Upload to storage failed with status ${uploadRes.status}`);
         }
 
-        const finalId = uploadItem.fileId || tempId;
-        store.set(finalId, {
+        const metadata = {
           gcsUri: uploadItem.gcsUri,
           readUrl: uploadItem.readUrl || previewUrl,
           previewUrl,
-          contentType: file.type || "application/octet-stream",
-        });
+          contentType: resolvedMime,
+        };
+        store.set(tempId, metadata);
+        if (uploadItem.fileId && uploadItem.fileId !== tempId) {
+          store.set(uploadItem.fileId, metadata);
+        }
 
         yield {
-          id: finalId,
+          id: tempId,
           type: attachmentType,
           name: file.name,
-          contentType: file.type || "application/octet-stream",
+          contentType: resolvedMime,
           file,
           status: {
             type: "requires-action",
@@ -130,7 +138,7 @@ export function createGcsAttachmentAdapter(
           id: tempId,
           type: attachmentType,
           name: file.name,
-          contentType: file.type || "application/octet-stream",
+          contentType: resolvedMime,
           file,
           status: {
             type: "incomplete",
@@ -142,9 +150,16 @@ export function createGcsAttachmentAdapter(
       }
     },
     async send(attachment: PendingAttachment): Promise<CompleteAttachment> {
-      const meta = store.get(attachment.id);
-      const isImage =
-        attachment.file.type.startsWith("image/") || attachment.type === "image";
+      const meta =
+        store.get(attachment.id) ||
+        store.findByAny?.(attachment.id) ||
+        store.getByFilename?.(attachment.name);
+      const resolvedMime = inferMimeType(
+        attachment.name,
+        meta?.contentType || attachment.contentType || attachment.file.type
+      );
+      const category = getAttachmentCategory(resolvedMime);
+      const isImage = category === "image";
       const gcsUri =
         meta?.gcsUri ||
         `gs://mock-bucket/users/current/${attachment.id}-${attachment.name}`;
@@ -170,10 +185,7 @@ export function createGcsAttachmentAdapter(
           {
             type: "file",
             data: gcsUri,
-            mimeType:
-              attachment.contentType ||
-              attachment.file.type ||
-              "application/octet-stream",
+            mimeType: resolvedMime,
             filename: attachment.name,
             sourceType: "url",
           },
@@ -182,9 +194,9 @@ export function createGcsAttachmentAdapter(
 
       return {
         id: attachment.id,
-        type: attachment.type,
+        type: isImage ? "image" : "document",
         name: attachment.name,
-        contentType: attachment.contentType,
+        contentType: resolvedMime,
         file: attachment.file,
         status: {
           type: "complete",

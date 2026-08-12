@@ -119,8 +119,8 @@ describe("Uploads API Routes", () => {
         body: JSON.stringify({
           files: [
             {
-              filename: "empty.txt",
-              contentType: "text/plain",
+              filename: "empty.png",
+              contentType: "image/png",
               sizeBytes: 0,
             },
           ],
@@ -342,13 +342,13 @@ describe("Uploads API Routes", () => {
       expect(res.headers.get("Content-Type")).toBe("image/png");
     });
 
-    it("serves mock document GET with text/plain content type", async () => {
+    it("serves mock document GET with application/pdf content type", async () => {
       const req = new NextRequest(
-        "http://localhost:3000/api/uploads/mock-upload?filename=notes.txt"
+        "http://localhost:3000/api/uploads/mock-upload?filename=notes.pdf"
       );
       const res = await mockUploadGet(req);
       expect(res.status).toBe(200);
-      expect(res.headers.get("Content-Type")).toBe("text/plain");
+      expect(res.headers.get("Content-Type")).toBe("application/pdf");
     });
   });
 });

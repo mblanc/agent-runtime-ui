@@ -63,9 +63,10 @@ describe("Multimodal Attachments & GCS Adapter", () => {
   describe("GCS Attachment Adapter", () => {
     it("has valid accept MIME types covering images, documents, audio, and video", () => {
       const adapter = createGcsAttachmentAdapter();
-      expect(adapter.accept).toContain("image/*");
+      expect(adapter.accept).toContain("image/png");
       expect(adapter.accept).toContain("application/pdf");
-      expect(adapter.accept).toContain("text/*");
+      expect(adapter.accept).toContain("video/mp4");
+      expect(adapter.accept).toContain("audio/mp3");
     });
 
     it("performs presign request and PUT upload in add() generator", async () => {
@@ -116,13 +117,14 @@ describe("Multimodal Attachments & GCS Adapter", () => {
 
       const finalResult = yieldedStates[yieldedStates.length - 1];
       expect(finalResult).toBeDefined();
-      expect(finalResult.id).toBe("file-xyz-123");
+      expect(finalResult.id).toBe(yieldedStates[0].id);
       expect(finalResult.status.type).toBe("requires-action");
       expect(finalResult.status.reason).toBe("composer-send");
 
-      // Verify metadata cache
+      // Verify metadata cache maps both stable ID and fileId
+      expect(attachmentMetadataMap.has(finalResult.id)).toBe(true);
       expect(attachmentMetadataMap.has("file-xyz-123")).toBe(true);
-      const meta = attachmentMetadataMap.get("file-xyz-123");
+      const meta = attachmentMetadataMap.get(finalResult.id);
       expect(meta?.gcsUri).toBe("gs://bucket/users/user-1/file-xyz-123-diagram.png");
       expect(meta?.readUrl).toBe("https://storage.googleapis.com/read-url");
 

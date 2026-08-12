@@ -56,7 +56,6 @@ export function GeminiComposer() {
         <ComposerPrimitive.Attachments>
           {() => (
             <AttachmentPrimitive.Root className="group relative flex items-center gap-2 rounded-2xl bg-[#f0f4f9] py-1 pl-2.5 pr-2 text-xs text-[#1f1f1f] border border-[#e3e3e3] dark:bg-[#282a2c] dark:text-[#e3e3e3] dark:border-[#3c4043] transition-all hover:bg-[#e4e9f0] dark:hover:bg-[#333538]">
-              <AttachmentPrimitive.unstable_Thumb className="h-5 w-5 shrink-0 rounded overflow-hidden object-cover bg-muted" />
               <FileText className="h-3.5 w-3.5 shrink-0 text-[#1a73e8] dark:text-[#8ab4f8]" />
               <span className="max-w-[150px] truncate font-medium">
                 <AttachmentPrimitive.Name />
