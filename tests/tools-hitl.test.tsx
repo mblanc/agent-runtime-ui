@@ -190,7 +190,9 @@ describe("ToolFallback & ADK HITL Integration", () => {
         />
       );
 
-      expect(screen.getByText("Tool requires human approval to proceed")).toBeDefined();
+      expect(
+        screen.getByText(/requests authorization to execute "custom_tool"/i)
+      ).toBeDefined();
     });
 
     it("displays existing resolved state if result is provided with confirmed: true", () => {

@@ -31,6 +31,43 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
 
   private tokenGetter?: () => Promise<string>;
 
+  private static engineDisplayNameMap = new Map<string, string>();
+
+  private async resolveEngineIdAsync(engineId?: string): Promise<string> {
+    const id = engineId || this.reasoningEngineId;
+    if (!id) return "";
+    if (id.startsWith("projects/") || /^\d+$/.test(id)) {
+      return id;
+    }
+    const mapped =
+      VertexAiReasoningEngineProvider.engineDisplayNameMap.get(id.toLowerCase()) ||
+      VertexAiReasoningEngineProvider.engineDisplayNameMap.get(id);
+    if (mapped) return mapped;
+
+    try {
+      await this.listAgents();
+      const resolved =
+        VertexAiReasoningEngineProvider.engineDisplayNameMap.get(id.toLowerCase()) ||
+        VertexAiReasoningEngineProvider.engineDisplayNameMap.get(id);
+      if (resolved) return resolved;
+    } catch (err) {
+      console.warn(`[AgentRuntimeClient] Failed to resolve engine "${id}":`, err);
+    }
+    return id;
+  }
+
+  private resolveEngineId(engineId?: string): string {
+    const id = engineId || this.reasoningEngineId;
+    if (!id) return "";
+    if (id.startsWith("projects/") || /^\d+$/.test(id)) {
+      return id;
+    }
+    const mapped =
+      VertexAiReasoningEngineProvider.engineDisplayNameMap.get(id.toLowerCase()) ||
+      VertexAiReasoningEngineProvider.engineDisplayNameMap.get(id);
+    return mapped || id;
+  }
+
   constructor(
     overrideEngineId?: string,
     overrideLocation?: string,
@@ -74,7 +111,7 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
     customEngineId?: string,
     customLocation?: string
   ): string {
-    const targetEngine = customEngineId || this.reasoningEngineId;
+    const targetEngine = this.resolveEngineId(customEngineId) || this.reasoningEngineId;
     if (targetEngine.startsWith("projects/")) {
       return targetEngine;
     }
@@ -83,7 +120,7 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
   }
 
   private getSessionsBaseUrl(customEngineId?: string): string {
-    const targetEngine = customEngineId || this.reasoningEngineId;
+    const targetEngine = this.resolveEngineId(customEngineId) || this.reasoningEngineId;
     let loc = this.location;
     if (targetEngine.startsWith("projects/")) {
       const match = targetEngine.match(/^projects\/[^/]+\/locations\/([^/]+)\//);
@@ -116,12 +153,12 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
     return `https://${loc}-aiplatform.googleapis.com/v1beta1/${this.getNormalizedEngineResource(targetEngine, loc)}/feedbackEntries`;
   }
 
-  private getSessionEndpoint(
+  private async getSessionEndpoint(
     sessionId: string,
     subPath?: string,
     customEngineId?: string,
     customLocation?: string
-  ): string {
+  ): Promise<string> {
     if (sessionId.startsWith("projects/")) {
       const match = sessionId.match(
         /^projects\/([^/]+)\/locations\/([^/]+)\/reasoningEngines\/([^/]+)\/sessions\/([^/]+)/
@@ -134,7 +171,8 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
     }
 
     const cleanId = extractSessionIdFromResourceName(sessionId);
-    const targetEngine = customEngineId || this.reasoningEngineId;
+    const resolved = await this.resolveEngineIdAsync(customEngineId);
+    const targetEngine = resolved || this.reasoningEngineId;
     let loc = customLocation || this.location;
     if (targetEngine.startsWith("projects/")) {
       const match = targetEngine.match(/^projects\/[^/]+\/locations\/([^/]+)\//);
@@ -242,7 +280,19 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
       const engines: DeployedAgent[] = [];
       for (const res of results) {
         if (res.status === "fulfilled") {
-          engines.push(...res.value);
+          for (const agent of res.value) {
+            engines.push(agent);
+            if (agent.displayName && agent.id) {
+              VertexAiReasoningEngineProvider.engineDisplayNameMap.set(
+                agent.displayName.toLowerCase(),
+                agent.id
+              );
+              VertexAiReasoningEngineProvider.engineDisplayNameMap.set(
+                agent.displayName,
+                agent.id
+              );
+            }
+          }
         }
       }
 
@@ -439,7 +489,7 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
 
     try {
       const accessToken = await this.getAccessToken();
-      const endpoint = this.getSessionEndpoint(
+      const endpoint = await this.getSessionEndpoint(
         sessionId,
         undefined,
         customEngineId,
@@ -464,7 +514,7 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
         for (const agent of agentsResult.agents) {
           if (agent.id === this.reasoningEngineId) continue;
           try {
-            const fallbackEndpoint = this.getSessionEndpoint(
+            const fallbackEndpoint = await this.getSessionEndpoint(
               sessionId,
               undefined,
               agent.resourceName || agent.id,
@@ -541,7 +591,7 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
 
     try {
       const accessToken = await this.getAccessToken();
-      const endpoint = `${this.getSessionEndpoint(
+      const endpoint = `${await this.getSessionEndpoint(
         sessionId,
         undefined,
         customEngineId,
@@ -581,15 +631,18 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
 
     try {
       const accessToken = await this.getAccessToken();
-      const response = await fetch(
-        this.getSessionEndpoint(sessionId, undefined, customEngineId, customLocation),
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
+      const endpoint = await this.getSessionEndpoint(
+        sessionId,
+        undefined,
+        customEngineId,
+        customLocation
       );
+      const response = await fetch(endpoint, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
 
       if (!response.ok && response.status !== 404) {
         const errText = await response.text();
@@ -612,7 +665,7 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
 
     try {
       const accessToken = await this.getAccessToken();
-      const endpoint = this.getSessionEndpoint(
+      const endpoint = await this.getSessionEndpoint(
         sessionId,
         "events",
         customEngineId,
@@ -637,7 +690,7 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
         for (const agent of agentsResult.agents) {
           if (agent.id === this.reasoningEngineId) continue;
           try {
-            const fallbackEndpoint = this.getSessionEndpoint(
+            const fallbackEndpoint = await this.getSessionEndpoint(
               sessionId,
               "events",
               agent.resourceName || agent.id,

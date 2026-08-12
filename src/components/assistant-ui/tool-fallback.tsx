@@ -16,6 +16,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import type { ToolCallMessagePartProps } from "@assistant-ui/react";
 
+import { useAui } from "@assistant-ui/react";
+
 export interface ToolFallbackProps {
   toolCallId?: string;
   toolName?: string;
@@ -46,6 +48,7 @@ export function ToolFallback({
   defaultOpen = false,
   className,
 }: ToolFallbackProps) {
+  const aui = useAui();
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -81,46 +84,82 @@ export function ToolFallback({
     return null;
   });
 
-  const isRequiresAction = status.type === "requires-action";
+  const isRequiresAction =
+    status.type === "requires-action" ||
+    toolName === "adk_request_confirmation" ||
+    toolName.includes("confirmation") ||
+    toolName.includes("approval");
+
   const isRunning = status.type === "running";
   const isError = status.type === "incomplete" || Boolean(status.error);
   const isComplete = status.type === "complete" && !isError;
 
+  const targetToolInfo = useMemo(() => {
+    if (!parsedArgs || typeof parsedArgs !== "object") {
+      return { name: toolName, args: parsedArgs };
+    }
+    const orig = parsedArgs.originalFunctionCall as Record<string, unknown> | undefined;
+    const toolConf = parsedArgs.toolConfirmation as Record<string, unknown> | undefined;
+    const payload = toolConf?.payload as Record<string, unknown> | undefined;
+
+    const name =
+      (orig?.name as string) ||
+      (payload?.tool_name as string) ||
+      (toolConf?.tool_name as string) ||
+      toolName;
+
+    const targetArgs = orig?.args || payload?.args || toolConf?.args || parsedArgs;
+
+    return { name, args: targetArgs };
+  }, [parsedArgs, toolName]);
+
   const hitlDescription = useMemo(() => {
     if (parsedArgs && typeof parsedArgs === "object") {
+      const toolConf = parsedArgs.toolConfirmation as Record<string, unknown> | undefined;
+      const hint = toolConf?.hint;
+      if (typeof hint === "string" && hint.trim()) {
+        return hint.trim();
+      }
+
       const customPrompt =
         parsedArgs.prompt ||
         parsedArgs.action_description ||
         parsedArgs.actionDescription ||
         parsedArgs.description ||
-        parsedArgs.message;
+        parsedArgs.message ||
+        parsedArgs.query ||
+        parsedArgs.action;
       if (typeof customPrompt === "string" && customPrompt.trim()) {
         return customPrompt.trim();
       }
     }
-    return "Tool requires human approval to proceed";
-  }, [parsedArgs]);
+    if (targetToolInfo.name && targetToolInfo.name !== "adk_request_confirmation") {
+      return `The agent requests authorization to execute "${targetToolInfo.name}".`;
+    }
+    return "Action requires human approval to proceed";
+  }, [parsedArgs, targetToolInfo.name]);
 
   const formattedArgs = useMemo(() => {
-    if (argsText) {
+    const rawToFormat = targetToolInfo.args ?? args;
+    if (argsText && (!parsedArgs || Object.keys(parsedArgs).length === 0)) {
       try {
         return JSON.stringify(JSON.parse(argsText), null, 2);
       } catch {
         return argsText;
       }
     }
-    if (typeof args === "string") {
+    if (typeof rawToFormat === "string") {
       try {
-        return JSON.stringify(JSON.parse(args), null, 2);
+        return JSON.stringify(JSON.parse(rawToFormat), null, 2);
       } catch {
-        return args;
+        return rawToFormat;
       }
     }
-    if (args !== undefined && args !== null) {
-      return JSON.stringify(args, null, 2);
+    if (rawToFormat !== undefined && rawToFormat !== null) {
+      return JSON.stringify(rawToFormat, null, 2);
     }
     return "";
-  }, [args, argsText]);
+  }, [args, argsText, parsedArgs, targetToolInfo.args]);
 
   const formattedResult = useMemo(() => {
     if (result === undefined) return "";
@@ -139,14 +178,24 @@ export function ToolFallback({
     setIsSubmitting(true);
     try {
       const payload = { confirmed: true, approved: true };
+      let handled = false;
       if (addResult) {
         addResult({ confirmed: true });
+        handled = true;
       }
       if (respondToApproval) {
         respondToApproval(payload);
+        handled = true;
       }
       if (resume) {
         resume(payload);
+        handled = true;
+      }
+      if (!handled && aui?.thread?.append) {
+        aui.thread.append({
+          role: "user",
+          content: [{ type: "text", text: "Yes, I approve and confirm this action." }],
+        });
       }
       setSubmittedDecision("approved");
     } finally {
@@ -159,14 +208,24 @@ export function ToolFallback({
     setIsSubmitting(true);
     try {
       const payload = { confirmed: false, approved: false };
+      let handled = false;
       if (addResult) {
         addResult({ confirmed: false });
+        handled = true;
       }
       if (respondToApproval) {
         respondToApproval(payload);
+        handled = true;
       }
       if (resume) {
         resume(payload);
+        handled = true;
+      }
+      if (!handled && aui?.thread?.append) {
+        aui.thread.append({
+          role: "user",
+          content: [{ type: "text", text: "No, I decline and cancel this action." }],
+        });
       }
       setSubmittedDecision("declined");
     } finally {
@@ -197,7 +256,7 @@ export function ToolFallback({
                 Action Requires Approval
               </span>
               <span className="rounded-md bg-amber-500/15 px-2 py-0.5 font-mono text-[11px] text-amber-800 dark:text-amber-300">
-                {toolName}
+                {targetToolInfo.name}
               </span>
             </div>
 
