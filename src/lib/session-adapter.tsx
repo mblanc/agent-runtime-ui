@@ -27,6 +27,112 @@ interface SessionApiItem {
   updateTime: string;
 }
 
+export function formatRemoteMessagesToThreadMessages(
+  rawRemoteMessages: Array<Record<string, unknown>>
+): ThreadMessageLike[] {
+  return rawRemoteMessages.map((m) => {
+    if (Array.isArray(m.content)) {
+      return m as unknown as ThreadMessageLike;
+    }
+    const parts: Array<Record<string, unknown>> = [];
+    const thoughtStr = typeof m.thought === "string" ? m.thought.trim() : "";
+    const contentStr = typeof m.content === "string" ? m.content.trim() : "";
+
+    if (thoughtStr) {
+      parts.push({ type: "reasoning", text: thoughtStr });
+    }
+
+    // Extract tool calls from session message
+    const toolCalls =
+      Array.isArray(m.toolCalls) && m.toolCalls.length > 0
+        ? (m.toolCalls as Array<Record<string, unknown>>)
+        : m.toolCall
+          ? [m.toolCall as Record<string, unknown>]
+          : [];
+
+    const toolResults =
+      Array.isArray(m.toolResults) && m.toolResults.length > 0
+        ? (m.toolResults as Array<Record<string, unknown>>)
+        : m.toolResult
+          ? [m.toolResult as Record<string, unknown>]
+          : [];
+
+    let hasRequiresAction = false;
+
+    for (let idx = 0; idx < toolCalls.length; idx++) {
+      const tc = toolCalls[idx];
+      const toolName = String(tc.name || "tool");
+      const toolCallId = String(
+        tc.id || tc.toolCallId || `call_${m.id || Date.now()}_${idx}`
+      );
+      const args = (tc.args as Record<string, unknown>) || {};
+      const argsText = JSON.stringify(args, null, 2);
+
+      // Find matching tool result
+      const matchingResultObj = toolResults.find(
+        (r) => r.name === toolName || r.id === toolCallId
+      );
+      const result = matchingResultObj ? matchingResultObj.result : tc.result;
+
+      const isConfirmationTool =
+        toolName === "adk_request_confirmation" ||
+        tc.requires_action === true ||
+        tc.requires_confirmation === true ||
+        tc.status === "requires-action";
+
+      let status: {
+        type: "running" | "complete" | "incomplete" | "requires-action";
+        reason?: string;
+      };
+
+      if (result !== undefined) {
+        status = { type: "complete" };
+      } else if (isConfirmationTool) {
+        status = { type: "requires-action", reason: "tool-calls" };
+        hasRequiresAction = true;
+      } else {
+        status = { type: "complete" };
+      }
+
+      parts.push({
+        type: "tool-call",
+        toolCallId,
+        toolName,
+        args,
+        argsText,
+        result,
+        status,
+      });
+    }
+
+    if (contentStr) {
+      parts.push({ type: "text", text: contentStr });
+    }
+
+    if (parts.length === 0) {
+      parts.push({ type: "text", text: "" });
+    }
+
+    return {
+      id: (m.id as string) || `msg-${Date.now()}`,
+      role: (m.role as "user" | "assistant" | "system") || "assistant",
+      createdAt: m.createdAt ? new Date(m.createdAt as string) : new Date(),
+      content: parts,
+      ...(hasRequiresAction
+        ? {
+            status: {
+              type: "requires-action" as const,
+              reason: "tool-calls" as const,
+            },
+          }
+        : {}),
+      metadata: (m.metadata as Record<string, unknown>) || {
+        custom: { ...(m.id ? { eventId: m.id } : {}) },
+      },
+    } as unknown as ThreadMessageLike;
+  });
+}
+
 export function useSessionThreadHistoryAdapter(agentId?: string): ThreadHistoryAdapter {
   const aui = useAui();
   const auiRef = useRef(aui);
@@ -71,34 +177,7 @@ export function useSessionThreadHistoryAdapter(agentId?: string): ThreadHistoryA
 
           const data = await res.json();
           const rawRemoteMessages: Array<Record<string, unknown>> = data.messages || [];
-          const remoteMessages: ThreadMessageLike[] = rawRemoteMessages.map((m) => {
-            if (Array.isArray(m.content)) {
-              return m as unknown as ThreadMessageLike;
-            }
-            const parts: Array<{ type: "text" | "reasoning"; text: string }> = [];
-            const thoughtStr = typeof m.thought === "string" ? m.thought.trim() : "";
-            const contentStr = typeof m.content === "string" ? m.content.trim() : "";
-
-            if (thoughtStr) {
-              parts.push({ type: "reasoning", text: thoughtStr });
-            }
-            if (contentStr) {
-              parts.push({ type: "text", text: contentStr });
-            }
-            if (parts.length === 0) {
-              parts.push({ type: "text", text: "" });
-            }
-
-            return {
-              id: (m.id as string) || `msg-${Date.now()}`,
-              role: (m.role as "user" | "assistant" | "system") || "assistant",
-              createdAt: m.createdAt ? new Date(m.createdAt as string) : new Date(),
-              content: parts,
-              metadata: (m.metadata as Record<string, unknown>) || {
-                custom: { ...(m.id ? { eventId: m.id } : {}) },
-              },
-            } as unknown as ThreadMessageLike;
-          });
+          const remoteMessages = formatRemoteMessagesToThreadMessages(rawRemoteMessages);
 
           // If the remote session has 0 messages (e.g. freshly initialized),
           // but the thread is currently generating or has local in-memory messages,

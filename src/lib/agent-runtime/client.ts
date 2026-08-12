@@ -1190,9 +1190,10 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
 
       const lastUserMsgObj = [...body.messages].reverse().find((m) => m.role === "user");
       const lastUserMessage = lastUserMsgObj?.content || "";
-      const fnResponsePart = lastUserMsgObj?.parts?.find(
-        (p) => p.function_response || p.functionResponse
-      );
+      const fnResponsePart = [...body.messages]
+        .reverse()
+        .flatMap((m) => m.parts || [])
+        .find((p) => p.function_response || p.functionResponse);
 
       const cleanSessionId =
         body.sessionId && !isLocalSessionId(body.sessionId)

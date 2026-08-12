@@ -366,6 +366,9 @@ export function groupTurnSessionEvents(
     const unifiedThought =
       reasoningBlocks.length > 0 ? reasoningBlocks.join("\n\n") : undefined;
 
+    const finalEventToolCalls = getEventToolCalls(finalEvent);
+    const finalEventToolResults = getEventToolResults(finalEvent);
+
     result.push({
       id: finalEvent.id,
       name: finalEvent.name,
@@ -377,6 +380,10 @@ export function groupTurnSessionEvents(
       content: finalEvent.content,
       ...(unifiedThought ? { thought: unifiedThought } : {}),
       ...(subAgentsList.length > 0 ? { subAgents: subAgentsList } : {}),
+      ...(finalEventToolCalls.length > 0 ? { tool_calls: finalEventToolCalls } : {}),
+      ...(finalEventToolResults.length > 0 ? { tool_results: finalEventToolResults } : {}),
+      ...(finalEvent.tool_call ? { tool_call: finalEvent.tool_call } : {}),
+      ...(finalEvent.tool_result ? { tool_result: finalEvent.tool_result } : {}),
       rawEvent: finalEvent.rawEvent,
     });
   }
@@ -394,6 +401,12 @@ export function formatSessionEventsToThreadMessages(
     const e = events[i];
     const content = (e.content || "").trim();
     const thought = (e.thought || "").trim();
+    const hasToolCalls = Boolean(
+      (e.tool_calls && e.tool_calls.length > 0) || e.tool_call
+    );
+    const hasToolResults = Boolean(
+      (e.tool_results && e.tool_results.length > 0) || e.tool_result
+    );
 
     if (thought) {
       accumulatedThoughts.push(thought);
@@ -417,7 +430,13 @@ export function formatSessionEventsToThreadMessages(
       continue;
     }
 
-    if (content || thought || accumulatedThoughts.length > 0) {
+    if (
+      content ||
+      thought ||
+      accumulatedThoughts.length > 0 ||
+      hasToolCalls ||
+      hasToolResults
+    ) {
       threadMessages.push({
         id: e.id || `msg-${i}`,
         role: "assistant",
@@ -613,6 +632,37 @@ export function parseRawSessionEvent(
         }
       }
 
+      if (record.function_call || record.functionCall) {
+        const fnCall = (record.function_call || record.functionCall) as Record<string, unknown>;
+        const name = String(fnCall.name || "tool");
+        const args = (fnCall.args as Record<string, unknown>) || {};
+        parsedToolCalls.push({ name, args });
+      }
+      if (record.function_response || record.functionResponse) {
+        const fnResp = (record.function_response || record.functionResponse) as Record<string, unknown>;
+        const name = String(fnResp.name || "tool");
+        const result = (fnResp.response as Record<string, unknown>) || {};
+        parsedToolResults.push({ name, result });
+      }
+      if (Array.isArray(record.tool_calls)) {
+        for (const tc of record.tool_calls) {
+          if (tc && typeof tc === "object") {
+            const t = tc as Record<string, unknown>;
+            parsedToolCalls.push({
+              name: String(t.name || "tool"),
+              args: (t.args as Record<string, unknown>) || {},
+            });
+          }
+        }
+      }
+      if (record.tool_call && typeof record.tool_call === "object") {
+        const t = record.tool_call as Record<string, unknown>;
+        parsedToolCalls.push({
+          name: String(t.name || "tool"),
+          args: (t.args as Record<string, unknown>) || {},
+        });
+      }
+
       if (typeof record.query === "string" && record.query.trim()) {
         textPieces.push(record.query.trim());
       }
@@ -642,6 +692,43 @@ export function parseRawSessionEvent(
   if (root.userQuery || root.user_query) inspectObject(root.userQuery || root.user_query);
   if (root.modelResponse || root.model_response)
     inspectObject(root.modelResponse || root.model_response);
+
+  if (Array.isArray(root.tool_calls)) {
+    for (const tc of root.tool_calls) {
+      if (tc && typeof tc === "object") {
+        const t = tc as Record<string, unknown>;
+        parsedToolCalls.push({
+          name: String(t.name || "tool"),
+          args: (t.args as Record<string, unknown>) || {},
+        });
+      }
+    }
+  }
+  if (root.tool_call && typeof root.tool_call === "object") {
+    const t = root.tool_call as Record<string, unknown>;
+    parsedToolCalls.push({
+      name: String(t.name || "tool"),
+      args: (t.args as Record<string, unknown>) || {},
+    });
+  }
+  if (Array.isArray(root.tool_results)) {
+    for (const tr of root.tool_results) {
+      if (tr && typeof tr === "object") {
+        const t = tr as Record<string, unknown>;
+        parsedToolResults.push({
+          name: String(t.name || "tool"),
+          result: (t.result as Record<string, unknown>) || {},
+        });
+      }
+    }
+  }
+  if (root.tool_result && typeof root.tool_result === "object") {
+    const t = root.tool_result as Record<string, unknown>;
+    parsedToolResults.push({
+      name: String(t.name || "tool"),
+      result: (t.result as Record<string, unknown>) || {},
+    });
+  }
 
   if (textPieces.length === 0) {
     inspectObject(root);

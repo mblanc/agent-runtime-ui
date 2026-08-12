@@ -45,6 +45,19 @@ export const mockAgentsStore: DeployedAgent[] = [
     createTime: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
     updateTime: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
   },
+  {
+    id: "generic-agent",
+    resourceName:
+      "projects/mock-project/locations/us-central1/reasoningEngines/generic-agent",
+    displayName: "Generic Agent",
+    description:
+      "Multi-purpose reasoning engine with human-in-the-loop confirmation capabilities",
+    location: "us-central1",
+    model: "gemini-2.5-pro",
+    isDefault: false,
+    createTime: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
+    updateTime: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+  },
 ];
 
 export const mockSessionsStore = new Map<string, AgentSession>([
@@ -90,6 +103,17 @@ export const mockSessionsStore = new Map<string, AgentSession>([
       title: "GKE Cluster High Memory Alert",
       createTime: new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString(),
       updateTime: new Date(Date.now() - 7 * 60 * 60 * 1000).toISOString(),
+    },
+  ],
+  [
+    "2648707499674304512",
+    {
+      id: "2648707499674304512",
+      name: "projects/mock-project/locations/us-central1/reasoningEngines/generic-agent/sessions/2648707499674304512",
+      userId: "test-user",
+      title: "Delete Production Cluster",
+      createTime: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
+      updateTime: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
     },
   ],
 ]);
@@ -179,6 +203,45 @@ export const mockSessionEventsStore = new Map<string, AgentSessionEvent[]>([
         thought:
           "Querying Cloud Monitoring metrics and node daemonset memory consumption logs...",
         createTime: new Date(Date.now() - 8 * 60 * 60 * 1000 + 3500).toISOString(),
+      },
+    ],
+  ],
+  [
+    "2648707499674304512",
+    [
+      {
+        id: "evt-hitl-1",
+        sessionId: "2648707499674304512",
+        role: "user",
+        content: "Please delete the production Kubernetes cluster gke-prod-cluster-01",
+        createTime: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: "evt-hitl-2",
+        sessionId: "2648707499674304512",
+        role: "assistant",
+        content: "",
+        thought:
+          "Analyzing high-risk operation: cluster termination requires explicit confirmation...",
+        tool_calls: [
+          {
+            name: "adk_request_confirmation",
+            args: {
+              prompt:
+                "Do you confirm the deletion of production cluster gke-prod-cluster-01?",
+              action_description: "Delete Kubernetes Cluster",
+            },
+          },
+        ],
+        tool_call: {
+          name: "adk_request_confirmation",
+          args: {
+            prompt:
+              "Do you confirm the deletion of production cluster gke-prod-cluster-01?",
+            action_description: "Delete Kubernetes Cluster",
+          },
+        },
+        createTime: new Date(Date.now() - 1 * 60 * 60 * 1000 + 3000).toISOString(),
       },
     ],
   ],

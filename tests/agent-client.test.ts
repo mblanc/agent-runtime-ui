@@ -831,10 +831,11 @@ describe("AgentRuntimeClient", () => {
 
       expect(result).toBeDefined();
       expect(Array.isArray(result.agents)).toBe(true);
-      expect(result.agents.length).toBe(3);
+      expect(result.agents.length).toBe(4);
       expect(result.agents.some((a) => a.id === "mock-arch-advisor")).toBe(true);
       expect(result.agents.some((a) => a.id === "mock-code-reviewer")).toBe(true);
       expect(result.agents.some((a) => a.id === "mock-cloud-ops")).toBe(true);
+      expect(result.agents.some((a) => a.id === "generic-agent")).toBe(true);
       expect(result.activeAgentId).toBe("mock-arch-advisor");
     });
 

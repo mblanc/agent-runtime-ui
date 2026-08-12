@@ -423,6 +423,90 @@ describe("ToolFallback & ADK HITL Integration", () => {
     });
   });
 
+  describe("ToolGroup HITL Integration", () => {
+    it("renders ToolGroupTrigger with Requires Approval when status is requires-action", async () => {
+      const { ToolGroupRoot, ToolGroupTrigger, ToolGroupContent } = await import(
+        "@/components/assistant-ui/tool-group"
+      );
+
+      render(
+        <ToolGroupRoot defaultOpen={true}>
+          <ToolGroupTrigger count={1} status="requires-action" />
+          <ToolGroupContent>
+            <div>Confirmation Card Content</div>
+          </ToolGroupContent>
+        </ToolGroupRoot>
+      );
+
+      expect(screen.getByText("Tool requires approval")).toBeDefined();
+      expect(screen.getByText("Requires Approval")).toBeDefined();
+      expect(screen.getByText("Confirmation Card Content")).toBeDefined();
+    });
+  });
+
+  describe("Session Adapter & History Loading with HITL Tools", () => {
+    it("loads session 2648707499674304512 and reconstructs tool-call part with requires-action status", async () => {
+      const { formatRemoteMessagesToThreadMessages } = await import(
+        "@/lib/session-adapter"
+      );
+
+      const rawMessages = [
+        {
+          id: "msg-user-1",
+          role: "user",
+          content: "Please delete the production Kubernetes cluster",
+        },
+        {
+          id: "msg-assistant-2",
+          role: "assistant",
+          content: "",
+          thought: "Analyzing deletion request...",
+          toolCalls: [
+            {
+              name: "adk_request_confirmation",
+              args: {
+                prompt:
+                  "Do you confirm the deletion of production cluster gke-prod-cluster-01?",
+                action_description: "Delete Kubernetes Cluster",
+              },
+            },
+          ],
+        },
+      ];
+
+      const messages = formatRemoteMessagesToThreadMessages(rawMessages);
+
+      expect(messages.length).toBe(2);
+      const assistantMsg = messages[1] as unknown as {
+        role: string;
+        content: Array<{
+          type: string;
+          toolName?: string;
+          status?: { type: string; reason?: string };
+          args?: { prompt?: string };
+        }>;
+        status?: { type: string; reason?: string };
+      };
+
+      expect(assistantMsg.role).toBe("assistant");
+      expect(assistantMsg.status).toEqual({
+        type: "requires-action",
+        reason: "tool-calls",
+      });
+
+      const toolCallPart = assistantMsg.content.find(
+        (p) => p.type === "tool-call"
+      );
+      expect(toolCallPart).toBeDefined();
+      expect(toolCallPart?.toolName).toBe("adk_request_confirmation");
+      expect(toolCallPart?.status).toEqual({
+        type: "requires-action",
+        reason: "tool-calls",
+      });
+      expect(toolCallPart?.args?.prompt).toContain("Do you confirm the deletion");
+    });
+  });
+
   describe("API Chat Route with HITL Payload", () => {
     it("streams confirmation tool_call via /api/chat when action requires confirmation", async () => {
       vi.spyOn(auth.api, "getSession").mockResolvedValueOnce({

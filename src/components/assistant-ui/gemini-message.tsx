@@ -180,9 +180,14 @@ function ChatMessageImpl() {
                   }
                   case "group-tool": {
                     const running = part.status.type === "running";
+                    const isReqAction = part.status.type === "requires-action";
                     return (
-                      <ToolGroupRoot>
-                        <ToolGroupTrigger count={part.indices.length} active={running} />
+                      <ToolGroupRoot defaultOpen={running || isReqAction}>
+                        <ToolGroupTrigger
+                          count={part.indices.length}
+                          active={running}
+                          status={part.status.type}
+                        />
                         <ToolGroupContent>{children}</ToolGroupContent>
                       </ToolGroupRoot>
                     );

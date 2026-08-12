@@ -420,9 +420,10 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
   ): AsyncGenerator<AgentStreamEvent, void, unknown> {
     const lastUserMsg = [...body.messages].reverse().find((m) => m.role === "user");
     const lastPrompt = lastUserMsg?.content || "Hello";
-    const fnResponsePart = lastUserMsg?.parts?.find(
-      (p) => p.function_response || p.functionResponse
-    );
+    const fnResponsePart = [...body.messages]
+      .reverse()
+      .flatMap((m) => m.parts || [])
+      .find((p) => p.function_response || p.functionResponse);
 
     // 1. If this is a function response to a prior confirmation request:
     if (fnResponsePart) {

@@ -41,7 +41,7 @@ describe("Agents API Route", () => {
     expect(data).toHaveProperty("agents");
     expect(data).toHaveProperty("activeAgentId");
     expect(Array.isArray(data.agents)).toBe(true);
-    expect(data.agents.length).toBe(3);
+    expect(data.agents.length).toBe(4);
 
     const archAgent = data.agents.find(
       (a: { id: string }) => a.id === "mock-arch-advisor"
@@ -61,6 +61,11 @@ describe("Agents API Route", () => {
     expect(opsAgent).toBeDefined();
     expect(opsAgent.displayName).toBe("Cloud Ops Assistant");
     expect(opsAgent.location).toBe("us-central1");
+
+    const genericAgent = data.agents.find((a: { id: string }) => a.id === "generic-agent");
+    expect(genericAgent).toBeDefined();
+    expect(genericAgent.displayName).toBe("Generic Agent");
+    expect(genericAgent.location).toBe("us-central1");
   });
 
   it("sets proper cache headers on agents response", async () => {

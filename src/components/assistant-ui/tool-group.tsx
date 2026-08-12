@@ -1,8 +1,16 @@
 "use client";
 
-import { ReactNode, useState } from "react";
-import { ChevronDown, ChevronRight, Cpu, Loader2, CheckCircle2 } from "lucide-react";
+import { ReactNode, useState, useEffect, createContext, useContext } from "react";
+import { ChevronDown, ChevronRight, Cpu, Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const ToolGroupContext = createContext<{
+  isOpen: boolean;
+  setIsOpen: (open: boolean) => void;
+}>({
+  isOpen: false,
+  setIsOpen: () => {},
+});
 
 interface ToolGroupRootProps {
   children: ReactNode;
@@ -16,6 +24,12 @@ export function ToolGroupRoot({
   className,
 }: ToolGroupRootProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
+
+  useEffect(() => {
+    if (defaultOpen) {
+      setIsOpen(true);
+    }
+  }, [defaultOpen]);
 
   return (
     <div
@@ -31,28 +45,21 @@ export function ToolGroupRoot({
   );
 }
 
-import { createContext, useContext } from "react";
-
-const ToolGroupContext = createContext<{
-  isOpen: boolean;
-  setIsOpen: (open: boolean) => void;
-}>({
-  isOpen: false,
-  setIsOpen: () => {},
-});
-
 interface ToolGroupTriggerProps {
   count?: number;
   active?: boolean;
+  status?: string;
   className?: string;
 }
 
 export function ToolGroupTrigger({
   count = 1,
   active = false,
+  status,
   className,
 }: ToolGroupTriggerProps) {
   const { isOpen, setIsOpen } = useContext(ToolGroupContext);
+  const isRequiresAction = status === "requires-action";
 
   return (
     <button
@@ -60,17 +67,33 @@ export function ToolGroupTrigger({
       onClick={() => setIsOpen(!isOpen)}
       className={cn(
         "flex w-full items-center justify-between px-3.5 py-2.5 text-left font-medium text-[#444746] transition-colors hover:bg-[#eff2f6] dark:text-[#c4c7c5] dark:hover:bg-[#282a2c]",
+        isRequiresAction && "bg-amber-500/10 hover:bg-amber-500/15 dark:bg-amber-950/30 dark:hover:bg-amber-950/40",
         className
       )}
     >
       <div className="flex items-center gap-2">
-        <Cpu className="h-4 w-4 text-[#1a73e8] dark:text-[#8ab4f8]" />
-        <span className="font-semibold text-[#1f1f1f] dark:text-[#e3e3e3]">
-          {active
-            ? `Running ${count} ${count === 1 ? "tool" : "tools"}...`
-            : `Executed ${count} ${count === 1 ? "tool" : "tools"}`}
+        {isRequiresAction ? (
+          <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+        ) : (
+          <Cpu className="h-4 w-4 text-[#1a73e8] dark:text-[#8ab4f8]" />
+        )}
+        <span
+          className={cn(
+            "font-semibold text-[#1f1f1f] dark:text-[#e3e3e3]",
+            isRequiresAction && "text-amber-900 dark:text-amber-200"
+          )}
+        >
+          {isRequiresAction
+            ? `${count === 1 ? "Tool requires" : `${count} tools require`} approval`
+            : active
+              ? `Running ${count} ${count === 1 ? "tool" : "tools"}...`
+              : `Executed ${count} ${count === 1 ? "tool" : "tools"}`}
         </span>
-        {active ? (
+        {isRequiresAction ? (
+          <span className="flex items-center gap-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+            Requires Approval
+          </span>
+        ) : active ? (
           <span className="flex items-center gap-1 text-[11px] text-[#1a73e8] dark:text-[#8ab4f8]">
             <Loader2 className="h-3 w-3 animate-spin" />
           </span>
@@ -82,8 +105,11 @@ export function ToolGroupTrigger({
       </div>
 
       <div className="flex items-center gap-1 text-muted-foreground">
+        <span className="text-[11px] hover:text-foreground">
+          {isOpen ? "Collapse" : "View Details"}
+        </span>
         {isOpen ? (
-          <ChevronDown className="h-4 w-4" />
+          <ChevronDown className="h-4 w-4 text-[#1a73e8] dark:text-[#8ab4f8]" />
         ) : (
           <ChevronRight className="h-4 w-4" />
         )}

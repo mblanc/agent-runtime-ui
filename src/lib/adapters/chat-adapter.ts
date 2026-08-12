@@ -125,6 +125,10 @@ export function createYieldContent(
   eventId?: string,
   retrievedMemories?: MemoryRetrievalItem[]
 ): ChatModelRunResult {
+  const hasRequiresAction = (toolCalls || []).some(
+    (tc) => tc.status?.type === "requires-action" && tc.result === undefined
+  );
+
   return {
     content: [
       ...(reasoning ? [{ type: "reasoning" as const, text: reasoning }] : []),
@@ -139,6 +143,14 @@ export function createYieldContent(
       })),
       ...(text ? [{ type: "text" as const, text }] : []),
     ],
+    ...(hasRequiresAction
+      ? {
+          status: {
+            type: "requires-action" as const,
+            reason: "tool-calls" as const,
+          },
+        }
+      : {}),
     ...(eventId || (retrievedMemories && retrievedMemories.length > 0)
       ? {
           metadata: {
@@ -448,7 +460,8 @@ export function createGeminiChatAdapter(
                   const isReqAction =
                     tc.status === "requires-action" ||
                     tc.requires_action ||
-                    tc.requires_confirmation;
+                    tc.requires_confirmation ||
+                    toolName === "adk_request_confirmation";
 
                   let existingCallId: string | undefined;
                   if (tc.id && toolCallsMap.has(tc.id)) {
@@ -477,7 +490,7 @@ export function createGeminiChatAdapter(
                     args: tc.args || {},
                     status: {
                       type: isReqAction ? "requires-action" : "running",
-                      ...(isReqAction ? { reason: "composer-send" } : {}),
+                      ...(isReqAction ? { reason: "tool-calls" } : {}),
                     },
                   });
 

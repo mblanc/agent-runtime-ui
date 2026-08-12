@@ -89,11 +89,23 @@ export async function* parseSseStream(
               const fnCall = part.function_call || part.functionCall;
               if (fnCall) {
                 const name = String(fnCall.name || "");
+                const isReqAction =
+                  name === "adk_request_confirmation" ||
+                  fnCall.requires_action === true ||
+                  fnCall.requires_confirmation === true ||
+                  fnCall.status === "requires-action";
                 yield {
                   event_type: "tool_call",
                   tool_call: {
                     name,
                     args: fnCall.args,
+                    ...(isReqAction
+                      ? {
+                          status: "requires-action",
+                          requires_action: true,
+                          requires_confirmation: true,
+                        }
+                      : {}),
                   },
                   ...(eventId ? { eventId } : {}),
                 };
@@ -145,9 +157,24 @@ export async function* parseSseStream(
           } else if (parsed.function_call || parsed.functionCall) {
             const fnCall = parsed.function_call || parsed.functionCall;
             const name = String(fnCall.name || "");
+            const isReqAction =
+              name === "adk_request_confirmation" ||
+              fnCall.requires_action === true ||
+              fnCall.requires_confirmation === true ||
+              fnCall.status === "requires-action";
             yield {
               event_type: "tool_call",
-              tool_call: { name, args: fnCall.args },
+              tool_call: {
+                name,
+                args: fnCall.args,
+                ...(isReqAction
+                  ? {
+                      status: "requires-action",
+                      requires_action: true,
+                      requires_confirmation: true,
+                    }
+                  : {}),
+              },
               ...(eventId ? { eventId } : {}),
             };
           } else if (parsed.function_response || parsed.functionResponse) {

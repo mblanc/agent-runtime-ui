@@ -170,6 +170,47 @@ describe("Sessions API Routes", () => {
       expect(Array.isArray(data.messages)).toBe(true);
     });
 
+    it("returns formatted thread message with toolCalls for session 2648707499674304512 with adk_request_confirmation", async () => {
+      vi.spyOn(auth.api, "getSession").mockResolvedValueOnce({
+        user: {
+          id: "test-user",
+          name: "Test User",
+          email: "test@example.com",
+        },
+        session: {
+          expiresAt: new Date(Date.now() + 86400000).toISOString(),
+        },
+      });
+
+      const req = new NextRequest(
+        "http://localhost:3000/api/sessions/2648707499674304512?agentId=generic-agent"
+      );
+      const res = await getSessionDetail(req, {
+        params: Promise.resolve({ sessionId: "2648707499674304512" }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.session).toBeDefined();
+      expect(data.session.id).toBe("2648707499674304512");
+      expect(Array.isArray(data.events)).toBe(true);
+      expect(data.events.length).toBe(2);
+
+      expect(Array.isArray(data.messages)).toBe(true);
+      expect(data.messages.length).toBe(2);
+
+      const assistantMsg = data.messages.find(
+        (m: { role: string }) => m.role === "assistant"
+      );
+      expect(assistantMsg).toBeDefined();
+      expect(assistantMsg.toolCalls).toBeDefined();
+      expect(assistantMsg.toolCalls.length).toBe(1);
+      expect(assistantMsg.toolCalls[0].name).toBe("adk_request_confirmation");
+      expect(assistantMsg.toolCalls[0].args.prompt).toContain(
+        "Do you confirm the deletion of production cluster"
+      );
+    });
+
     it("returns 404 for non-existent session", async () => {
       vi.spyOn(auth.api, "getSession").mockResolvedValueOnce({
         user: {
