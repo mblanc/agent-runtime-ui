@@ -178,26 +178,21 @@ export function ToolFallback({
     setIsSubmitting(true);
     try {
       const payload = { confirmed: true, approved: true };
-      let handled = false;
       if (addResult) {
         addResult({ confirmed: true });
-        handled = true;
-      }
-      if (respondToApproval) {
+      } else if (respondToApproval) {
         respondToApproval(payload);
-        handled = true;
-      }
-      if (resume) {
+      } else if (resume) {
         resume(payload);
-        handled = true;
-      }
-      if (!handled && aui?.thread?.append) {
+      } else if (aui?.thread?.append) {
         aui.thread.append({
           role: "user",
           content: [{ type: "text", text: "Yes, I approve and confirm this action." }],
         });
       }
       setSubmittedDecision("approved");
+    } catch (err) {
+      console.error("[ToolFallback] Error handling approval:", err);
     } finally {
       setIsSubmitting(false);
     }
@@ -208,26 +203,21 @@ export function ToolFallback({
     setIsSubmitting(true);
     try {
       const payload = { confirmed: false, approved: false };
-      let handled = false;
       if (addResult) {
         addResult({ confirmed: false });
-        handled = true;
-      }
-      if (respondToApproval) {
+      } else if (respondToApproval) {
         respondToApproval(payload);
-        handled = true;
-      }
-      if (resume) {
+      } else if (resume) {
         resume(payload);
-        handled = true;
-      }
-      if (!handled && aui?.thread?.append) {
+      } else if (aui?.thread?.append) {
         aui.thread.append({
           role: "user",
           content: [{ type: "text", text: "No, I decline and cancel this action." }],
         });
       }
       setSubmittedDecision("declined");
+    } catch (err) {
+      console.error("[ToolFallback] Error handling decline:", err);
     } finally {
       setIsSubmitting(false);
     }

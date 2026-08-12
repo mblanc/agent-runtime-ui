@@ -535,8 +535,16 @@ export function parseRawSessionEvent(
 
   const textPieces: string[] = [];
   const thoughtPieces: string[] = [];
-  const parsedToolCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
-  const parsedToolResults: Array<{ name: string; result: Record<string, unknown> }> = [];
+  const parsedToolCalls: Array<{
+    name: string;
+    id?: string;
+    args: Record<string, unknown>;
+  }> = [];
+  const parsedToolResults: Array<{
+    name: string;
+    id?: string;
+    result: Record<string, unknown>;
+  }> = [];
 
   const inspectObject = (obj: unknown) => {
     if (!obj) return;
@@ -592,15 +600,23 @@ export function parseRawSessionEvent(
             if (fnCall && typeof fnCall === "object") {
               const fn = fnCall as Record<string, unknown>;
               const name = String(fn.name || "agent_tool");
+              const id =
+                fn.id || fn.call_id || fn.callId
+                  ? String(fn.id || fn.call_id || fn.callId)
+                  : undefined;
               const args = (fn.args as Record<string, unknown>) || {};
-              parsedToolCalls.push({ name, args });
+              parsedToolCalls.push({ name, id, args });
             }
             const fnResp = p.functionResponse || p.function_response;
             if (fnResp && typeof fnResp === "object") {
               const fn = fnResp as Record<string, unknown>;
               const name = String(fn.name || "tool");
+              const id =
+                fn.id || fn.call_id || fn.callId
+                  ? String(fn.id || fn.call_id || fn.callId)
+                  : undefined;
               const result = (fn.response as Record<string, unknown>) || {};
-              parsedToolResults.push({ name, result });
+              parsedToolResults.push({ name, id, result });
             }
           }
         }
@@ -640,8 +656,12 @@ export function parseRawSessionEvent(
           unknown
         >;
         const name = String(fnCall.name || "tool");
+        const id =
+          fnCall.id || fnCall.call_id || fnCall.callId
+            ? String(fnCall.id || fnCall.call_id || fnCall.callId)
+            : undefined;
         const args = (fnCall.args as Record<string, unknown>) || {};
-        parsedToolCalls.push({ name, args });
+        parsedToolCalls.push({ name, id, args });
       }
       if (record.function_response || record.functionResponse) {
         const fnResp = (record.function_response || record.functionResponse) as Record<
@@ -649,15 +669,24 @@ export function parseRawSessionEvent(
           unknown
         >;
         const name = String(fnResp.name || "tool");
+        const id =
+          fnResp.id || fnResp.call_id || fnResp.callId
+            ? String(fnResp.id || fnResp.call_id || fnResp.callId)
+            : undefined;
         const result = (fnResp.response as Record<string, unknown>) || {};
-        parsedToolResults.push({ name, result });
+        parsedToolResults.push({ name, id, result });
       }
       if (Array.isArray(record.tool_calls)) {
         for (const tc of record.tool_calls) {
           if (tc && typeof tc === "object") {
             const t = tc as Record<string, unknown>;
+            const id =
+              t.id || t.call_id || t.callId
+                ? String(t.id || t.call_id || t.callId)
+                : undefined;
             parsedToolCalls.push({
               name: String(t.name || "tool"),
+              id,
               args: (t.args as Record<string, unknown>) || {},
             });
           }
@@ -665,8 +694,13 @@ export function parseRawSessionEvent(
       }
       if (record.tool_call && typeof record.tool_call === "object") {
         const t = record.tool_call as Record<string, unknown>;
+        const id =
+          t.id || t.call_id || t.callId
+            ? String(t.id || t.call_id || t.callId)
+            : undefined;
         parsedToolCalls.push({
           name: String(t.name || "tool"),
+          id,
           args: (t.args as Record<string, unknown>) || {},
         });
       }

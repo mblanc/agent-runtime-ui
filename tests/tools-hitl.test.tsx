@@ -143,16 +143,12 @@ describe("ToolFallback & ADK HITL Integration", () => {
       fireEvent.click(approveBtn);
 
       expect(addResult).toHaveBeenCalledWith({ confirmed: true });
-      expect(respondToApproval).toHaveBeenCalledWith({
-        approved: true,
-        confirmed: true,
-      });
 
       // Shows approved confirmation message
       expect(screen.getByText(/approved by user/i)).toBeDefined();
     });
 
-    it("invokes addResult and respondToApproval with confirmed: false on Decline click", () => {
+    it("invokes addResult and updates state on Decline click", () => {
       const addResult = vi.fn();
       const respondToApproval = vi.fn();
 
@@ -172,10 +168,6 @@ describe("ToolFallback & ADK HITL Integration", () => {
       fireEvent.click(declineBtn);
 
       expect(addResult).toHaveBeenCalledWith({ confirmed: false });
-      expect(respondToApproval).toHaveBeenCalledWith({
-        approved: false,
-        confirmed: false,
-      });
 
       // Shows declined confirmation message
       expect(screen.getByText(/declined by user/i)).toBeDefined();
@@ -296,12 +288,15 @@ describe("ToolFallback & ADK HITL Integration", () => {
 
       expect(mockFetch).toHaveBeenCalled();
       const callArgs = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(callArgs.messages[0].parts[0].function_response).toEqual({
+      expect(callArgs.messages.length).toBe(2);
+      expect(callArgs.messages[0].role).toBe("assistant");
+      expect(callArgs.messages[0].parts[0].function_call).toEqual({
         id: "call-12345",
         name: "adk_request_confirmation",
-        response: { confirmed: true },
+        args: { prompt: "Confirm drop" },
       });
-      expect(callArgs.messages[0].parts[0].functionResponse).toEqual({
+      expect(callArgs.messages[1].role).toBe("user");
+      expect(callArgs.messages[1].parts[0].function_response).toEqual({
         id: "call-12345",
         name: "adk_request_confirmation",
         response: { confirmed: true },

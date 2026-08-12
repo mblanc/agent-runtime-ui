@@ -43,27 +43,28 @@ test.describe("ADK HITL & adk_request_confirmation E2E", () => {
       console.log("Opening agent dropdown...");
       await agentDropdown.click();
       const genericAgentOption = page
-        .locator("[role='menuitem']:has-text('Generic Agent')")
+        .locator(
+          "[role='menuitem']:has-text('generic-agent'), [role='menuitem']:has-text('Generic Agent')"
+        )
         .first();
-      if (await genericAgentOption.isVisible({ timeout: 2000 }).catch(() => false)) {
+      if (await genericAgentOption.isVisible({ timeout: 3000 }).catch(() => false)) {
         console.log("Selecting Generic Agent...");
         await genericAgentOption.click();
-        await page.waitForTimeout(1000);
+        await page.waitForTimeout(1500);
       } else {
-        // Press Escape to close dropdown if Generic Agent not listed
         await page.keyboard.press("Escape");
       }
     }
 
-    // Look for the "Delete Production Cluster" session in the sidebar
-    const hitlSessionBtn = page
-      .locator("aside button:has-text('Delete Production Cluster')")
+    // Look for the Summarize session in the sidebar
+    const summarizeSessionBtn = page
+      .locator("aside button:has-text('Summarize'), aside button:has-text('yongzx')")
       .first();
-    if (await hitlSessionBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-      console.log("Clicking 'Delete Production Cluster' session in sidebar...");
-      await hitlSessionBtn.click();
+    if (await summarizeSessionBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+      console.log("Clicking Summarize session in sidebar...");
+      await summarizeSessionBtn.click();
     } else {
-      console.log("First session button in sidebar...");
+      console.log("Looking for first session button in sidebar...");
       const firstSession = page
         .locator("aside button:has(svg.lucide-message-square)")
         .first();
@@ -74,10 +75,12 @@ test.describe("ADK HITL & adk_request_confirmation E2E", () => {
 
     await page.waitForTimeout(1500);
 
-    // Verify tool UI is rendered
-    console.log("Checking for adk_request_confirmation tool UI...");
+    // Verify tool confirmation card is rendered
+    console.log("Checking for Action Requires Approval confirmation card...");
     const toolHeader = page
-      .locator("text=adk_request_confirmation, text=Action Requires Approval")
+      .locator(
+        "text=Action Requires Approval, text=adk_request_confirmation, text=load_web_page"
+      )
       .first();
     await expect(toolHeader).toBeVisible({ timeout: 10000 });
 
@@ -103,25 +106,24 @@ test.describe("ADK HITL & adk_request_confirmation E2E", () => {
     });
 
     // Click Approve button
-    console.log("Clicking Approve tool execution button...");
+    console.log("Clicking Approve Action button...");
     await approveBtn.click();
 
-    // Verify Approved state appears
+    // Verify Approved state appears immediately
     await expect(page.locator("text=Approved by user").first()).toBeVisible({
       timeout: 5000,
     });
 
-    // Wait for the resumed agent response stream to arrive
-    console.log("Waiting for resumed agent execution stream...");
-    await page.waitForTimeout(4000);
+    // Wait for the resumed agent response stream to arrive with webpage summary
+    console.log("Waiting for resumed agent execution stream with summary...");
+    const assistantProse = page.locator(".prose").last();
+    await expect(assistantProse).toBeVisible({ timeout: 30000 });
 
-    // Verify the agent completed response text is rendered in the conversation
-    const proseText = await page
-      .locator(".prose")
-      .last()
-      .textContent()
-      .catch(() => "");
-    console.log("Resumed Agent Response Text:", proseText);
+    // Verify the agent completed response text contains substantive content
+    await page.waitForTimeout(4000);
+    const proseText = (await assistantProse.textContent().catch(() => "")) || "";
+    console.log("Resumed Agent Summary Response Text:", proseText);
+    expect(proseText.length).toBeGreaterThan(20);
 
     // Capture screenshot after approval
     const postScreenshot = await page.screenshot({ fullPage: true });

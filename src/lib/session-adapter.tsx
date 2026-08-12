@@ -62,10 +62,11 @@ export function formatRemoteMessagesToThreadMessages(
     for (let idx = 0; idx < toolCalls.length; idx++) {
       const tc = toolCalls[idx];
       const toolName = String(tc.name || "tool");
-      const toolCallId = String(
-        tc.id || tc.toolCallId || `call_${m.id || Date.now()}_${idx}`
-      );
       const args = (tc.args as Record<string, unknown>) || {};
+      const origFnCall = args.originalFunctionCall as Record<string, unknown> | undefined;
+      const toolCallId = String(
+        tc.id || tc.toolCallId || origFnCall?.id || `call_${m.id || Date.now()}_${idx}`
+      );
       const argsText = JSON.stringify(args, null, 2);
 
       // Find matching tool result

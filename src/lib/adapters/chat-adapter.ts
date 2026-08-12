@@ -1,9 +1,9 @@
-import {
-  type ChatModelAdapter,
-  type ChatModelRunOptions,
-  type ChatModelRunResult,
+import type {
+  ChatModelAdapter,
+  ChatModelRunOptions,
+  ChatModelRunResult,
 } from "@assistant-ui/react";
-import type { AgentMessagePart, MemoryRetrievalItem } from "@/types/agent";
+import type { AgentMessage, AgentMessagePart, MemoryRetrievalItem } from "@/types/agent";
 import { formatAgentDisplayName } from "@/lib/utils";
 
 function escapeRegex(str: string): string {
@@ -176,9 +176,12 @@ export function createGeminiChatAdapter(
       messages,
       abortSignal,
     }: ChatModelRunOptions): AsyncGenerator<ChatModelRunResult, void, unknown> {
-      const formattedMessages = messages.map((m) => {
+      const formattedMessages: AgentMessage[] = [];
+
+      for (const m of messages) {
         let text = "";
         const parts: AgentMessagePart[] = [];
+        const userFunctionResponseParts: AgentMessagePart[] = [];
 
         for (const part of m.content) {
           if (part.type === "text") {
@@ -239,6 +242,16 @@ export function createGeminiChatAdapter(
               args?: Record<string, unknown>;
               result?: unknown;
             };
+            const callData = {
+              id: tcPart.toolCallId,
+              name: tcPart.toolName || "tool",
+              args: tcPart.args || {},
+            };
+            parts.push({
+              function_call: callData,
+              functionCall: callData,
+            });
+
             if (tcPart.result !== undefined) {
               const respData = {
                 id: tcPart.toolCallId,
@@ -248,30 +261,36 @@ export function createGeminiChatAdapter(
                     ? (tcPart.result as Record<string, unknown>)
                     : { output: tcPart.result },
               };
-              parts.push({
+              userFunctionResponseParts.push({
                 function_response: respData,
                 functionResponse: respData,
-              });
-            } else {
-              const callData = {
-                id: tcPart.toolCallId,
-                name: tcPart.toolName || "tool",
-                args: tcPart.args || {},
-              };
-              parts.push({
-                function_call: callData,
-                functionCall: callData,
               });
             }
           }
         }
 
-        return {
-          role: m.role,
-          content: text,
-          parts: parts.length > 0 ? parts : undefined,
-        };
-      });
+        if (m.role === "user") {
+          formattedMessages.push({
+            role: "user",
+            content: text,
+            parts: parts.length > 0 ? parts : undefined,
+          });
+        } else {
+          formattedMessages.push({
+            role: "assistant",
+            content: text,
+            parts: parts.length > 0 ? parts : undefined,
+          });
+
+          if (userFunctionResponseParts.length > 0) {
+            formattedMessages.push({
+              role: "user",
+              content: "",
+              parts: userFunctionResponseParts,
+            });
+          }
+        }
+      }
 
       const sessionId = getSessionId?.();
       const agentId = getAgentId?.();

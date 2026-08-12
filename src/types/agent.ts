@@ -232,7 +232,8 @@ export interface SignedReadResponse {
 
 export interface AgentMessage {
   role: "user" | "model" | "assistant" | "system";
-  parts: AgentMessagePart[];
+  content?: string;
+  parts?: AgentMessagePart[];
 }
 
 export interface SubAgentExecution {
