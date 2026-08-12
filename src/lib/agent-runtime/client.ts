@@ -1282,59 +1282,7 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
       let resolvedMessage: unknown = lastUserMessage;
       let resolvedParts: Array<Record<string, unknown>> | undefined = undefined;
 
-      const nonTextParts = lastUserMsgObj?.parts?.filter(
-        (p) =>
-          p.file_data ||
-          p.fileData ||
-          p.image ||
-          p.file ||
-          p.function_response ||
-          p.functionResponse ||
-          p.function_call ||
-          p.functionCall
-      );
-
-      if (nonTextParts && nonTextParts.length > 0 && lastUserMsgObj?.parts) {
-        const mappedParts = lastUserMsgObj.parts.map((p) => {
-          if (p.file_data) {
-            return {
-              file_data: {
-                file_uri: p.file_data.file_uri,
-                mime_type: p.file_data.mime_type,
-              },
-            };
-          }
-          if (p.fileData) {
-            return {
-              file_data: {
-                file_uri: p.fileData.file_uri || p.fileData.fileUri || "",
-                mime_type: p.fileData.mime_type || p.fileData.mimeType || "",
-              },
-            };
-          }
-          if (p.function_response || p.functionResponse) {
-            return {
-              function_response: p.function_response || p.functionResponse,
-            };
-          }
-          if (p.function_call || p.functionCall) {
-            return {
-              function_call: p.function_call || p.functionCall,
-            };
-          }
-          return { text: p.text || "" };
-        });
-
-        const hasFunctionResponse = mappedParts.some((p) => p.function_response);
-        if (hasFunctionResponse) {
-          resolvedMessage = {
-            role: "user",
-            parts: mappedParts,
-          };
-        } else {
-          resolvedParts = mappedParts;
-        }
-      } else if (fnResponsePart) {
+      if (fnResponsePart) {
         const fnResp =
           fnResponsePart.function_response || fnResponsePart.functionResponse;
         resolvedMessage = {
@@ -1345,6 +1293,50 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
             },
           ],
         };
+      } else {
+        const nonTextParts = lastUserMsgObj?.parts?.filter(
+          (p) =>
+            p.file_data ||
+            p.fileData ||
+            p.image ||
+            p.file ||
+            p.function_response ||
+            p.functionResponse ||
+            p.function_call ||
+            p.functionCall
+        );
+
+        if (nonTextParts && nonTextParts.length > 0 && lastUserMsgObj?.parts) {
+          resolvedParts = lastUserMsgObj.parts.map((p) => {
+            if (p.file_data) {
+              return {
+                file_data: {
+                  file_uri: p.file_data.file_uri,
+                  mime_type: p.file_data.mime_type,
+                },
+              };
+            }
+            if (p.fileData) {
+              return {
+                file_data: {
+                  file_uri: p.fileData.file_uri || p.fileData.fileUri || "",
+                  mime_type: p.fileData.mime_type || p.fileData.mimeType || "",
+                },
+              };
+            }
+            if (p.function_response || p.functionResponse) {
+              return {
+                function_response: p.function_response || p.functionResponse,
+              };
+            }
+            if (p.function_call || p.functionCall) {
+              return {
+                function_call: p.function_call || p.functionCall,
+              };
+            }
+            return { text: p.text || "" };
+          });
+        }
       }
 
       const inputPayload: Record<string, unknown> = {

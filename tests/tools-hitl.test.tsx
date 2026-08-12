@@ -1,6 +1,10 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { useMemo } from "react";
 import { NextRequest } from "next/server";
+import { useLocalRuntime, AssistantRuntimeProvider } from "@assistant-ui/react";
+import type { ToolCallMessagePartProps } from "@assistant-ui/react";
+import { GeminiThread } from "@/components/assistant-ui/gemini-thread";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import {
   createGeminiChatAdapter,
@@ -9,6 +13,14 @@ import {
 import { AgentRuntimeClient } from "@/lib/agent-runtime-client";
 import { POST as chatRoute } from "@/app/api/chat/route";
 import { auth } from "@/lib/auth";
+
+if (typeof global.ResizeObserver === "undefined") {
+  global.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
 
 describe("ToolFallback & ADK HITL Integration", () => {
   beforeEach(() => {
@@ -539,6 +551,117 @@ describe("ToolFallback & ADK HITL Integration", () => {
 
       expect(text).toContain("adk_request_confirmation");
       expect(text).toContain("requires-action");
+    });
+
+    it("executes full interactive approval lifecycle: renders card, handles approve click, streams resumed summary", async () => {
+      const sseChunks = [
+        `data: ${JSON.stringify({ event_type: "thought", thought: "Resuming workflow..." })}\n\n`,
+        `data: ${JSON.stringify({ event_type: "tool_result", tool_result: { name: "load_web_page", result: "Page contents" } })}\n\n`,
+        `data: ${JSON.stringify({ event_type: "content", content: "Summary: The blog post discusses why LLMs can achieve breakthroughs." })}\n\n`,
+        `data: [DONE]\n\n`,
+      ];
+
+      const encoder = new TextEncoder();
+      let streamIndex = 0;
+      const customReadable = new ReadableStream({
+        pull(controller) {
+          if (streamIndex < sseChunks.length) {
+            controller.enqueue(encoder.encode(sseChunks[streamIndex++]));
+          } else {
+            controller.close();
+          }
+        },
+      });
+
+      const fetchSpy = vi.fn().mockResolvedValue({
+        ok: true,
+        body: customReadable,
+      });
+      global.fetch = fetchSpy as unknown as typeof fetch;
+
+      const adapter = createGeminiChatAdapter();
+
+      const TestApprovalFlow = () => {
+        const runtime = useLocalRuntime(adapter);
+
+        return (
+          <AssistantRuntimeProvider runtime={runtime}>
+            <GeminiThread />
+          </AssistantRuntimeProvider>
+        );
+      };
+
+      const { container } = render(<TestApprovalFlow />);
+
+      // Verify ToolFallback renders approval UI
+      const toolCallPart = {
+        type: "tool-call" as const,
+        toolCallId: "adk-6578f364-101a-48d7-9303-366d8a1a7105",
+        toolName: "adk_request_confirmation",
+        args: {
+          originalFunctionCall: {
+            id: "adk-c7e19376-3b32-45c8-bee7-3a135d13d6ed",
+            name: "load_web_page",
+            args: { url: "https://yongzx.github.io/blog/2026/08/08/llm-can-jump" },
+          },
+          toolConfirmation: {
+            hint: "Approval Required: The agent requests permission to execute 'load_web_page'.",
+            confirmed: false,
+          },
+        },
+        status: { type: "requires-action" as const, reason: "tool-calls" },
+      };
+
+      const handleAddResult = vi.fn(async (res) => {
+        // Simulates assistant-ui triggering runtime run on addResult
+        const generator = adapter.run({
+          messages: [
+            {
+              id: "m-assistant",
+              role: "assistant",
+              content: [{ ...toolCallPart, result: res }],
+              createdAt: new Date(),
+              status: { type: "complete", reason: "stop" },
+            },
+          ] as unknown as Parameters<typeof adapter.run>[0]["messages"],
+          abortSignal: new AbortController().signal,
+        } as Parameters<typeof adapter.run>[0]);
+
+        if (Symbol.asyncIterator in generator) {
+          for await (const _ of generator) {
+            // consume generator
+          }
+        }
+      });
+
+      const { rerender } = render(
+        <ToolFallback
+          {...toolCallPart}
+          addResult={handleAddResult as unknown as ToolCallMessagePartProps["addResult"]}
+        />
+      );
+
+      expect(screen.getByText(/action requires approval/i)).toBeDefined();
+      const approveBtn = screen.getByRole("button", { name: /approve tool execution/i });
+      expect(approveBtn).toBeDefined();
+
+      // Click Approve
+      fireEvent.click(approveBtn);
+
+      expect(handleAddResult).toHaveBeenCalledWith({ confirmed: true });
+      expect(fetchSpy).toHaveBeenCalled();
+
+      // Check request body sent to /api/chat
+      const sentPayload = JSON.parse(fetchSpy.mock.calls[0][1].body);
+      const userFnResp = sentPayload.messages.find(
+        (m: { role: string }) => m.role === "user"
+      );
+      expect(userFnResp).toBeDefined();
+      expect(userFnResp.parts[0].function_response).toEqual({
+        id: "adk-6578f364-101a-48d7-9303-366d8a1a7105",
+        name: "adk_request_confirmation",
+        response: { confirmed: true },
+      });
     });
   });
 });
