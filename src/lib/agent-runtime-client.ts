@@ -2,11 +2,13 @@ import { GoogleAuth } from "google-auth-library";
 import {
   AgentFeedbackRequest,
   AgentFeedbackResponse,
+  AgentMemory,
   AgentSession,
   AgentSessionEvent,
   AgentStreamEvent,
   ChatRequestBody,
   ListAgentsResponse,
+  MemoryRetrievalItem,
 } from "@/types/agent";
 import {
   createAgentRuntimeProvider,
@@ -162,6 +164,96 @@ export class AgentRuntimeClient {
     userId: string
   ): Promise<AgentFeedbackResponse> {
     return this.provider.submitFeedback(request, userId);
+  }
+
+  async listMemories(
+    userId: string,
+    topic?: string,
+    customEngineId?: string,
+    customLocation?: string
+  ): Promise<AgentMemory[]> {
+    return this.provider.listMemories(
+      userId,
+      topic,
+      customEngineId || this.reasoningEngineId,
+      customLocation || this.location
+    );
+  }
+
+  async createMemory(
+    userId: string,
+    fact: string,
+    topic?: string,
+    customEngineId?: string,
+    customLocation?: string
+  ): Promise<AgentMemory> {
+    return this.provider.createMemory(
+      userId,
+      fact,
+      topic,
+      customEngineId || this.reasoningEngineId,
+      customLocation || this.location
+    );
+  }
+
+  async updateMemory(
+    userId: string,
+    memoryId: string,
+    fact: string,
+    topic?: string,
+    customEngineId?: string,
+    customLocation?: string
+  ): Promise<AgentMemory> {
+    return this.provider.updateMemory(
+      userId,
+      memoryId,
+      fact,
+      topic,
+      customEngineId || this.reasoningEngineId,
+      customLocation || this.location
+    );
+  }
+
+  async deleteMemory(
+    userId: string,
+    memoryId: string,
+    customEngineId?: string,
+    customLocation?: string
+  ): Promise<void> {
+    return this.provider.deleteMemory(
+      userId,
+      memoryId,
+      customEngineId || this.reasoningEngineId,
+      customLocation || this.location
+    );
+  }
+
+  async generateMemories(
+    userId: string,
+    sessionId: string,
+    customEngineId?: string,
+    customLocation?: string
+  ): Promise<AgentMemory[]> {
+    return this.provider.generateMemories(
+      userId,
+      sessionId,
+      customEngineId || this.reasoningEngineId,
+      customLocation || this.location
+    );
+  }
+
+  async retrieveMemories(
+    userId: string,
+    query: string,
+    customEngineId?: string,
+    customLocation?: string
+  ): Promise<MemoryRetrievalItem[]> {
+    return this.provider.retrieveMemories(
+      userId,
+      query,
+      customEngineId || this.reasoningEngineId,
+      customLocation || this.location
+    );
   }
 
   async *streamQuery(

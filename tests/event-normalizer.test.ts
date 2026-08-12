@@ -201,5 +201,93 @@ describe("Agent Runtime Event Normalizer", () => {
       expect(parsed.content).toBe("Intel and AMD market analysis");
       expect(parsed.invocationId).toBe("e-4c95513b-95b8-4a70-8a67-73964abed08d");
     });
+
+    it("extracts thoughts when part has boolean thought: true (Gemini 2.0/2.5 reasoning format)", () => {
+      const rawGeminiReasoningEvent = {
+        name: "projects/125188993477/locations/us-central1/reasoningEngines/1295472637392191488/sessions/4917427697799397376/events/101",
+        author: "model",
+        content: {
+          role: "model",
+          parts: [
+            {
+              thought: true,
+              text: "The user is querying watch list status for semiconductor stocks. Let's analyze NVDA, AMD, INTC.",
+              thoughtSignature: "CpQGAY89a184...",
+            },
+            {
+              text: "Here is your current semiconductor watch list: NVDA, AMD, INTC, and MU.",
+            },
+          ],
+        },
+      };
+
+      const parsed = parseRawSessionEvent(
+        rawGeminiReasoningEvent,
+        "4917427697799397376",
+        0
+      );
+      expect(parsed.role).toBe("assistant");
+      expect(parsed.thought).toBe(
+        "The user is querying watch list status for semiconductor stocks. Let's analyze NVDA, AMD, INTC."
+      );
+      expect(parsed.content).toBe(
+        "Here is your current semiconductor watch list: NVDA, AMD, INTC, and MU."
+      );
+    });
+
+    it("groups multi-event turn where thought is in a separate event before final response", () => {
+      const rawEvents = [
+        {
+          name: "projects/.../sessions/4917427697799397376/events/1",
+          author: "user",
+          content: { parts: [{ text: "What are semiconductor stocks doing today?" }] },
+        },
+        {
+          name: "projects/.../sessions/4917427697799397376/events/2",
+          author: "model",
+          content: {
+            parts: [
+              {
+                thought: true,
+                text: "Retrieving industry watch updates and computing changes...",
+              },
+            ],
+          },
+        },
+        {
+          name: "projects/.../sessions/4917427697799397376/events/3",
+          author: "model",
+          content: {
+            parts: [
+              {
+                text: "Semiconductor stocks are up 2.4% on strong earnings reports.",
+              },
+            ],
+          },
+        },
+      ];
+
+      const grouped = groupTurnSessionEvents(rawEvents, "4917427697799397376");
+      expect(grouped.length).toBe(2);
+      expect(grouped[0].role).toBe("user");
+      expect(grouped[0].content).toBe("What are semiconductor stocks doing today?");
+
+      expect(grouped[1].role).toBe("assistant");
+      expect(grouped[1].thought).toBe(
+        "Retrieving industry watch updates and computing changes..."
+      );
+      expect(grouped[1].content).toBe(
+        "Semiconductor stocks are up 2.4% on strong earnings reports."
+      );
+
+      const threadMessages = formatSessionEventsToThreadMessages(grouped);
+      expect(threadMessages.length).toBe(2);
+      expect(threadMessages[1].thought).toBe(
+        "Retrieving industry watch updates and computing changes..."
+      );
+      expect(threadMessages[1].content).toBe(
+        "Semiconductor stocks are up 2.4% on strong earnings reports."
+      );
+    });
   });
 });

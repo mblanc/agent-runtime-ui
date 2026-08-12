@@ -8,6 +8,7 @@ import {
   AttachmentPrimitive,
   SelectionToolbarPrimitive,
   groupPartByType,
+  useAuiState,
 } from "@assistant-ui/react";
 import {
   Copy,
@@ -22,6 +23,7 @@ import {
   FileText,
 } from "lucide-react";
 import { useState, memo } from "react";
+import type { MemoryRetrievalItem } from "@/types/agent";
 import {
   ReasoningRoot,
   ReasoningTrigger,
@@ -32,11 +34,28 @@ import { ToolFallback } from "./tool-fallback";
 import { ToolGroupRoot, ToolGroupTrigger, ToolGroupContent } from "./tool-group";
 import { MarkdownText } from "./markdown-text";
 import { GeminiMessageTiming } from "./gemini-message-timing";
+import { MemoryRetrievalBadge } from "@/components/memory/memory-retrieval-badge";
 
 const MESSAGE_GROUP_BY = groupPartByType({
   reasoning: ["group-reasoning"],
   "tool-call": ["group-tool"],
 });
+
+function AssistantMessageRetrievedMemories() {
+  const retrievedMemories = useAuiState(
+    (s: {
+      message?: {
+        metadata?: {
+          custom?: {
+            retrievedMemories?: MemoryRetrievalItem[];
+          };
+        };
+      };
+    }) => ("message" in s ? s.message?.metadata?.custom?.retrievedMemories : undefined)
+  );
+
+  return <MemoryRetrievalBadge memories={retrievedMemories} />;
+}
 
 function ChatMessageImpl() {
   const [copied, setCopied] = useState(false);
@@ -139,6 +158,10 @@ function ChatMessageImpl() {
               <span>Quote selection</span>
             </SelectionToolbarPrimitive.Quote>
           </SelectionToolbarPrimitive.Root>
+
+          {/* Retrieved Memory Bank Context Badge */}
+          <AssistantMessageRetrievedMemories />
+
           {/* Full-width avatar-free Content with GroupedParts & MarkdownText */}
           <div className="prose prose-neutral dark:prose-invert max-w-none text-[15px] leading-relaxed">
             <MessagePrimitive.GroupedParts groupBy={MESSAGE_GROUP_BY}>

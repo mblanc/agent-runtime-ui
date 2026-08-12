@@ -16,7 +16,10 @@ import { useSessionThreadListAdapter } from "@/lib/session-adapter";
 import { ThreadSidebar } from "@/components/assistant-ui/thread-sidebar";
 import { GeminiThread } from "@/components/assistant-ui/gemini-thread";
 import { AgentHeaderSelector } from "@/components/agent-switcher/agent-header-selector";
+import { MemoryHeaderButton } from "@/components/memory/memory-header-button";
 import { AgentProvider, useActiveAgent } from "@/lib/agent-context";
+import { MemoryProvider } from "@/lib/memory-context";
+import { MemoryDrawer } from "@/components/memory/memory-drawer";
 import { useSession } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef } from "react";
@@ -98,15 +101,21 @@ function ChatContent() {
 
         {/* Main Gemini Thread Area with Top Header */}
         <main className="flex flex-1 flex-col overflow-hidden">
-          {/* Top Header with Agent Switcher */}
+          {/* Top Header with Agent Switcher and Memory Bank Button */}
           <header className="flex h-14 shrink-0 items-center justify-between border-b border-border/40 px-4 bg-background/50 backdrop-blur-xs">
-            <AgentHeaderSelector onAgentChange={handleAgentChange} />
+            <div className="flex items-center gap-2">
+              <AgentHeaderSelector onAgentChange={handleAgentChange} />
+              <MemoryHeaderButton />
+            </div>
           </header>
 
           <div className="flex-1 overflow-hidden">
             <GeminiThread />
           </div>
         </main>
+
+        {/* Slide-Over Memory Profile Drawer */}
+        <MemoryDrawer />
       </div>
     </AssistantRuntimeProvider>
   );
@@ -115,7 +124,9 @@ function ChatContent() {
 export default function ChatPage() {
   return (
     <AgentProvider>
-      <ChatContent />
+      <MemoryProvider>
+        <ChatContent />
+      </MemoryProvider>
     </AgentProvider>
   );
 }

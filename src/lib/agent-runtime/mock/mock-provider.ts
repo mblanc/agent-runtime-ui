@@ -1,14 +1,21 @@
 import {
   AgentFeedbackRequest,
   AgentFeedbackResponse,
+  AgentMemory,
   AgentSession,
   AgentSessionEvent,
   AgentStreamEvent,
   ChatRequestBody,
   ListAgentsResponse,
+  MemoryRetrievalItem,
 } from "@/types/agent";
 import { IAgentRuntimeProvider } from "../types";
-import { mockAgentsStore, mockSessionsStore, mockSessionEventsStore } from "./mock-store";
+import {
+  mockAgentsStore,
+  mockSessionsStore,
+  mockSessionEventsStore,
+  mockMemoriesStore,
+} from "./mock-store";
 import {
   extractReasoningEngineIdFromResourceName,
   extractSessionIdFromResourceName,
@@ -184,6 +191,229 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
     };
   }
 
+  async listMemories(
+    userId: string,
+    topic?: string,
+    _agentId?: string,
+    _location?: string
+  ): Promise<AgentMemory[]> {
+    const isMockUser = userId === "test-user" || userId === "mock-user";
+    const memories = Array.from(mockMemoriesStore.values()).filter((m) => {
+      const matchesUser =
+        m.userId === userId ||
+        (isMockUser && (m.userId === "test-user" || m.userId === "mock-user"));
+      if (!matchesUser) return false;
+      if (topic && topic !== "all") {
+        return m.topic?.toLowerCase() === topic.toLowerCase();
+      }
+      return true;
+    });
+
+    return memories.sort(
+      (a, b) => new Date(b.updateTime).getTime() - new Date(a.updateTime).getTime()
+    );
+  }
+
+  async createMemory(
+    userId: string,
+    fact: string,
+    topic?: string,
+    _agentId?: string,
+    _location?: string
+  ): Promise<AgentMemory> {
+    const id = `mem-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const now = new Date().toISOString();
+    const newMemory: AgentMemory = {
+      id,
+      userId,
+      fact,
+      topic: topic || "general",
+      confidenceScore: 0.95,
+      createTime: now,
+      updateTime: now,
+    };
+    mockMemoriesStore.set(id, newMemory);
+    return newMemory;
+  }
+
+  async updateMemory(
+    userId: string,
+    memoryId: string,
+    fact: string,
+    topic?: string,
+    _agentId?: string,
+    _location?: string
+  ): Promise<AgentMemory> {
+    const memory = mockMemoriesStore.get(memoryId);
+    if (!memory) {
+      throw new Error(`Memory with ID "${memoryId}" not found`);
+    }
+
+    const isMockUser = userId === "test-user" || userId === "mock-user";
+    const matchesUser =
+      memory.userId === userId ||
+      (isMockUser && (memory.userId === "test-user" || memory.userId === "mock-user"));
+
+    if (!matchesUser) {
+      throw new Error("Unauthorized to update this memory");
+    }
+
+    const updated: AgentMemory = {
+      ...memory,
+      fact: fact || memory.fact,
+      topic: topic !== undefined ? topic : memory.topic,
+      updateTime: new Date().toISOString(),
+    };
+    mockMemoriesStore.set(memoryId, updated);
+    return updated;
+  }
+
+  async deleteMemory(
+    userId: string,
+    memoryId: string,
+    _agentId?: string,
+    _location?: string
+  ): Promise<void> {
+    const memory = mockMemoriesStore.get(memoryId);
+    if (!memory) {
+      return;
+    }
+
+    const isMockUser = userId === "test-user" || userId === "mock-user";
+    const matchesUser =
+      memory.userId === userId ||
+      (isMockUser && (memory.userId === "test-user" || memory.userId === "mock-user"));
+
+    if (!matchesUser) {
+      throw new Error("Unauthorized to delete this memory");
+    }
+
+    mockMemoriesStore.delete(memoryId);
+  }
+
+  async generateMemories(
+    userId: string,
+    sessionId: string,
+    _agentId?: string,
+    _location?: string
+  ): Promise<AgentMemory[]> {
+    const cleanSessionId = extractSessionIdFromResourceName(sessionId);
+    const events = mockSessionEventsStore.get(cleanSessionId) || [];
+    const generated: AgentMemory[] = [];
+
+    // Extract facts from user/assistant conversation turns
+    for (const evt of events) {
+      if (evt.role === "user") {
+        const text = evt.content.toLowerCase();
+        let extractedFact = "";
+        let topic: string = "general";
+
+        if (
+          text.includes("typescript") ||
+          text.includes("bun") ||
+          text.includes("react") ||
+          text.includes("next.js")
+        ) {
+          extractedFact = `Prefers modern TypeScript and React/Next.js stack`;
+          topic = "coding_preferences";
+        } else if (
+          text.includes("cloud") ||
+          text.includes("vertex") ||
+          text.includes("gcp") ||
+          text.includes("security")
+        ) {
+          extractedFact = `Working on cloud infrastructure and security architectures`;
+          topic = "enterprise_context";
+        }
+
+        if (extractedFact) {
+          const id = `mem-gen-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+          const now = new Date().toISOString();
+          const mem: AgentMemory = {
+            id,
+            userId,
+            fact: extractedFact,
+            topic,
+            confidenceScore: 0.92,
+            sourceSessionId: cleanSessionId,
+            createTime: now,
+            updateTime: now,
+          };
+          mockMemoriesStore.set(id, mem);
+          generated.push(mem);
+          break;
+        }
+      }
+    }
+
+    if (generated.length === 0) {
+      const id = `mem-gen-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      const now = new Date().toISOString();
+      const defaultGenerated: AgentMemory = {
+        id,
+        userId,
+        fact: `Discussed technical specifications in session ${cleanSessionId}`,
+        topic: "general",
+        confidenceScore: 0.85,
+        sourceSessionId: cleanSessionId,
+        createTime: now,
+        updateTime: now,
+      };
+      mockMemoriesStore.set(id, defaultGenerated);
+      generated.push(defaultGenerated);
+    }
+
+    return generated;
+  }
+
+  async retrieveMemories(
+    userId: string,
+    query: string,
+    _agentId?: string,
+    _location?: string
+  ): Promise<MemoryRetrievalItem[]> {
+    const userMemories = await this.listMemories(userId);
+    const lowerQuery = query.toLowerCase();
+    const queryWords = lowerQuery.split(/\s+/).filter((w) => w.length > 2);
+
+    const scored: MemoryRetrievalItem[] = [];
+    for (const mem of userMemories) {
+      const lowerFact = mem.fact.toLowerCase();
+      const lowerTopic = (mem.topic || "").toLowerCase();
+
+      let matchCount = 0;
+      for (const word of queryWords) {
+        if (lowerFact.includes(word) || lowerTopic.includes(word)) {
+          matchCount++;
+        }
+      }
+
+      if (matchCount > 0 || queryWords.length === 0) {
+        const relevanceScore = Math.min(0.99, Math.max(0.75, 0.7 + matchCount * 0.1));
+        scored.push({
+          id: mem.id,
+          fact: mem.fact,
+          topic: mem.topic,
+          relevanceScore: Number(relevanceScore.toFixed(2)),
+        });
+      }
+    }
+
+    if (scored.length === 0 && userMemories.length > 0) {
+      // Return top 2 default memories with base relevance
+      for (const mem of userMemories.slice(0, 2)) {
+        scored.push({
+          id: mem.id,
+          fact: mem.fact,
+          topic: mem.topic,
+          relevanceScore: 0.78,
+        });
+      }
+    }
+
+    return scored.sort((a, b) => b.relevanceScore - a.relevanceScore).slice(0, 4);
+  }
+
   async *streamQuery(
     body: ChatRequestBody,
     _userId: string
@@ -285,6 +515,17 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
       : "";
 
     // Simulated thought event
+    // 4. Memory Bank Retrieval: Retrieve relevant memories for the user
+    const retrievedMemories = await this.retrieveMemories(_userId, lastPrompt);
+    if (retrievedMemories.length > 0) {
+      yield {
+        event_type: "thought",
+        thought: `Retrieved ${retrievedMemories.length} relevant long-term memories from Memory Bank to personalize response.`,
+        retrieved_memories: retrievedMemories,
+      };
+      await new Promise((r) => setTimeout(r, 40));
+    }
+
     yield {
       event_type: "thought",
       thought: hasAttachments

@@ -417,11 +417,11 @@ export function formatSessionEventsToThreadMessages(
       continue;
     }
 
-    if (content) {
+    if (content || thought || accumulatedThoughts.length > 0) {
       threadMessages.push({
         id: e.id || `msg-${i}`,
         role: "assistant",
-        content,
+        content: content || "",
         createdAt: e.createTime,
         thought:
           accumulatedThoughts.length > 0 ? accumulatedThoughts.join("\n\n") : undefined,
@@ -546,12 +546,27 @@ export function parseRawSessionEvent(
             textPieces.push(part);
           } else if (part && typeof part === "object") {
             const p = part as Record<string, unknown>;
-            if (typeof p.thought === "string" && p.thought.trim()) {
-              thoughtPieces.push(p.thought.trim());
-            }
-            if (typeof p.text === "string" && p.text.trim()) {
+
+            const isPartThought =
+              p.thought === true ||
+              (typeof p.thought === "string" && Boolean(p.thought.trim())) ||
+              (p.thought && typeof p.thought === "object");
+
+            if (isPartThought) {
+              if (typeof p.thought === "string" && p.thought.trim()) {
+                thoughtPieces.push(p.thought.trim());
+              } else if (p.thought && typeof p.thought === "object") {
+                const t = p.thought as Record<string, unknown>;
+                if (typeof t.text === "string" && t.text.trim()) {
+                  thoughtPieces.push(t.text.trim());
+                }
+              } else if (typeof p.text === "string" && p.text.trim()) {
+                thoughtPieces.push(p.text.trim());
+              }
+            } else if (typeof p.text === "string" && p.text.trim()) {
               textPieces.push(p.text.trim());
             }
+
             const fnCall = p.functionCall || p.function_call;
             if (fnCall && typeof fnCall === "object") {
               const fn = fnCall as Record<string, unknown>;
@@ -571,17 +586,41 @@ export function parseRawSessionEvent(
         return;
       }
 
-      if (typeof record.text === "string" && record.text.trim()) {
-        textPieces.push(record.text.trim());
+      const isRecordThought =
+        record.thought === true ||
+        (typeof record.thought === "string" && Boolean(record.thought.trim())) ||
+        (record.thought && typeof record.thought === "object") ||
+        (typeof record.reasoning === "string" && Boolean(record.reasoning.trim()));
+
+      if (isRecordThought) {
+        if (typeof record.thought === "string" && record.thought.trim()) {
+          thoughtPieces.push(record.thought.trim());
+        } else if (record.thought && typeof record.thought === "object") {
+          const t = record.thought as Record<string, unknown>;
+          if (typeof t.text === "string" && t.text.trim()) {
+            thoughtPieces.push(t.text.trim());
+          }
+        } else if (typeof record.reasoning === "string" && record.reasoning.trim()) {
+          thoughtPieces.push(record.reasoning.trim());
+        } else if (typeof record.text === "string" && record.text.trim()) {
+          thoughtPieces.push(record.text.trim());
+        } else if (typeof record.content === "string" && record.content.trim()) {
+          thoughtPieces.push(record.content.trim());
+        }
+      } else {
+        if (typeof record.text === "string" && record.text.trim()) {
+          textPieces.push(record.text.trim());
+        }
       }
-      if (typeof record.thought === "string" && record.thought.trim()) {
-        thoughtPieces.push(record.thought.trim());
-      }
+
       if (typeof record.query === "string" && record.query.trim()) {
         textPieces.push(record.query.trim());
       }
       if (typeof record.response === "string" && record.response.trim()) {
         textPieces.push(record.response.trim());
+      }
+      if (record.actions && typeof record.actions === "object") {
+        inspectObject(record.actions);
       }
       if (record.content && record.content !== obj) {
         inspectObject(record.content);

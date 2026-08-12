@@ -3,7 +3,7 @@ import {
   type ChatModelRunOptions,
   type ChatModelRunResult,
 } from "@assistant-ui/react";
-import type { AgentMessagePart } from "@/types/agent";
+import type { AgentMessagePart, MemoryRetrievalItem } from "@/types/agent";
 import { formatAgentDisplayName } from "@/lib/utils";
 
 function escapeRegex(str: string): string {
@@ -122,7 +122,8 @@ export function createYieldContent(
   reasoning: string,
   text: string,
   toolCalls?: ToolCallYieldItem[],
-  eventId?: string
+  eventId?: string,
+  retrievedMemories?: MemoryRetrievalItem[]
 ): ChatModelRunResult {
   return {
     content: [
@@ -138,11 +139,14 @@ export function createYieldContent(
       })),
       ...(text ? [{ type: "text" as const, text }] : []),
     ],
-    ...(eventId
+    ...(eventId || (retrievedMemories && retrievedMemories.length > 0)
       ? {
           metadata: {
             custom: {
-              eventId,
+              ...(eventId ? { eventId } : {}),
+              ...(retrievedMemories && retrievedMemories.length > 0
+                ? { retrievedMemories }
+                : {}),
             },
           },
         }
@@ -308,6 +312,7 @@ export function createGeminiChatAdapter(
         let accumulatedText = "";
         let latestEventId: string | undefined;
         const toolCallsMap = new Map<string, ToolCallYieldItem>();
+        const retrievedMemoriesList: MemoryRetrievalItem[] = [];
 
         try {
           while (true) {
@@ -351,13 +356,31 @@ export function createGeminiChatAdapter(
                     parsed.invocation_id;
                 }
 
+                if (parsed.retrieved_memories || parsed.retrievedMemories) {
+                  const memories = (parsed.retrieved_memories ||
+                    parsed.retrievedMemories) as MemoryRetrievalItem[];
+                  if (Array.isArray(memories)) {
+                    for (const item of memories) {
+                      if (
+                        item &&
+                        !retrievedMemoriesList.some(
+                          (m) => m.id === item.id || m.fact === item.fact
+                        )
+                      ) {
+                        retrievedMemoriesList.push(item);
+                      }
+                    }
+                  }
+                }
+
                 if (parsed.event_type === "content" && parsed.content) {
                   accumulatedText += parsed.content;
                   yield createYieldContent(
                     accumulatedReasoning,
                     accumulatedText,
                     Array.from(toolCallsMap.values()),
-                    latestEventId
+                    latestEventId,
+                    retrievedMemoriesList
                   );
                 } else if (parsed.event_type === "thought" && parsed.thought) {
                   if (
@@ -372,7 +395,8 @@ export function createGeminiChatAdapter(
                     accumulatedReasoning,
                     accumulatedText,
                     Array.from(toolCallsMap.values()),
-                    latestEventId
+                    latestEventId,
+                    retrievedMemoriesList
                   );
                 } else if (parsed.event_type === "agent_call" && parsed.agent_call) {
                   const subagent = parsed.agent_call;
@@ -388,7 +412,8 @@ export function createGeminiChatAdapter(
                     accumulatedReasoning,
                     accumulatedText,
                     Array.from(toolCallsMap.values()),
-                    latestEventId
+                    latestEventId,
+                    retrievedMemoriesList
                   );
                 } else if (
                   parsed.event_type === "agent_response" &&
@@ -414,7 +439,8 @@ export function createGeminiChatAdapter(
                     accumulatedReasoning,
                     accumulatedText,
                     Array.from(toolCallsMap.values()),
-                    latestEventId
+                    latestEventId,
+                    retrievedMemoriesList
                   );
                 } else if (parsed.event_type === "tool_call" && parsed.tool_call) {
                   const tc = parsed.tool_call;
@@ -473,7 +499,8 @@ export function createGeminiChatAdapter(
                     accumulatedReasoning,
                     accumulatedText,
                     Array.from(toolCallsMap.values()),
-                    latestEventId
+                    latestEventId,
+                    retrievedMemoriesList
                   );
                 } else if (parsed.event_type === "tool_result" && parsed.tool_result) {
                   const toolName = parsed.tool_result.name || "tool";
@@ -518,7 +545,8 @@ export function createGeminiChatAdapter(
                     accumulatedReasoning,
                     accumulatedText,
                     Array.from(toolCallsMap.values()),
-                    latestEventId
+                    latestEventId,
+                    retrievedMemoriesList
                   );
                 } else if (parsed.event_type === "error" && parsed.error) {
                   accumulatedText +=
@@ -528,7 +556,8 @@ export function createGeminiChatAdapter(
                     accumulatedReasoning,
                     accumulatedText,
                     Array.from(toolCallsMap.values()),
-                    latestEventId
+                    latestEventId,
+                    retrievedMemoriesList
                   );
                   return;
                 } else if (parsed.event_type === "done") {
@@ -545,7 +574,8 @@ export function createGeminiChatAdapter(
                     accumulatedReasoning,
                     accumulatedText,
                     Array.from(toolCallsMap.values()),
-                    latestEventId
+                    latestEventId,
+                    retrievedMemoriesList
                   );
                   return;
                 }

@@ -1,213 +1,60 @@
-# Task List: Architectural Refactoring & Software Design Improvements
+# Task List: Agent Platform Memory Bank
 
-## Phase 1: Codebase Hygiene, Dead Code Removal & Discriminated Union Types
+- [x] **Phase 1: Data Contracts, Types & Mock Store Engine**
+  - [x] **Task 1: Define Memory Bank Types and Contracts**
+    - [x] Add `AgentMemory`, `MemoryRetrievalItem`, `AgentMemoryListResponse`, `CreateMemoryRequest`, `UpdateMemoryRequest`, `GenerateMemoriesRequest`, and `GenerateMemoriesResponse` to `src/types/agent.ts`.
+    - [x] Extend `AgentStreamEvent` with `retrieved_memories?: MemoryRetrievalItem[]`.
+    - [x] Verify `bun run check`.
+  - [x] **Task 2: Implement Mock Memory Store & Provider Methods**
+    - [x] Extend `IAgentRuntimeProvider` in `src/lib/agent-runtime/types.ts`.
+    - [x] Seed `mockMemoriesStore` in `src/lib/agent-runtime/mock/mock-store.ts`.
+    - [x] Implement memory CRUD in `MockAgentRuntimeProvider` in `src/lib/agent-runtime/mock/mock-provider.ts`.
+    - [x] Create `tests/memory-store.test.ts` and verify with `bun test tests/memory-store.test.ts`.
+  - [x] **Checkpoint 1: Memory Data & Mock Store Foundation**
+    - [x] Verify `bun run check` and `bun test tests/memory-store.test.ts`.
 
-- [x] **Task 1.1: Dead Component Deletion**
-  - **Description:** Delete unimported legacy components (`gemini-tools.tsx`, `gemini-reasoning.tsx`, `gemini-thinking-indicator.tsx`).
-  - **Acceptance Criteria:**
-    - [x] `src/components/assistant-ui/gemini-tools.tsx` deleted
-    - [x] `src/components/assistant-ui/gemini-reasoning.tsx` deleted
-    - [x] `src/components/assistant-ui/gemini-thinking-indicator.tsx` deleted
-    - [x] Zero broken imports
-  - **Verification:** `bun run check && bun test tests/components.test.tsx`
-  - **Files:** `src/components/assistant-ui/gemini-tools.tsx`, `src/components/assistant-ui/gemini-reasoning.tsx`, `src/components/assistant-ui/gemini-thinking-indicator.tsx`
-  - **Scope:** XS
+- [x] **Phase 2: BFF REST API Endpoints & Client Integration**
+  - [x] **Task 3: Implement BFF Memory API Routes**
+    - [x] Implement `GET /api/memory` (listing & filtering) and `POST /api/memory` (create) in `src/app/api/memory/route.ts`.
+    - [x] Implement `PATCH /api/memory/[memoryId]` (update) and `DELETE /api/memory/[memoryId]` (delete) in `src/app/api/memory/[memoryId]/route.ts`.
+    - [x] Implement `POST /api/memory/generate` in `src/app/api/memory/generate/route.ts`.
+    - [x] Create `tests/memory-api.test.ts` and verify with `bun test tests/memory-api.test.ts`.
+  - [x] **Task 4: Expose Memory Client Methods on AgentRuntimeClient & GCP Provider**
+    - [x] Add facade methods to `AgentRuntimeClient` in `src/lib/agent-runtime-client.ts`.
+    - [x] Implement REST mapping in `VertexAgentRuntimeProvider` in `src/lib/agent-runtime/client.ts`.
+    - [x] Verify `bun run check`.
+  - [x] **Checkpoint 2: REST API & Client Layer**
+    - [x] Verify `bun test tests/memory-api.test.ts` passes.
 
-- [x] **Task 1.2: Discriminated Union Types in `src/types/agent.ts`**
-  - **Description:** Refactor `AgentMessagePart` into strict discriminated unions with `normalizeAgentMessagePart` runtime helper. Clean up `AgentSessionEvent`.
-  - **Acceptance Criteria:**
-    - [x] `AgentMessagePart` converted to discriminated union (`AgentTextPart`, `AgentFileDataPart`, `AgentFunctionCallPart`, etc.)
-    - [x] `normalizeAgentMessagePart` helper exported
-    - [x] `AgentSessionEvent` normalized
-  - **Verification:** `bun run check`
-  - **Files:** `src/types/agent.ts`
-  - **Scope:** S
+- [x] **Phase 3: Client State Management & React Context**
+  - [x] **Task 5: Implement MemoryProvider and useMemory Hook**
+    - [x] Create `src/lib/memory-context.tsx` with optimistic CRUD, topic filters, search, and drawer state.
+    - [x] Create `tests/memory-context.test.tsx` and verify with `bun test tests/memory-context.test.tsx`.
 
-- [x] **Task 1.3: Update Type Consumers & Verify Tests**
-  - **Description:** Update consumers in `gemini-runtime-adapter.ts` and `agent-runtime-client.ts` to utilize discriminated union patterns.
-  - **Acceptance Criteria:**
-    - [x] All consumers typecheck cleanly without `any` casts
-    - [x] Test suites pass with 100% success
-  - **Verification:** `bun test tests/chat-api.test.ts tests/tools-hitl.test.tsx`
-  - **Files:** `src/lib/gemini-runtime-adapter.ts`, `src/lib/agent-runtime-client.ts`
-  - **Scope:** S
+- [x] **Phase 4: Memory Profile Drawer & Avatar Menu UI**
+  - [x] **Task 6: Build Memory Fact Cards and Add/Edit Modals**
+    - [x] Create `src/components/memory/memory-item-card.tsx` with topic badges, inline editing, and delete actions.
+    - [x] Create `src/components/memory/add-memory-modal.tsx` with fact input and category selection.
+  - [x] **Task 7: Build MemoryDrawer and Integrate into UserAvatarMenu & Layout**
+    - [x] Create `src/components/memory/memory-drawer.tsx` using Radix Dialog/Sheet with search, topic filtering, and auto-consolidation status.
+    - [x] Add "Memory Bank Profile" item with `🧠` Brain icon to `src/components/auth/user-avatar-menu.tsx`.
+    - [x] Mount `MemoryProvider` in `src/app/page.tsx` or root layout.
+    - [x] Create `tests/memory-ui.test.tsx` and verify with `bun test tests/memory-ui.test.tsx`.
+  - [x] **Checkpoint 3: Memory Drawer & Avatar Menu UI**
+    - [x] Verify drawer opens, displays facts, allows adding, editing, and deleting memories.
 
-### Checkpoint 1: Hygiene & Types Verified
+- [x] **Phase 5: In-Chat Memory Retrieval Badges & Stream Adapter**
+  - [x] **Task 8: Build In-Chat Memory Retrieval Badge & Popover**
+    - [x] Create `src/components/memory/memory-retrieval-badge.tsx` with expandable fact details and relevance scores.
+  - [x] **Task 9: Wire Memory Tool Interception in Chat Adapter & GeminiMessage**
+    - [x] Update `createGeminiChatAdapter` in `src/lib/adapters/chat-adapter.ts` to intercept `preload_memory` and `load_memory` tool calls / `retrieved_memories` stream events and attach to message metadata.
+    - [x] Mount `MemoryRetrievalBadge` in `src/components/assistant-ui/gemini-message.tsx`.
+    - [x] Update `MockAgentRuntimeProvider.streamQuery` to yield simulated memory retrieval events.
+    - [x] Create `tests/memory-chat.test.ts` and verify.
+  - [x] **Checkpoint 4: In-Chat Retrieval & End-to-End Integration**
+    - [x] Verify `🧠 Memories Applied` badge appears in chat messages and expands details.
 
-- [x] TypeScript check passes (`bun run check`)
-- [x] Test suite passes (`bun run test`)
-
----
-
-## Phase 2: Domain Layer Decomposition & Strategy Pattern (`IAgentRuntimeProvider`)
-
-- [x] **Task 2.1: Domain Types & `IAgentRuntimeProvider` Contract**
-  - **Description:** Create `src/lib/agent-runtime/types.ts` defining `IAgentRuntimeProvider` interface and contracts.
-  - **Acceptance Criteria:**
-    - [x] `src/lib/agent-runtime/types.ts` created with complete `IAgentRuntimeProvider` methods
-  - **Verification:** `bun run check`
-  - **Files:** `src/lib/agent-runtime/types.ts`
-  - **Scope:** S
-
-- [x] **Task 2.2: Extract Event Normalizer Module**
-  - **Description:** Extract pure event normalization, turn grouping, and AST extraction helpers into `src/lib/agent-runtime/event-normalizer.ts`.
-  - **Acceptance Criteria:**
-    - [x] `parseRawSessionEvent`, `groupTurnSessionEvents`, `extractTextFromQueryOutput`, `formatSessionEventsToThreadMessages` extracted
-    - [x] Zero network/GCP SDK dependencies in this file
-  - **Verification:** `bun test tests/agent-client.test.ts`
-  - **Files:** `src/lib/agent-runtime/event-normalizer.ts`
-  - **Scope:** S
-
-- [x] **Task 2.3: Extract SSE Stream Parser Module**
-  - **Description:** Extract line-based SSE chunk decoder and keepalive parser into `src/lib/agent-runtime/sse-parser.ts`.
-  - **Acceptance Criteria:**
-    - [x] `sse-parser.ts` handles chunk boundaries, keepalives, and `[DONE]` markers
-  - **Verification:** `bun test tests/chat-api.test.ts`
-  - **Files:** `src/lib/agent-runtime/sse-parser.ts`
-  - **Scope:** S
-
-- [x] **Task 2.4: Extract Mock Store & `MockAgentRuntimeProvider`**
-  - **Description:** Extract offline in-memory stores and mock streaming simulation into `src/lib/agent-runtime/mock/mock-store.ts` and `src/lib/agent-runtime/mock/mock-provider.ts` implementing `IAgentRuntimeProvider`.
-  - **Acceptance Criteria:**
-    - [x] Mock fixtures and streaming logic isolated in `src/lib/agent-runtime/mock/`
-    - [x] `MockAgentRuntimeProvider` implements `IAgentRuntimeProvider`
-  - **Verification:** `bun test tests/agent-client.test.ts`
-  - **Files:** `src/lib/agent-runtime/mock/mock-store.ts`, `src/lib/agent-runtime/mock/mock-provider.ts`
-  - **Scope:** M
-
-- [x] **Task 2.5: Implement `VertexAiReasoningEngineProvider`**
-  - **Description:** Implement real Google Cloud Vertex AI REST and streaming client in `src/lib/agent-runtime/client.ts` implementing `IAgentRuntimeProvider`.
-  - **Acceptance Criteria:**
-    - [x] `VertexAiReasoningEngineProvider` handles GoogleAuth token management and Vertex AI REST API calls
-    - [x] Zero mock branching inside production client methods
-  - **Verification:** `bun run check`
-  - **Files:** `src/lib/agent-runtime/client.ts`
-  - **Scope:** M
-
-- [x] **Task 2.6: Factory with Fail-Fast Configuration**
-  - **Description:** Implement `createAgentRuntimeProvider` in `src/lib/agent-runtime/factory.ts` with explicit fail-fast validation in production mode. Create `src/lib/agent-runtime/index.ts` public export.
-  - **Acceptance Criteria:**
-    - [x] `createAgentRuntimeProvider` instantiates `VertexAiReasoningEngineProvider` or `MockAgentRuntimeProvider` based on environment
-    - [x] Missing config in production throws an explicit `Error` immediately
-    - [x] `src/lib/agent-runtime/index.ts` exports factory, types, and normalizers
-  - **Verification:** `bun test tests/agent-client.test.ts`
-  - **Files:** `src/lib/agent-runtime/factory.ts`, `src/lib/agent-runtime/index.ts`
-  - **Scope:** S
-
-- [x] **Task 2.7: Backward-Compatible Facade in `agent-runtime-client.ts`**
-  - **Description:** Refactor `src/lib/agent-runtime-client.ts` to re-export `AgentRuntimeClient` wrapping `createAgentRuntimeProvider`.
-  - **Acceptance Criteria:**
-    - [x] `src/lib/agent-runtime-client.ts` LOC reduced from 2,120 to < 80
-    - [x] All 22 tests in `tests/agent-client.test.ts` pass without modification
-  - **Verification:** `bun test tests/agent-client.test.ts`
-  - **Files:** `src/lib/agent-runtime-client.ts`
-  - **Scope:** S
-
-### Checkpoint 2: Domain Decomposition Verified
-
-- [x] TypeScript check passes (`bun run check`)
-- [x] Tests pass (`bun test tests/agent-client.test.ts tests/agents-api.test.ts`)
-
----
-
-## Phase 3: BFF Route Middleware (`withAuth`) & CQS Normalization
-
-- [x] **Task 3.1: Typed `withAuth` Route Wrapper**
-  - **Description:** Create `src/lib/api-handler.ts` providing `withAuth` higher-order function that extracts user session, standardizes 401/500 error responses, and injects `AuthenticatedContext`.
-  - **Acceptance Criteria:**
-    - [x] `withAuth` handles authentication verification, route params resolution, and centralized error logging
-  - **Verification:** `bun run check`
-  - **Files:** `src/lib/api-handler.ts`
-  - **Scope:** S
-
-- [x] **Task 3.2: Refactor Agents, Chat, and Feedback Routes**
-  - **Description:** Refactor `src/app/api/agents/route.ts`, `src/app/api/chat/route.ts`, and `src/app/api/feedback/route.ts` to use `withAuth`.
-  - **Acceptance Criteria:**
-    - [x] Routes refactored with clean declarative syntax using `withAuth`
-    - [x] Chat SSE streaming works seamlessly inside `withAuth`
-  - **Verification:** `bun test tests/agents-api.test.ts tests/chat-api.test.ts tests/feedback-api.test.ts`
-  - **Files:** `src/app/api/agents/route.ts`, `src/app/api/chat/route.ts`, `src/app/api/feedback/route.ts`
-  - **Scope:** M
-
-- [x] **Task 3.3: Refactor Sessions Routes & Eliminate CQS Mutation**
-  - **Description:** Refactor `src/app/api/sessions/route.ts` and `src/app/api/sessions/[sessionId]/route.ts` to use `withAuth`. Remove background mutating `PATCH` on `GET /api/sessions/[sessionId]`.
-  - **Acceptance Criteria:**
-    - [x] `GET /api/sessions/[sessionId]` operates as a pure, idempotent query without side-effect writes
-    - [x] All session CRUD routes use `withAuth`
-  - **Verification:** `bun test tests/sessions-api.test.ts`
-  - **Files:** `src/app/api/sessions/route.ts`, `src/app/api/sessions/[sessionId]/route.ts`
-  - **Scope:** S
-
-- [x] **Task 3.4: Refactor Uploads Routes**
-  - **Description:** Refactor `src/app/api/uploads/presign/route.ts` and `src/app/api/uploads/signed-read/route.ts` with `withAuth`.
-  - **Acceptance Criteria:**
-    - [x] Presign and signed-read routes use `withAuth` and enforce user identity prefix isolation
-  - **Verification:** `bun test tests/uploads-api.test.ts`
-  - **Files:** `src/app/api/uploads/presign/route.ts`, `src/app/api/uploads/signed-read/route.ts`
-  - **Scope:** S
-
-### Checkpoint 3: BFF Middleware & CQS Verified
-
-- [x] All API test suites pass (`bun test tests/*api*.test.ts`)
-- [x] TypeScript check passes (`bun run check`)
-
----
-
-## Phase 4: UI Tool Stream Direct Wire Protocol & Scoped Attachment Store
-
-- [x] **Task 4.1: Scoped `SessionAttachmentStore`**
-  - **Description:** Create `src/lib/attachments/attachment-store.ts` implementing `SessionAttachmentStore` with automatic `URL.revokeObjectURL` cleanup when attachments are removed.
-  - **Acceptance Criteria:**
-    - [x] `SessionAttachmentStore` provides `get`, `set`, `delete`, and `clear`
-    - [x] Removing an attachment automatically revokes its object URL to prevent memory leaks
-  - **Verification:** `bun test tests/multimodal-attachments.test.tsx`
-  - **Files:** `src/lib/attachments/attachment-store.ts`
-  - **Scope:** S
-
-- [x] **Task 4.2: Direct Structured Tool Call Emission in Chat Adapter**
-  - **Description:** Refactor `createGeminiChatAdapter` to emit native `tool-call` parts directly into `@assistant-ui/react` runtime without serializing into `:::tool[...]` string pseudo-tags.
-  - **Acceptance Criteria:**
-    - [x] `tool_call` and `tool_result` SSE events yield directly as structured `tool-call` parts in `createYieldContent`
-    - [x] String tag manipulation helpers deleted from chat adapter
-  - **Verification:** `bun test tests/tools-hitl.test.tsx`
-  - **Files:** `src/lib/gemini-runtime-adapter.ts`
-  - **Scope:** M
-
-- [x] **Task 4.3: Simplify `reasoning.tsx` Component**
-  - **Description:** Remove complex regex parsers from `src/components/assistant-ui/reasoning.tsx`, rendering reasoning text purely as styled monospace text/markdown.
-  - **Acceptance Criteria:**
-    - [x] `reasoning.tsx` LOC reduced from 382 to < 120
-    - [x] Brittle regex parsing logic eliminated
-    - [x] Tool calls rendered by `MessagePrimitive.GroupedParts` and `ToolFallback`
-  - **Verification:** `bun test tests/components.test.tsx tests/tools-hitl.test.tsx`
-  - **Files:** `src/components/assistant-ui/reasoning.tsx`
-  - **Scope:** S
-
-- [x] **Task 4.4: Decompose `gemini-runtime-adapter.ts` into Modular Adapters**
-  - **Description:** Decompose `src/lib/gemini-runtime-adapter.ts` into focused submodules in `src/lib/adapters/`: `chat-adapter.ts`, `feedback-adapter.ts`, `gcs-attachment-adapter.ts`, `speech-adapters.ts`.
-  - **Acceptance Criteria:**
-    - [x] Each adapter file under `src/lib/adapters/` has a single responsibility (< 200 LOC)
-    - [x] Re-export facade maintains backward compatibility for all existing imports
-  - **Verification:** `bun test tests/multimodal-attachments.test.tsx tests/voice-tts.test.tsx tests/feedback-ui.test.tsx`
-  - **Files:** `src/lib/adapters/chat-adapter.ts`, `src/lib/adapters/feedback-adapter.ts`, `src/lib/adapters/gcs-attachment-adapter.ts`, `src/lib/adapters/speech-adapters.ts`, `src/lib/adapters/index.ts`, `src/lib/gemini-runtime-adapter.ts`
-  - **Scope:** M
-
-### Checkpoint 4: Tool Stream & Memory Management Verified
-
-- [x] All component and adapter tests pass (`bun test tests/*.test.tsx`)
-- [x] Zero memory leaks from revoked attachment URLs
-
----
-
-## Phase 5: Final Quality Gates & Preflight
-
-- [x] **Task 5.1: Full Preflight & Production Build Validation**
-  - **Description:** Run full preflight quality suite (`bun run preflight`: format, check, lint, test) and production Next.js build (`bun run build`).
-  - **Acceptance Criteria:**
-    - [x] `bun run check` passes with 0 type errors
-    - [x] `bun run lint` passes with 0 warnings/errors
-    - [x] `bun run test` passes 100% of test suites (175/175 tests pass)
-    - [x] `bun run build` completes successfully
-  - **Verification:** `bun run preflight && bun run build`
-  - **Files:** None
-  - **Scope:** XS
+- [x] **Phase 6: Verification, Polish & Preflight**
+  - [x] **Task 10: Full Test Suite Verification and Quality Preflight**
+    - [x] Run `bun run check`, `bun run lint`, and `bun run test`.
+    - [x] Ensure `bun run preflight` exits with code 0.

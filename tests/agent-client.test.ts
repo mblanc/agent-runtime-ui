@@ -890,4 +890,131 @@ describe("AgentRuntimeClient", () => {
       expect(codeSessions.some((s) => s.id === newSession.id)).toBe(true);
     });
   });
+
+  describe("Vertex AI Memory Bank Scope-based Retrieval", () => {
+    it("fetches memories via POST :retrieve scope endpoint and normalizes Vertex AI resource format", async () => {
+      const { VertexAiReasoningEngineProvider } =
+        await import("@/lib/agent-runtime/client");
+
+      const provider = new VertexAiReasoningEngineProvider(
+        "projects/test-proj/locations/us-central1/reasoningEngines/industry-watch",
+        "us-central1",
+        () => Promise.resolve("mock-token")
+      );
+
+      let requestedUrl = "";
+      let requestedBody: Record<string, unknown> = {};
+
+      global.fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+        requestedUrl = url;
+        requestedBody = JSON.parse((init?.body as string) || "{}");
+
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              retrievedMemories: [
+                {
+                  memory: {
+                    name: "projects/test-proj/locations/us-central1/reasoningEngines/industry-watch/memories/mem-12345",
+                    fact: "Focuses on enterprise semiconductor market trends",
+                    scope: {
+                      user_id: "107197175468507396372",
+                    },
+                    topics: {
+                      managedMemoryTopic: "USER_PREFERENCES",
+                    },
+                    createTime: "2026-08-10T12:00:00Z",
+                    updateTime: "2026-08-10T12:00:00Z",
+                  },
+                  distance: 0.15,
+                },
+              ],
+            }),
+        });
+      }) as unknown as typeof fetch;
+
+      const memories = await provider.listMemories("107197175468507396372");
+
+      expect(requestedUrl).toContain("/memories:retrieve");
+      expect(requestedBody).toEqual({
+        scope: {
+          user_id: "107197175468507396372",
+        },
+      });
+
+      expect(memories.length).toBe(1);
+      expect(memories[0].id).toBe("mem-12345");
+      expect(memories[0].userId).toBe("107197175468507396372");
+      expect(memories[0].fact).toBe("Focuses on enterprise semiconductor market trends");
+      expect(memories[0].topic).toBe("user_preferences");
+      expect(memories[0].confidenceScore).toBeCloseTo(0.85);
+    });
+
+    it("sends valid Memory protobuf payload on PATCH updateMemory with updateMask and without unknown fields", async () => {
+      const { VertexAiReasoningEngineProvider } =
+        await import("@/lib/agent-runtime/client");
+
+      const provider = new VertexAiReasoningEngineProvider(
+        "projects/test-proj/locations/us-central1/reasoningEngines/industry-watch",
+        "us-central1",
+        () => Promise.resolve("mock-token")
+      );
+
+      let requestedUrl = "";
+      let requestedMethod = "";
+      let requestedBody: Record<string, unknown> = {};
+
+      global.fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+        requestedUrl = url;
+        requestedMethod = init?.method || "GET";
+        requestedBody = JSON.parse((init?.body as string) || "{}");
+
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              name: "projects/test-proj/locations/us-central1/reasoningEngines/industry-watch/memories/mem-12345",
+              fact: "Prefers concise weekly summaries of semiconductor market",
+              scope: {
+                user_id: "107197175468507396372",
+              },
+              topics: {
+                managedMemoryTopic: "USER_PREFERENCES",
+              },
+              createTime: "2026-08-10T12:00:00Z",
+              updateTime: "2026-08-10T12:30:00Z",
+            }),
+        });
+      }) as unknown as typeof fetch;
+
+      const updated = await provider.updateMemory(
+        "107197175468507396372",
+        "mem-12345",
+        "Prefers concise weekly summaries of semiconductor market",
+        "user_preferences"
+      );
+
+      expect(requestedMethod).toBe("PATCH");
+      expect(requestedUrl).toContain("updateMask=fact%2Ctopics");
+      // Must NOT contain unknown fields userId, user_id, topic
+      expect(requestedBody).not.toHaveProperty("userId");
+      expect(requestedBody).not.toHaveProperty("user_id");
+      expect(requestedBody).not.toHaveProperty("topic");
+      // Must contain fact and topics
+      expect(requestedBody).toHaveProperty("fact");
+      expect(requestedBody).toHaveProperty("topics");
+      expect(requestedBody.topics).toEqual({
+        managed_memory_topic: {
+          managed_topic_enum: "USER_PREFERENCES",
+        },
+      });
+
+      expect(updated.id).toBe("mem-12345");
+      expect(updated.fact).toBe(
+        "Prefers concise weekly summaries of semiconductor market"
+      );
+      expect(updated.topic).toBe("user_preferences");
+    });
+  });
 });

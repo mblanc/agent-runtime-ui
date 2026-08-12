@@ -1,4 +1,9 @@
-import { AgentSession, AgentSessionEvent, DeployedAgent } from "@/types/agent";
+import {
+  AgentMemory,
+  AgentSession,
+  AgentSessionEvent,
+  DeployedAgent,
+} from "@/types/agent";
 
 export const mockAgentsStore: DeployedAgent[] = [
   {
@@ -176,5 +181,73 @@ export const mockSessionEventsStore = new Map<string, AgentSessionEvent[]>([
         createTime: new Date(Date.now() - 8 * 60 * 60 * 1000 + 3500).toISOString(),
       },
     ],
+  ],
+]);
+
+export const mockMemoriesStore = new Map<string, AgentMemory>([
+  [
+    "mem-1",
+    {
+      id: "mem-1",
+      userId: "test-user",
+      fact: "Prefers TypeScript with strict typing over vanilla JS",
+      topic: "coding_preferences",
+      confidenceScore: 0.95,
+      createTime: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+      updateTime: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+      lastUsedTime: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
+    },
+  ],
+  [
+    "mem-2",
+    {
+      id: "mem-2",
+      userId: "test-user",
+      fact: "Always uses Bun package manager and Tailwind CSS v3",
+      topic: "coding_preferences",
+      confidenceScore: 0.98,
+      createTime: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(),
+      updateTime: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(),
+      lastUsedTime: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+    },
+  ],
+  [
+    "mem-3",
+    {
+      id: "mem-3",
+      userId: "test-user",
+      fact: "Project Lead for Cloud Migration in europe-west1",
+      topic: "enterprise_context",
+      confidenceScore: 0.9,
+      createTime: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+      updateTime: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+      lastUsedTime: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
+    },
+  ],
+  [
+    "mem-4",
+    {
+      id: "mem-4",
+      userId: "test-user",
+      fact: "Uses Vertex AI Agent Runtime with PKCE authentication",
+      topic: "enterprise_context",
+      confidenceScore: 0.92,
+      createTime: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
+      updateTime: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
+      lastUsedTime: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+    },
+  ],
+  [
+    "mem-5",
+    {
+      id: "mem-5",
+      userId: "test-user",
+      fact: "Prefers concise technical explanations with code diffs",
+      topic: "communication_style",
+      confidenceScore: 0.88,
+      createTime: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+      updateTime: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+      lastUsedTime: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
+    },
   ],
 ]);

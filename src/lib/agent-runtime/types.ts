@@ -1,11 +1,13 @@
 import type {
   AgentFeedbackRequest,
   AgentFeedbackResponse,
+  AgentMemory,
   AgentSession,
   AgentSessionEvent,
   AgentStreamEvent,
   ChatRequestBody,
   ListAgentsResponse,
+  MemoryRetrievalItem,
 } from "@/types/agent";
 
 export interface IAgentRuntimeProvider {
@@ -38,6 +40,45 @@ export interface IAgentRuntimeProvider {
     request: AgentFeedbackRequest,
     userId: string
   ): Promise<AgentFeedbackResponse>;
+  listMemories(
+    userId: string,
+    topic?: string,
+    agentId?: string,
+    location?: string
+  ): Promise<AgentMemory[]>;
+  createMemory(
+    userId: string,
+    fact: string,
+    topic?: string,
+    agentId?: string,
+    location?: string
+  ): Promise<AgentMemory>;
+  updateMemory(
+    userId: string,
+    memoryId: string,
+    fact: string,
+    topic?: string,
+    agentId?: string,
+    location?: string
+  ): Promise<AgentMemory>;
+  deleteMemory(
+    userId: string,
+    memoryId: string,
+    agentId?: string,
+    location?: string
+  ): Promise<void>;
+  generateMemories(
+    userId: string,
+    sessionId: string,
+    agentId?: string,
+    location?: string
+  ): Promise<AgentMemory[]>;
+  retrieveMemories(
+    userId: string,
+    query: string,
+    agentId?: string,
+    location?: string
+  ): Promise<MemoryRetrievalItem[]>;
   streamQuery(
     request: ChatRequestBody,
     userId: string
