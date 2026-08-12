@@ -119,8 +119,9 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
     return `projects/${this.projectId}/locations/${loc}/reasoningEngines/${targetEngine}`;
   }
 
-  private getSessionsBaseUrl(customEngineId?: string): string {
-    const targetEngine = this.resolveEngineId(customEngineId) || this.reasoningEngineId;
+  private async getSessionsBaseUrl(customEngineId?: string): Promise<string> {
+    const resolved = await this.resolveEngineIdAsync(customEngineId);
+    const targetEngine = resolved || this.reasoningEngineId;
     let loc = this.location;
     if (targetEngine.startsWith("projects/")) {
       const match = targetEngine.match(/^projects\/[^/]+\/locations\/([^/]+)\//);
@@ -283,12 +284,26 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
           for (const agent of res.value) {
             engines.push(agent);
             if (agent.displayName && agent.id) {
+              const lower = agent.displayName.toLowerCase();
+              VertexAiReasoningEngineProvider.engineDisplayNameMap.set(lower, agent.id);
               VertexAiReasoningEngineProvider.engineDisplayNameMap.set(
-                agent.displayName.toLowerCase(),
+                agent.displayName,
                 agent.id
               );
               VertexAiReasoningEngineProvider.engineDisplayNameMap.set(
-                agent.displayName,
+                lower.replace(/[\s_]+/g, "-"),
+                agent.id
+              );
+              VertexAiReasoningEngineProvider.engineDisplayNameMap.set(
+                lower.replace(/[\s-]+/g, "_"),
+                agent.id
+              );
+              VertexAiReasoningEngineProvider.engineDisplayNameMap.set(
+                lower.replace(/[-_]/g, " "),
+                agent.id
+              );
+              VertexAiReasoningEngineProvider.engineDisplayNameMap.set(
+                agent.id,
                 agent.id
               );
             }
@@ -340,7 +355,8 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
       const accessToken = await this.getAccessToken();
 
       const fetchSessionsByFilter = async (filterVal: string) => {
-        const url = new URL(this.getSessionsBaseUrl(reasoningEngineId));
+        const baseUrl = await this.getSessionsBaseUrl(reasoningEngineId);
+        const url = new URL(baseUrl);
         if (filterVal) {
           url.searchParams.set("filter", `user_id="${filterVal}"`);
         }
@@ -427,7 +443,8 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
   ): Promise<AgentSession> {
     try {
       const accessToken = await this.getAccessToken();
-      const response = await fetch(this.getSessionsBaseUrl(reasoningEngineId), {
+      const baseUrl = await this.getSessionsBaseUrl(reasoningEngineId);
+      const response = await fetch(baseUrl, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -1262,12 +1279,8 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
         ...(body.runConfig || {}),
       };
 
-      const inputPayload: Record<string, unknown> = {
-        message: lastUserMessage,
-        user_id: userId,
-        ...(cleanSessionId ? { session_id: cleanSessionId } : {}),
-        run_config: resolvedRunConfig,
-      };
+      let resolvedMessage: unknown = lastUserMessage;
+      let resolvedParts: Array<Record<string, unknown>> | undefined = undefined;
 
       const nonTextParts = lastUserMsgObj?.parts?.filter(
         (p) =>
@@ -1282,7 +1295,7 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
       );
 
       if (nonTextParts && nonTextParts.length > 0 && lastUserMsgObj?.parts) {
-        inputPayload.parts = lastUserMsgObj.parts.map((p) => {
+        const mappedParts = lastUserMsgObj.parts.map((p) => {
           if (p.file_data) {
             return {
               file_data: {
@@ -1311,14 +1324,36 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
           }
           return { text: p.text || "" };
         });
-      }
 
-      if (fnResponsePart) {
+        const hasFunctionResponse = mappedParts.some((p) => p.function_response);
+        if (hasFunctionResponse) {
+          resolvedMessage = {
+            role: "user",
+            parts: mappedParts,
+          };
+        } else {
+          resolvedParts = mappedParts;
+        }
+      } else if (fnResponsePart) {
         const fnResp =
           fnResponsePart.function_response || fnResponsePart.functionResponse;
-        inputPayload.function_response = fnResp;
-        inputPayload.functionResponse = fnResp;
+        resolvedMessage = {
+          role: "user",
+          parts: [
+            {
+              function_response: fnResp,
+            },
+          ],
+        };
       }
+
+      const inputPayload: Record<string, unknown> = {
+        message: resolvedMessage,
+        user_id: userId,
+        ...(resolvedParts ? { parts: resolvedParts } : {}),
+        ...(cleanSessionId ? { session_id: cleanSessionId } : {}),
+        run_config: resolvedRunConfig,
+      };
 
       const response = await fetch(endpoint, {
         method: "POST",
