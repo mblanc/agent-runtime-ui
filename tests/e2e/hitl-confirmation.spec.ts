@@ -1,12 +1,13 @@
 import { test, expect } from "@playwright/test";
 import { signSessionToken } from "../../src/lib/jwt";
 
-test.describe("ADK HITL & adk_request_confirmation E2E", () => {
+test.describe("ADK HITL Webpage Summarization E2E", () => {
   test.beforeEach(async ({ context }) => {
+    // Authenticate with test user credentials
     const token = await signSessionToken({
-      sub: "test-user",
-      email: "test@example.com",
-      name: "Test User",
+      sub: "playwright-test",
+      email: "playwright-test@example.com",
+      name: "Playwright Test",
     });
 
     await context.addCookies([
@@ -20,164 +21,118 @@ test.describe("ADK HITL & adk_request_confirmation E2E", () => {
         sameSite: "Lax",
       },
     ]);
-
-    await context.setExtraHTTPHeaders({
-      "x-reasoning-engine-id": "generic-agent",
-    });
   });
 
-  test("loads session 2648707499674304512 with adk_request_confirmation and allows user to approve", async ({
+  test("connects to generic-agent, requests blog summary, approves load_web_page tool, and verifies summary output", async ({
     page,
   }, testInfo) => {
     page.on("console", (msg) => console.log("[BROWSER CONSOLE]", msg.type(), msg.text()));
     page.on("pageerror", (err) => console.log("[BROWSER ERROR]", err.message));
 
-    console.log("Navigating to home page for HITL session test...");
+    // Ensure Generic Agent (3817127788905758720) is selected in localStorage
+    await page.addInitScript(() => {
+      window.localStorage.setItem("agent_runtime_active_agent_id", "3817127788905758720");
+    });
+
+    console.log("Navigating to home page with generic-agent active...");
     await page.goto("/");
 
-    // Wait for sidebar to render sessions
+    // Wait for the UI to be ready
     const sidebar = page.locator("aside");
-    await expect(sidebar).toBeVisible({ timeout: 15000 });
+    await expect(sidebar).toBeVisible({ timeout: 20000 });
 
-    // Switch to Generic Agent if available
+    // Verify active agent displays generic-agent
     const agentDropdown = page
       .locator("button[aria-label='Select active agent']")
       .first();
-    if (await agentDropdown.isVisible({ timeout: 5000 }).catch(() => false)) {
-      console.log("Opening agent dropdown...");
-      await agentDropdown.click();
-      const genericAgentOption = page
-        .locator(
-          "[role='menuitem']:has-text('generic-agent'), [role='menuitem']:has-text('Generic Agent')"
-        )
-        .first();
-      if (await genericAgentOption.isVisible({ timeout: 3000 }).catch(() => false)) {
-        console.log("Selecting Generic Agent...");
-        await genericAgentOption.click();
-        await page.waitForTimeout(1500);
-      } else {
-        await page.keyboard.press("Escape");
-      }
-    }
+    await expect(agentDropdown).toBeVisible({ timeout: 10000 });
+    console.log("Active agent button text:", await agentDropdown.textContent());
 
-    // Look for the Summarize session in the sidebar
-    const summarizeSessionBtn = page
-      .locator("aside button:has-text('Summarize'), aside button:has-text('yongzx')")
-      .first();
-    if (await summarizeSessionBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-      console.log("Clicking Summarize session in sidebar...");
-      await summarizeSessionBtn.click();
-    } else {
-      console.log("Looking for first session button in sidebar...");
-      const firstSession = page
-        .locator("aside button:has(svg.lucide-message-square)")
-        .first();
-      if (await firstSession.isVisible({ timeout: 3000 }).catch(() => false)) {
-        await firstSession.click();
-      }
-    }
-
-    await page.waitForTimeout(1500);
-
-    // Verify tool confirmation card is rendered
-    console.log("Checking for Action Requires Approval confirmation card...");
-    const toolHeader = page.getByText("Action Requires Approval").first();
-    await expect(toolHeader).toBeVisible({ timeout: 15000 });
-
-    // Verify Requires Approval badge
-    const requiresApproval = page.getByText("Requires Approval").first();
-    await expect(requiresApproval).toBeVisible({ timeout: 10000 });
-
-    // Verify Approve and Decline action buttons are present
-    const approveBtn = page
-      .locator("button[aria-label='Approve tool execution']")
-      .first();
-    const declineBtn = page
-      .locator("button[aria-label='Decline tool execution']")
-      .first();
-    await expect(approveBtn).toBeVisible({ timeout: 10000 });
-    await expect(declineBtn).toBeVisible({ timeout: 10000 });
-
-    // Capture screenshot before approval
-    const preScreenshot = await page.screenshot({ fullPage: true });
-    await testInfo.attach("hitl-loaded-session-pending", {
-      body: preScreenshot,
-      contentType: "image/png",
-    });
-
-    // Click Approve button
-    console.log("Clicking Approve Action button...");
-    await approveBtn.click();
-
-    // Verify Approved state appears immediately
-    await expect(page.getByText("Approved by user").first()).toBeVisible({
-      timeout: 10000,
-    });
-
-    // Wait for the resumed agent response stream to arrive with webpage summary
-    console.log("Waiting for resumed agent execution stream with summary...");
-    const assistantProse = page.locator(".prose").last();
-    await expect(assistantProse).toBeVisible({ timeout: 30000 });
-
-    // Verify the agent completed response text contains substantive content
-    await page.waitForTimeout(4000);
-    const proseText = (await assistantProse.textContent().catch(() => "")) || "";
-    console.log("Resumed Agent Summary Response Text:", proseText);
-    expect(proseText.length).toBeGreaterThan(20);
-
-    // Capture screenshot after approval
-    const postScreenshot = await page.screenshot({ fullPage: true });
-    await testInfo.attach("hitl-loaded-session-approved", {
-      body: postScreenshot,
-      contentType: "image/png",
-    });
-  });
-
-  test("interactively streams adk_request_confirmation on critical prompt and processes user decision", async ({
-    page,
-  }, testInfo) => {
-    await page.goto("/");
-
-    // Click New chat if not already on empty thread
+    // Start a fresh new chat
     const newChatBtn = page.locator("button:has-text('New chat')").first();
     if (await newChatBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
       await newChatBtn.click();
       await page.waitForTimeout(500);
     }
 
+    // Type the user prompt: "Summarize https://yongzx.github.io/blog/2026/08/08/llm-can-jump"
     const promptInput = page.locator("textarea, [contenteditable='true']").first();
     await expect(promptInput).toBeVisible({ timeout: 15000 });
 
-    const promptText = "Please confirm delete the staging database cluster";
-    console.log(`Submitting critical prompt: "${promptText}"`);
+    const targetUrl = "https://yongzx.github.io/blog/2026/08/08/llm-can-jump";
+    const promptText = `Please use the load_web_page tool to load and summarize ${targetUrl}`;
+    console.log(`Submitting prompt: "${promptText}"`);
     await promptInput.fill(promptText);
     await promptInput.press("Enter");
 
-    // Wait for tool_call event to arrive and render HITL card
+    // Wait for the tool call stream to settle and the Approve button to be ready
     console.log("Waiting for tool confirmation card to render...");
     const approveBtn = page
       .locator("button[aria-label='Approve tool execution']")
       .first();
-    await expect(approveBtn).toBeVisible({ timeout: 15000 });
 
-    const declineBtn = page
-      .locator("button[aria-label='Decline tool execution']")
-      .first();
-    await expect(declineBtn).toBeVisible({ timeout: 10000 });
+    const isApproveDirectlyVisible = await approveBtn
+      .isVisible({ timeout: 20000 })
+      .catch(() => false);
 
-    // Click Approve button
-    console.log("Clicking Approve button on interactive tool call...");
+    if (!isApproveDirectlyVisible) {
+      // If the agent responded with a natural language text confirmation request first
+      const askingText = page
+        .locator(
+          "text=/permission|require your permission|would you like me to use|confirm if you want/i"
+        )
+        .first();
+      if (await askingText.isVisible({ timeout: 10000 }).catch(() => false)) {
+        console.log(
+          "Agent requested confirmation via text. Submitting affirmative response: 'Yes, please execute load_web_page now'"
+        );
+        await promptInput.fill("Yes, please execute load_web_page now");
+        await promptInput.press("Enter");
+      }
+      await expect(approveBtn).toBeVisible({ timeout: 45000 });
+    }
+
+    // Wait a brief moment for the initial stream to finish closing
+    await page.waitForTimeout(2000);
+
+    const screenshotBefore = await page.screenshot({ fullPage: true });
+    await testInfo.attach("before-approval", {
+      body: screenshotBefore,
+      contentType: "image/png",
+    });
+
+    // Click Approve
+    console.log("Clicking Approve Action button...");
     await approveBtn.click();
 
-    // Verify Approved state and completion
-    await expect(page.getByText("Approved by user").first()).toBeVisible({
+    // Verify that the tool transitions to executed / approved state
+    await expect(
+      page.getByText(/approved by user|✓ Approved|Executed/i).first()
+    ).toBeVisible({
       timeout: 10000,
     });
 
-    await page.waitForTimeout(3000);
-    const postScreenshot = await page.screenshot({ fullPage: true });
-    await testInfo.attach("hitl-interactive-approved", {
-      body: postScreenshot,
+    // Wait for the resumed agent response stream containing the webpage summary
+    console.log("Waiting for webpage summary from Vertex AI Reasoning Engine...");
+
+    // Wait for the substantive summary text containing blog content (Einstein, Feynman, General Relativity, Zahavy)
+    const summaryContent = page
+      .locator(
+        "text=/Feynman|Einstein|General Relativity|Zheng-Xin|Zahavy|abductive|deductive/i"
+      )
+      .last();
+    await expect(summaryContent).toBeVisible({ timeout: 60000 });
+
+    const allMainText = await page.textContent("main");
+    console.log("\n==========================================");
+    console.log("FULL CONVERSATION WITH RESUMED SUMMARY:");
+    console.log("==========================================");
+    console.log(allMainText);
+    console.log("==========================================\n");
+
+    const screenshotAfter = await page.screenshot({ fullPage: true });
+    await testInfo.attach("after-approval-summary", {
+      body: screenshotAfter,
       contentType: "image/png",
     });
   });

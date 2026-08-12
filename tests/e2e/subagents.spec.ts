@@ -34,6 +34,11 @@ test.describe("Subagent Reasoning & Main Answer E2E", () => {
   test("interactive mode streams subagents into thinking box and main answer into main response", async ({
     page,
   }, testInfo) => {
+    // Ensure Subagent engine (6238058879222022144) is selected in localStorage
+    await page.addInitScript(() => {
+      window.localStorage.setItem("agent_runtime_active_agent_id", "6238058879222022144");
+    });
+
     console.log("Navigating to home page...");
     await page.goto("/");
 

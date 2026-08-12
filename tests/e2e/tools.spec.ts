@@ -40,6 +40,11 @@ test.describe("Tool Calling & Reasoning E2E", () => {
       console.log("[REQUEST FAILED]", req.url(), req.failure()?.errorText)
     );
 
+    // Ensure Tools engine (1295472637392191488) is selected in localStorage
+    await page.addInitScript(() => {
+      window.localStorage.setItem("agent_runtime_active_agent_id", "1295472637392191488");
+    });
+
     console.log("Navigating to home page for tool calling test...");
     await page.goto("/");
 

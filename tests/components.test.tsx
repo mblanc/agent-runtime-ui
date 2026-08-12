@@ -48,7 +48,7 @@ describe("UI Components", () => {
     expect(button.textContent).toBe("Ask Agent");
   });
 
-  it("renders ReasoningRoot and expands with animated dots during streaming", () => {
+  it("renders ReasoningRoot collapsed by default and expands on click", () => {
     render(
       <ReasoningRoot streaming={true}>
         <ReasoningTrigger active={true} />
@@ -58,14 +58,23 @@ describe("UI Components", () => {
       </ReasoningRoot>
     );
 
-    expect(screen.getByText("Agent is working...")).toBeDefined();
-    expect(screen.getByText("Detailed Agent Deliberation Trace")).toBeDefined();
+    // Collapsed by default
+    expect(screen.queryByText("Detailed Agent Deliberation Trace")).toBeNull();
 
+    // Click trigger to expand reasoning root
     const trigger = screen.getByRole("button", {
       name: /thinking\.\.\.|thinking process/i,
     });
     fireEvent.click(trigger);
-    expect(screen.queryByText("Detailed Agent Deliberation Trace")).toBeNull();
+
+    expect(screen.getByText("Agent is working...")).toBeDefined();
+
+    // Thought collapsible inside is also collapsed by default
+    const thoughtTrigger = screen.getByRole("button", { name: /thought/i });
+    expect(thoughtTrigger).toBeDefined();
+    fireEvent.click(thoughtTrigger);
+
+    expect(screen.getByText("Detailed Agent Deliberation Trace")).toBeDefined();
   });
 
   it("renders SubAgentCollapsible with disclosure triangle toggle and badges", () => {
@@ -126,6 +135,23 @@ describe("UI Components", () => {
     expect(
       screen.queryByText("First retrieve 10-K filings, then synthesize revenue metrics.")
     ).toBeNull();
+  });
+
+  it("renders markdown formatting inside ThoughtCollapsible body", () => {
+    render(
+      <ThoughtCollapsible
+        title="Web Extraction"
+        thought="**Fetching Web Content** with `load_web_page` and *summarizing* results."
+        status="complete"
+      />
+    );
+
+    const trigger = screen.getByRole("button", { name: /web extraction/i });
+    fireEvent.click(trigger);
+
+    expect(screen.getByText("Fetching Web Content")).toBeDefined();
+    expect(screen.getByText("load_web_page")).toBeDefined();
+    expect(screen.getByText("summarizing")).toBeDefined();
   });
 
   it("renders ReasoningText and parses structured subagent, tool, and thought tags into interactive components", () => {

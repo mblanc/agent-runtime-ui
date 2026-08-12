@@ -4,6 +4,7 @@ import {
   AssistantRuntimeProvider,
   useLocalRuntime,
   useRemoteThreadListRuntime,
+  type AssistantRuntime,
 } from "@assistant-ui/react";
 import {
   createGeminiChatAdapter,
@@ -46,14 +47,28 @@ function ChatContent() {
     activeAgent?.id
   );
 
+  const runtimeRef = useRef<AssistantRuntime | null>(null);
+
+  const getThreadMessages = useCallback(() => {
+    try {
+      return (
+        runtimeRef.current?.thread?.getState()?.messages ||
+        runtimeRef.current?.threads?.main?.getState()?.messages
+      );
+    } catch {
+      return undefined;
+    }
+  }, []);
+
   const chatAdapter = useMemo(
     () =>
       createGeminiChatAdapter(
         () => activeThreadIdRef.current,
         () => activeAgentIdRef.current,
-        () => activeLocationRef.current
+        () => activeLocationRef.current,
+        getThreadMessages
       ),
-    []
+    [getThreadMessages]
   );
 
   const feedbackAdapter = useMemo(
@@ -88,6 +103,8 @@ function ChatContent() {
     adapter: sessionListAdapter,
     onThreadIdChange: handleThreadIdChange,
   });
+
+  runtimeRef.current = runtime;
 
   const handleAgentChange = useCallback(() => {
     runtime.threads.switchToNewThread();

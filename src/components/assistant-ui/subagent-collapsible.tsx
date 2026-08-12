@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, ReactNode } from "react";
+import { Streamdown } from "streamdown";
 import {
   ChevronDown,
   ChevronRight,
@@ -131,8 +132,8 @@ export function SubAgentCollapsible({
                   Response
                 </div>
               )}
-              <div className="whitespace-pre-wrap font-sans text-[13px] leading-relaxed text-[#1f1f1f] dark:text-[#e3e3e3]">
-                {bodyText}
+              <div className="prose prose-neutral dark:prose-invert max-w-none text-[13px] leading-relaxed text-[#1f1f1f] dark:text-[#e3e3e3]">
+                <Streamdown>{bodyText}</Streamdown>
               </div>
             </div>
           ) : children ? (

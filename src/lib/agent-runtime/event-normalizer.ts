@@ -546,10 +546,17 @@ export function parseRawSessionEvent(
     result: Record<string, unknown>;
   }> = [];
 
+  const visitedObjects = new Set<unknown>();
+
   const inspectObject = (obj: unknown) => {
     if (!obj) return;
     const parsedObj = safeParseJson(obj);
     if (!parsedObj) return;
+
+    if (typeof parsedObj === "object" && parsedObj !== null) {
+      if (visitedObjects.has(parsedObj)) return;
+      visitedObjects.add(parsedObj);
+    }
 
     if (typeof parsedObj === "string") {
       const trimmed = parsedObj.trim();

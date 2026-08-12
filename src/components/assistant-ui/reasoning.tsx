@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useState, useEffect, useMemo } from "react";
+import { ReactNode, useState, useMemo } from "react";
 import { ChevronDown, ChevronRight, BrainCircuit, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SubAgentCollapsible } from "./subagent-collapsible";
@@ -22,14 +22,7 @@ export function ReasoningRoot({
   defaultOpen = false,
   className,
 }: ReasoningRootProps) {
-  const [isOpen, setIsOpen] = useState(defaultOpen || streaming);
-
-  // Auto-expand while streaming, retain state once manual toggle occurs
-  useEffect(() => {
-    if (streaming) {
-      setIsOpen(true);
-    }
-  }, [streaming]);
+  const [isOpen, setIsOpen] = useState(defaultOpen);
 
   return (
     <div
@@ -416,7 +409,7 @@ export function ReasoningText({
             title={block.title || "Thought"}
             thought={block.content}
             status={block.meta?.status || (isBlockRunning ? "running" : "complete")}
-            defaultOpen={defaultOpen || (streaming && isLastBlock)}
+            defaultOpen={defaultOpen}
           />
         );
       })}

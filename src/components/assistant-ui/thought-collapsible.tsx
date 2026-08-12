@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, ReactNode } from "react";
+import { useState, ReactNode } from "react";
+import { Streamdown } from "streamdown";
 import {
   ChevronDown,
   ChevronRight,
@@ -30,14 +31,7 @@ export function ThoughtCollapsible({
 }: ThoughtCollapsibleProps) {
   const isRunning = status === "running";
   const isError = status === "error";
-  const [isOpen, setIsOpen] = useState(defaultOpen || isRunning);
-
-  // Auto-expand when running/streaming
-  useEffect(() => {
-    if (isRunning) {
-      setIsOpen(true);
-    }
-  }, [isRunning]);
+  const [isOpen, setIsOpen] = useState(defaultOpen);
 
   const bodyText = thought;
 
@@ -105,11 +99,11 @@ export function ThoughtCollapsible({
       {isOpen && (
         <div className="border-t border-[#e3e3e3] bg-white/60 p-3.5 dark:border-[#333537] dark:bg-[#141517]/80">
           {bodyText ? (
-            <div className="whitespace-pre-wrap font-sans text-[13px] leading-relaxed text-[#1f1f1f] dark:text-[#e3e3e3]">
-              {bodyText}
+            <div className="prose prose-neutral dark:prose-invert max-w-none text-[13px] leading-relaxed text-[#1f1f1f] dark:text-[#e3e3e3]">
+              <Streamdown>{bodyText}</Streamdown>
             </div>
           ) : children ? (
-            <div className="whitespace-pre-wrap font-sans text-[13px] leading-relaxed text-[#1f1f1f] dark:text-[#e3e3e3]">
+            <div className="font-sans text-[13px] leading-relaxed text-[#1f1f1f] dark:text-[#e3e3e3]">
               {children}
             </div>
           ) : isRunning ? (

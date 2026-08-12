@@ -1,6 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { useMemo } from "react";
 import { NextRequest } from "next/server";
 import { useLocalRuntime, AssistantRuntimeProvider } from "@assistant-ui/react";
 import type { ToolCallMessagePartProps } from "@assistant-ui/react";
@@ -591,7 +590,7 @@ describe("ToolFallback & ADK HITL Integration", () => {
         );
       };
 
-      const { container } = render(<TestApprovalFlow />);
+      render(<TestApprovalFlow />);
 
       // Verify ToolFallback renders approval UI
       const toolCallPart = {
@@ -628,13 +627,13 @@ describe("ToolFallback & ADK HITL Integration", () => {
         } as Parameters<typeof adapter.run>[0]);
 
         if (Symbol.asyncIterator in generator) {
-          for await (const _ of generator) {
-            // consume generator
+          for await (const chunk of generator) {
+            void chunk;
           }
         }
       });
 
-      const { rerender } = render(
+      render(
         <ToolFallback
           {...toolCallPart}
           addResult={handleAddResult as unknown as ToolCallMessagePartProps["addResult"]}
@@ -662,6 +661,84 @@ describe("ToolFallback & ADK HITL Integration", () => {
         name: "adk_request_confirmation",
         response: { confirmed: true },
       });
+    });
+
+    it("sends user text message and does NOT resurrect previous tool approval function response on follow-up turns", async () => {
+      const fetchSpy = vi.fn().mockResolvedValue(
+        new Response(
+          'data: {"content": "Here is your poem about Copenhagen..."}\n\ndata: [DONE]\n\n',
+          {
+            headers: { "Content-Type": "text/event-stream" },
+          }
+        )
+      );
+      global.fetch = fetchSpy as unknown as typeof fetch;
+
+      const adapter = createGeminiChatAdapter(() => "session-multi-turn");
+
+      // Conversation history: Turn 1 (ask summary), Turn 2 (assistant tool + summary), Turn 3 (user ask poem)
+      const historyMessages = [
+        {
+          id: "msg-1",
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Summarize https://yongzx.github.io/blog/2026/08/08/llm-can-jump",
+            },
+          ],
+          createdAt: new Date(),
+          status: { type: "complete", reason: "stop" },
+        },
+        {
+          id: "msg-2",
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolName: "adk_request_confirmation",
+              toolCallId: "adk-12345",
+              args: { originalFunctionCall: { name: "load_web_page" } },
+              result: { confirmed: true },
+            },
+            {
+              type: "text",
+              text: "The article argues that LLMs can jump...",
+            },
+          ],
+          createdAt: new Date(),
+          status: { type: "complete", reason: "stop" },
+        },
+        {
+          id: "msg-3",
+          role: "user",
+          content: [{ type: "text", text: "Generate a Poem about Copenhaguen" }],
+          createdAt: new Date(),
+          status: { type: "complete", reason: "stop" },
+        },
+      ];
+
+      const generator = adapter.run({
+        messages: historyMessages as unknown as Parameters<
+          typeof adapter.run
+        >[0]["messages"],
+        abortSignal: new AbortController().signal,
+      } as Parameters<typeof adapter.run>[0]);
+
+      if (Symbol.asyncIterator in generator) {
+        for await (const chunk of generator) {
+          void chunk;
+        }
+      }
+
+      expect(fetchSpy).toHaveBeenCalled();
+      const sentPayload = JSON.parse(fetchSpy.mock.calls[0][1].body);
+
+      // The last message in sentPayload.messages must be the user's poem prompt
+      const lastMsg = sentPayload.messages[sentPayload.messages.length - 1];
+      expect(lastMsg.role).toBe("user");
+      expect(lastMsg.content).toBe("Generate a Poem about Copenhaguen");
+      expect(lastMsg.parts).toEqual([{ text: "Generate a Poem about Copenhaguen" }]);
     });
   });
 });

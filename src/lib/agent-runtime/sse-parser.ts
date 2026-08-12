@@ -98,6 +98,7 @@ export async function* parseSseStream(
                   event_type: "tool_call",
                   tool_call: {
                     name,
+                    id: fnCall.id || fnCall.call_id || fnCall.callId,
                     args: fnCall.args,
                     ...(isReqAction
                       ? {
@@ -117,6 +118,7 @@ export async function* parseSseStream(
                   event_type: "tool_result",
                   tool_result: {
                     name,
+                    id: fnResp.id || fnResp.call_id || fnResp.callId,
                     result: (fnResp.response as Record<string, unknown>) || {},
                   },
                   ...(eventId ? { eventId } : {}),

@@ -37,6 +37,7 @@ export interface ToolFallbackProps {
 }
 
 export function ToolFallback({
+  toolCallId,
   toolName = "tool_call",
   args,
   argsText,
@@ -191,17 +192,53 @@ export function ToolFallback({
     if (isSubmitting || submittedDecision) return;
     setIsSubmitting(true);
     try {
+      let handled = false;
       const payload = { confirmed: true, approved: true };
+
       if (addResult) {
-        addResult({ confirmed: true });
-      } else if (respondToApproval) {
-        respondToApproval(payload);
-      } else if (resume) {
-        resume(payload);
-      } else if (aui?.thread?.append) {
+        try {
+          addResult({ confirmed: true });
+          handled = true;
+        } catch {
+          handled = false;
+        }
+      }
+      if (!handled && respondToApproval) {
+        try {
+          respondToApproval(payload);
+          handled = true;
+        } catch {
+          handled = false;
+        }
+      }
+      if (!handled && resume) {
+        try {
+          resume(payload);
+          handled = true;
+        } catch {
+          handled = false;
+        }
+      }
+      if (!handled && aui?.thread?.append) {
+        const id = toolCallId || "adk_request_confirmation";
+        const name = toolName || "adk_request_confirmation";
         aui.thread.append({
           role: "user",
-          content: [{ type: "text", text: "Yes, I approve and confirm this action." }],
+          content: [
+            {
+              type: "text",
+              text: `[TOOL_CONFIRMATION_RESPONSE:${id}:${name}:true]`,
+            },
+          ],
+          metadata: {
+            custom: {
+              toolApproval: {
+                id,
+                name,
+                confirmed: true,
+              },
+            },
+          },
         });
       }
       setSubmittedDecision("approved");
@@ -216,17 +253,53 @@ export function ToolFallback({
     if (isSubmitting || submittedDecision) return;
     setIsSubmitting(true);
     try {
+      let handled = false;
       const payload = { confirmed: false, approved: false };
+
       if (addResult) {
-        addResult({ confirmed: false });
-      } else if (respondToApproval) {
-        respondToApproval(payload);
-      } else if (resume) {
-        resume(payload);
-      } else if (aui?.thread?.append) {
+        try {
+          addResult({ confirmed: false });
+          handled = true;
+        } catch {
+          handled = false;
+        }
+      }
+      if (!handled && respondToApproval) {
+        try {
+          respondToApproval(payload);
+          handled = true;
+        } catch {
+          handled = false;
+        }
+      }
+      if (!handled && resume) {
+        try {
+          resume(payload);
+          handled = true;
+        } catch {
+          handled = false;
+        }
+      }
+      if (!handled && aui?.thread?.append) {
+        const id = toolCallId || "adk_request_confirmation";
+        const name = toolName || "adk_request_confirmation";
         aui.thread.append({
           role: "user",
-          content: [{ type: "text", text: "No, I decline and cancel this action." }],
+          content: [
+            {
+              type: "text",
+              text: `[TOOL_CONFIRMATION_RESPONSE:${id}:${name}:false]`,
+            },
+          ],
+          metadata: {
+            custom: {
+              toolApproval: {
+                id,
+                name,
+                confirmed: false,
+              },
+            },
+          },
         });
       }
       setSubmittedDecision("declined");

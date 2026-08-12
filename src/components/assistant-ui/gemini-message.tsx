@@ -55,6 +55,30 @@ function AssistantMessageRetrievedMemories() {
   return <MemoryRetrievalBadge memories={retrievedMemories} />;
 }
 
+function AssistantWorkingDots() {
+  const isRunning = useAuiState(
+    (s: { message?: { status?: { type?: string } } }) =>
+      s.message?.status?.type === "running"
+  );
+  const hasText = useAuiState(
+    (s: { message?: { content?: readonly { type?: string; text?: string }[] } }) =>
+      s.message?.content?.some((p) => p.type === "text" && Boolean(p.text?.trim()))
+  );
+
+  if (!isRunning || hasText) return null;
+
+  return (
+    <div
+      className="flex items-center gap-1.5 py-3 text-[#1a73e8] dark:text-[#8ab4f8]"
+      aria-label="Agent is working..."
+    >
+      <span className="inline-block h-2 w-2 rounded-full bg-current animate-bounce [animation-delay:-0.3s]" />
+      <span className="inline-block h-2 w-2 rounded-full bg-current animate-bounce [animation-delay:-0.15s]" />
+      <span className="inline-block h-2 w-2 rounded-full bg-current animate-bounce" />
+    </div>
+  );
+}
+
 function ChatMessageImpl() {
   const [copied, setCopied] = useState(false);
 
@@ -82,8 +106,26 @@ function ChatMessageImpl() {
               <MessagePrimitive.Parts>
                 {({ part }) => {
                   switch (part.type) {
-                    case "text":
+                    case "text": {
+                      const match = part.text.match(
+                        /^\[TOOL_CONFIRMATION_RESPONSE:(.*?):(.*?):(true|false)\]$/
+                      );
+                      if (match) {
+                        const [, , toolName, boolStr] = match;
+                        const isApproved = boolStr === "true";
+                        return (
+                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground py-0.5">
+                            <span>
+                              {isApproved ? "✓ Approved action" : "✕ Declined action"}
+                            </span>
+                            <span className="font-mono text-[11px] opacity-70">
+                              ({toolName})
+                            </span>
+                          </div>
+                        );
+                      }
                       return <p className="whitespace-pre-wrap">{part.text}</p>;
+                    }
                     case "image":
                       return (
                         <div className="my-1.5 overflow-hidden rounded-2xl border border-[#e3e3e3] dark:border-[#3c4043] max-w-sm">
@@ -200,13 +242,26 @@ function ChatMessageImpl() {
                     );
                   case "reasoning":
                     return <ReasoningText text={part.text} />;
-                  case "tool-call":
+                  case "tool-call": {
+                    const isRequiresAction =
+                      part.status?.type === "requires-action" ||
+                      part.toolName === "adk_request_confirmation" ||
+                      part.toolName.includes("confirmation") ||
+                      part.toolName.includes("approval");
+
+                    // Only render ToolFallback outside reasoning if it requires user action/approval
+                    // Regular/completed tool calls are already rendered within the Thinking Process.
+                    if (!isRequiresAction) {
+                      return null;
+                    }
                     return part.toolUI ?? <ToolFallback {...part} />;
+                  }
                   default:
                     return null;
                 }
               }}
             </MessagePrimitive.GroupedParts>
+            <AssistantWorkingDots />
           </div>
 
           {/* Footer: Timing stats + Action Bar */}

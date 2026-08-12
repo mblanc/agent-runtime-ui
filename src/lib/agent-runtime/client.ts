@@ -1260,10 +1260,18 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
 
       const lastUserMsgObj = [...body.messages].reverse().find((m) => m.role === "user");
       const lastUserMessage = lastUserMsgObj?.content || "";
-      const fnResponsePart = [...body.messages]
-        .reverse()
-        .flatMap((m) => m.parts || [])
-        .find((p) => p.function_response || p.functionResponse);
+
+      // Scope function responses strictly to the CURRENT user turn (do not resurrect past turn responses)
+      const currentTurnFnResponses = (lastUserMsgObj?.parts || []).filter(
+        (p) => p.function_response || p.functionResponse
+      );
+
+      const confirmationResp = currentTurnFnResponses.find(
+        (p) =>
+          p.function_response?.name === "adk_request_confirmation" ||
+          p.functionResponse?.name === "adk_request_confirmation"
+      );
+      const fnResponsePart = confirmationResp || currentTurnFnResponses[0];
 
       const cleanSessionId =
         body.sessionId && !isLocalSessionId(body.sessionId)

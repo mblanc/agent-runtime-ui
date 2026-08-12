@@ -2,6 +2,7 @@ import type {
   ChatModelAdapter,
   ChatModelRunOptions,
   ChatModelRunResult,
+  ThreadMessage,
 } from "@assistant-ui/react";
 import type { AgentMessage, AgentMessagePart, MemoryRetrievalItem } from "@/types/agent";
 import { formatAgentDisplayName } from "@/lib/utils";
@@ -169,24 +170,52 @@ export function createYieldContent(
 export function createGeminiChatAdapter(
   getSessionId?: () => string | undefined,
   getAgentId?: () => string | undefined,
-  getLocation?: () => string | undefined
+  getLocation?: () => string | undefined,
+  getThreadMessages?: () => readonly ThreadMessage[] | undefined
 ): ChatModelAdapter {
   return {
     async *run({
       messages,
       abortSignal,
     }: ChatModelRunOptions): AsyncGenerator<ChatModelRunResult, void, unknown> {
+      const liveMessages = getThreadMessages?.();
+      const sourceMessages =
+        liveMessages && liveMessages.length > messages.length ? liveMessages : messages;
+
       const formattedMessages: AgentMessage[] = [];
 
-      for (const m of messages) {
+      for (let mIdx = 0; mIdx < sourceMessages.length; mIdx++) {
+        const m = sourceMessages[mIdx];
         let text = "";
         const parts: AgentMessagePart[] = [];
         const userFunctionResponseParts: AgentMessagePart[] = [];
 
+        const customMeta = (m.metadata as Record<string, unknown>)?.custom as
+          Record<string, unknown> | undefined;
+        const toolApproval = customMeta?.toolApproval as
+          { id?: string; name?: string; confirmed?: boolean } | undefined;
+
         for (const part of m.content) {
           if (part.type === "text") {
-            text += part.text;
-            parts.push({ text: part.text });
+            const tokenMatch = part.text.match(
+              /^\[TOOL_CONFIRMATION_RESPONSE:(.*?):(.*?):(true|false)\]$/
+            );
+            if (tokenMatch) {
+              const [, callId, callName, boolStr] = tokenMatch;
+              const isConf = boolStr === "true";
+              const respData = {
+                id: callId,
+                name: callName,
+                response: { confirmed: isConf },
+              };
+              userFunctionResponseParts.push({
+                function_response: respData,
+                functionResponse: respData,
+              });
+            } else {
+              text += part.text;
+              parts.push({ text: part.text });
+            }
           } else if (part.type === "image") {
             const imgPart = part as { image?: string; filename?: string };
             const imgUrl = imgPart.image || "";
@@ -261,20 +290,45 @@ export function createGeminiChatAdapter(
                     ? (tcPart.result as Record<string, unknown>)
                     : { output: tcPart.result },
               };
-              userFunctionResponseParts.push({
+              const item = {
                 function_response: respData,
                 functionResponse: respData,
-              });
+              };
+              if (tcPart.toolName === "adk_request_confirmation") {
+                userFunctionResponseParts.unshift(item);
+              } else {
+                userFunctionResponseParts.push(item);
+              }
             }
           }
         }
 
-        if (m.role === "user") {
-          formattedMessages.push({
-            role: "user",
-            content: text,
-            parts: parts.length > 0 ? parts : undefined,
+        if (toolApproval) {
+          const respData = {
+            id: toolApproval.id,
+            name: toolApproval.name || "adk_request_confirmation",
+            response: { confirmed: Boolean(toolApproval.confirmed) },
+          };
+          userFunctionResponseParts.unshift({
+            function_response: respData,
+            functionResponse: respData,
           });
+        }
+
+        if (m.role === "user") {
+          if (userFunctionResponseParts.length > 0) {
+            formattedMessages.push({
+              role: "user",
+              content: text,
+              parts: userFunctionResponseParts,
+            });
+          } else {
+            formattedMessages.push({
+              role: "user",
+              content: text,
+              parts: parts.length > 0 ? parts : undefined,
+            });
+          }
         } else {
           formattedMessages.push({
             role: "assistant",
@@ -282,7 +336,9 @@ export function createGeminiChatAdapter(
             parts: parts.length > 0 ? parts : undefined,
           });
 
-          if (userFunctionResponseParts.length > 0) {
+          // Only append trailing userFunctionResponseParts if this assistant message is the last message in sourceMessages
+          const isLastMessage = mIdx === sourceMessages.length - 1;
+          if (isLastMessage && userFunctionResponseParts.length > 0) {
             formattedMessages.push({
               role: "user",
               content: "",
@@ -298,6 +354,10 @@ export function createGeminiChatAdapter(
 
       console.log(
         `[createGeminiChatAdapter] Starting run for sessionId: ${sessionId} agentId: ${agentId} location: ${location}`
+      );
+      console.log(
+        "[createGeminiChatAdapter] Sending formattedMessages:",
+        JSON.stringify(formattedMessages, null, 2)
       );
 
       try {
@@ -556,16 +616,30 @@ export function createGeminiChatAdapter(
                     }
                   }
                   if (!matched) {
-                    const toolCallId =
-                      parsed.tool_result.id ||
-                      `result_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-                    toolCallsMap.set(toolCallId, {
-                      toolCallId,
-                      toolName,
-                      args: {},
-                      result,
-                      status: { type: "complete" },
-                    });
+                    const rawId = parsed.tool_result.id;
+                    const existsInPriorMessages =
+                      rawId &&
+                      sourceMessages.some((msg) =>
+                        msg.content?.some(
+                          (p) =>
+                            p.type === "tool-call" &&
+                            "toolCallId" in p &&
+                            p.toolCallId === rawId
+                        )
+                      );
+
+                    if (!existsInPriorMessages) {
+                      const toolCallId =
+                        rawId ||
+                        `result_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+                      toolCallsMap.set(toolCallId, {
+                        toolCallId,
+                        toolName,
+                        args: {},
+                        result,
+                        status: { type: "complete" },
+                      });
+                    }
                   }
 
                   accumulatedReasoning = appendToolResultToReasoning(
