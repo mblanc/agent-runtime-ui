@@ -206,8 +206,9 @@ describe("Sessions API Routes", () => {
       expect(assistantMsg.toolCalls).toBeDefined();
       expect(assistantMsg.toolCalls.length).toBe(1);
       expect(assistantMsg.toolCalls[0].name).toBe("adk_request_confirmation");
-      expect(assistantMsg.toolCalls[0].args.prompt).toContain(
-        "Do you confirm the deletion of production cluster"
+      expect(assistantMsg.toolCalls[0].args.originalFunctionCall).toBeDefined();
+      expect(assistantMsg.toolCalls[0].args.toolConfirmation.hint).toContain(
+        "Approval Required"
       );
     });
 

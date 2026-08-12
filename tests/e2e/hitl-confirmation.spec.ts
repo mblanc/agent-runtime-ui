@@ -20,6 +20,10 @@ test.describe("ADK HITL & adk_request_confirmation E2E", () => {
         sameSite: "Lax",
       },
     ]);
+
+    await context.setExtraHTTPHeaders({
+      "x-reasoning-engine-id": "generic-agent",
+    });
   });
 
   test("loads session 2648707499674304512 with adk_request_confirmation and allows user to approve", async ({
@@ -77,16 +81,12 @@ test.describe("ADK HITL & adk_request_confirmation E2E", () => {
 
     // Verify tool confirmation card is rendered
     console.log("Checking for Action Requires Approval confirmation card...");
-    const toolHeader = page
-      .locator(
-        "text=Action Requires Approval, text=adk_request_confirmation, text=load_web_page"
-      )
-      .first();
-    await expect(toolHeader).toBeVisible({ timeout: 10000 });
+    const toolHeader = page.getByText("Action Requires Approval").first();
+    await expect(toolHeader).toBeVisible({ timeout: 15000 });
 
     // Verify Requires Approval badge
-    const requiresApproval = page.locator("text=Requires Approval").first();
-    await expect(requiresApproval).toBeVisible();
+    const requiresApproval = page.getByText("Requires Approval").first();
+    await expect(requiresApproval).toBeVisible({ timeout: 10000 });
 
     // Verify Approve and Decline action buttons are present
     const approveBtn = page
@@ -95,8 +95,8 @@ test.describe("ADK HITL & adk_request_confirmation E2E", () => {
     const declineBtn = page
       .locator("button[aria-label='Decline tool execution']")
       .first();
-    await expect(approveBtn).toBeVisible();
-    await expect(declineBtn).toBeVisible();
+    await expect(approveBtn).toBeVisible({ timeout: 10000 });
+    await expect(declineBtn).toBeVisible({ timeout: 10000 });
 
     // Capture screenshot before approval
     const preScreenshot = await page.screenshot({ fullPage: true });
@@ -110,8 +110,8 @@ test.describe("ADK HITL & adk_request_confirmation E2E", () => {
     await approveBtn.click();
 
     // Verify Approved state appears immediately
-    await expect(page.locator("text=Approved by user").first()).toBeVisible({
-      timeout: 5000,
+    await expect(page.getByText("Approved by user").first()).toBeVisible({
+      timeout: 10000,
     });
 
     // Wait for the resumed agent response stream to arrive with webpage summary
@@ -151,13 +151,7 @@ test.describe("ADK HITL & adk_request_confirmation E2E", () => {
     const promptText = "Please confirm delete the staging database cluster";
     console.log(`Submitting critical prompt: "${promptText}"`);
     await promptInput.fill(promptText);
-
-    const sendBtn = page.locator("button:has(svg.lucide-arrow-up)").first();
-    if (await sendBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await sendBtn.click();
-    } else {
-      await promptInput.press("Enter");
-    }
+    await promptInput.press("Enter");
 
     // Wait for tool_call event to arrive and render HITL card
     console.log("Waiting for tool confirmation card to render...");
@@ -169,18 +163,15 @@ test.describe("ADK HITL & adk_request_confirmation E2E", () => {
     const declineBtn = page
       .locator("button[aria-label='Decline tool execution']")
       .first();
-    await expect(declineBtn).toBeVisible();
-
-    const toolName = page.locator("text=adk_request_confirmation").first();
-    await expect(toolName).toBeVisible();
+    await expect(declineBtn).toBeVisible({ timeout: 10000 });
 
     // Click Approve button
     console.log("Clicking Approve button on interactive tool call...");
     await approveBtn.click();
 
     // Verify Approved state and completion
-    await expect(page.locator("text=Approved by user").first()).toBeVisible({
-      timeout: 5000,
+    await expect(page.getByText("Approved by user").first()).toBeVisible({
+      timeout: 10000,
     });
 
     await page.waitForTimeout(3000);

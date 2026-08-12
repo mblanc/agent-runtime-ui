@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Wrench,
   CheckCircle2,
@@ -84,15 +84,29 @@ export function ToolFallback({
     return null;
   });
 
+  useEffect(() => {
+    if (result && typeof result === "object") {
+      const res = result as Record<string, unknown>;
+      if (res.confirmed === true || res.approved === true) {
+        setSubmittedDecision("approved");
+      } else if (res.confirmed === false || res.approved === false) {
+        setSubmittedDecision("declined");
+      }
+    }
+  }, [result]);
+
   const isRequiresAction =
     status.type === "requires-action" ||
-    toolName === "adk_request_confirmation" ||
-    toolName.includes("confirmation") ||
-    toolName.includes("approval");
+    (result === undefined &&
+      submittedDecision === null &&
+      status.type !== "complete" &&
+      (toolName === "adk_request_confirmation" ||
+        toolName.includes("confirmation") ||
+        toolName.includes("approval")));
 
   const isRunning = status.type === "running";
   const isError = status.type === "incomplete" || Boolean(status.error);
-  const isComplete = status.type === "complete" && !isError;
+  const isComplete = (status.type === "complete" || result !== undefined) && !isError;
 
   const targetToolInfo = useMemo(() => {
     if (!parsedArgs || typeof parsedArgs !== "object") {

@@ -111,7 +111,7 @@ export const mockSessionsStore = new Map<string, AgentSession>([
       id: "2648707499674304512",
       name: "projects/mock-project/locations/us-central1/reasoningEngines/generic-agent/sessions/2648707499674304512",
       userId: "test-user",
-      title: "Delete Production Cluster",
+      title: "Summarize https://yongzx.github.io/blog/2026/08/08/llm-can-jump",
       createTime: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
       updateTime: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
     },
@@ -213,7 +213,7 @@ export const mockSessionEventsStore = new Map<string, AgentSessionEvent[]>([
         id: "evt-hitl-1",
         sessionId: "2648707499674304512",
         role: "user",
-        content: "Please delete the production Kubernetes cluster gke-prod-cluster-01",
+        content: "Please summarize https://yongzx.github.io/blog/2026/08/08/llm-can-jump",
         createTime: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
       },
       {
@@ -222,25 +222,32 @@ export const mockSessionEventsStore = new Map<string, AgentSessionEvent[]>([
         role: "assistant",
         content: "",
         thought:
-          "Analyzing high-risk operation: cluster termination requires explicit confirmation...",
+          "Analyzing external webpage request: loading external URL requires human-in-the-loop authorization...",
         tool_calls: [
           {
+            id: "adk-e2c91d21-81f4-40b1-b654-40c3919729da",
             name: "adk_request_confirmation",
             args: {
-              prompt:
-                "Do you confirm the deletion of production cluster gke-prod-cluster-01?",
-              action_description: "Delete Kubernetes Cluster",
+              originalFunctionCall: {
+                id: "adk-cab96561-1849-4cd4-8bf6-dae511652d03",
+                name: "load_web_page",
+                args: {
+                  url: "https://yongzx.github.io/blog/2026/08/08/llm-can-jump",
+                },
+              },
+              toolConfirmation: {
+                hint: "Approval Required: The agent requests permission to execute 'load_web_page' with arguments: {'url': 'https://yongzx.github.io/blog/2026/08/08/llm-can-jump'}.",
+                confirmed: false,
+                payload: {
+                  tool_name: "load_web_page",
+                  args: {
+                    url: "https://yongzx.github.io/blog/2026/08/08/llm-can-jump",
+                  },
+                },
+              },
             },
           },
         ],
-        tool_call: {
-          name: "adk_request_confirmation",
-          args: {
-            prompt:
-              "Do you confirm the deletion of production cluster gke-prod-cluster-01?",
-            action_description: "Delete Kubernetes Cluster",
-          },
-        },
         createTime: new Date(Date.now() - 1 * 60 * 60 * 1000 + 3000).toISOString(),
       },
     ],

@@ -314,10 +314,12 @@ export interface AgentSessionEvent {
   thought?: string;
   subAgents?: SubAgentExecution[];
   tool_calls?: Array<{
+    id?: string;
     name: string;
     args: Record<string, unknown>;
   }>;
   tool_results?: Array<{
+    id?: string;
     name: string;
     result: Record<string, unknown>;
   }>;
