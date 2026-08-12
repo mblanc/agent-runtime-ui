@@ -31,14 +31,12 @@ import {
   ReasoningText,
 } from "./reasoning";
 import { ToolFallback } from "./tool-fallback";
-import { ToolGroupRoot, ToolGroupTrigger, ToolGroupContent } from "./tool-group";
 import { MarkdownText } from "./markdown-text";
 import { GeminiMessageTiming } from "./gemini-message-timing";
 import { MemoryRetrievalBadge } from "@/components/memory/memory-retrieval-badge";
 
 const MESSAGE_GROUP_BY = groupPartByType({
   reasoning: ["group-reasoning"],
-  "tool-call": ["group-tool"],
 });
 
 function AssistantMessageRetrievedMemories() {
@@ -176,20 +174,6 @@ function ChatMessageImpl() {
                           {children}
                         </ReasoningContent>
                       </ReasoningRoot>
-                    );
-                  }
-                  case "group-tool": {
-                    const running = part.status.type === "running";
-                    const isReqAction = part.status.type === "requires-action";
-                    return (
-                      <ToolGroupRoot defaultOpen={running || isReqAction}>
-                        <ToolGroupTrigger
-                          count={part.indices.length}
-                          active={running}
-                          status={part.status.type}
-                        />
-                        <ToolGroupContent>{children}</ToolGroupContent>
-                      </ToolGroupRoot>
                     );
                   }
                   case "text":

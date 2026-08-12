@@ -36,21 +36,31 @@ test.describe("ADK HITL & adk_request_confirmation E2E", () => {
     await expect(sidebar).toBeVisible({ timeout: 15000 });
 
     // Look for the "Delete Production Cluster" session in the sidebar
-    const hitlSessionBtn = page.locator("aside button:has-text('Delete Production Cluster')").first();
+    const hitlSessionBtn = page
+      .locator("aside button:has-text('Delete Production Cluster')")
+      .first();
     if (await hitlSessionBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
       console.log("Clicking 'Delete Production Cluster' session in sidebar...");
       await hitlSessionBtn.click();
     } else {
       console.log("Session not listed in current agent sidebar view, switching agent...");
       // Open agent dropdown
-      const agentDropdown = page.locator("header button:has(svg.lucide-bot), header button:has(svg.lucide-sparkles)").first();
+      const agentDropdown = page
+        .locator(
+          "header button:has(svg.lucide-bot), header button:has(svg.lucide-sparkles)"
+        )
+        .first();
       if (await agentDropdown.isVisible({ timeout: 3000 }).catch(() => false)) {
         await agentDropdown.click();
-        const genericAgentOption = page.locator("[role='menuitem']:has-text('Generic Agent')").first();
+        const genericAgentOption = page
+          .locator("[role='menuitem']:has-text('Generic Agent')")
+          .first();
         if (await genericAgentOption.isVisible({ timeout: 2000 }).catch(() => false)) {
           await genericAgentOption.click();
           await page.waitForTimeout(1000);
-          const genericSessionBtn = page.locator("aside button:has-text('Delete Production Cluster')").first();
+          const genericSessionBtn = page
+            .locator("aside button:has-text('Delete Production Cluster')")
+            .first();
           if (await genericSessionBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
             await genericSessionBtn.click();
           }
@@ -69,12 +79,18 @@ test.describe("ADK HITL & adk_request_confirmation E2E", () => {
     const requiresApproval = page.locator("text=Requires Approval").first();
     await expect(requiresApproval).toBeVisible();
 
-    const promptText = page.locator("text=Do you confirm the deletion of production cluster").first();
+    const promptText = page
+      .locator("text=Do you confirm the deletion of production cluster")
+      .first();
     await expect(promptText).toBeVisible();
 
     // Verify Approve and Decline action buttons are present
-    const approveBtn = page.locator("button[aria-label='Approve tool execution']").first();
-    const declineBtn = page.locator("button[aria-label='Decline tool execution']").first();
+    const approveBtn = page
+      .locator("button[aria-label='Approve tool execution']")
+      .first();
+    const declineBtn = page
+      .locator("button[aria-label='Decline tool execution']")
+      .first();
     await expect(approveBtn).toBeVisible();
     await expect(declineBtn).toBeVisible();
 
@@ -99,7 +115,11 @@ test.describe("ADK HITL & adk_request_confirmation E2E", () => {
     await page.waitForTimeout(4000);
 
     // Verify the agent completed response text is rendered in the conversation
-    const proseText = await page.locator(".prose").last().textContent().catch(() => "");
+    const proseText = await page
+      .locator(".prose")
+      .last()
+      .textContent()
+      .catch(() => "");
     console.log("Resumed Agent Response Text:", proseText);
 
     // Capture screenshot after approval
@@ -138,10 +158,14 @@ test.describe("ADK HITL & adk_request_confirmation E2E", () => {
 
     // Wait for tool_call event to arrive and render HITL card
     console.log("Waiting for tool confirmation card to render...");
-    const approveBtn = page.locator("button[aria-label='Approve tool execution']").first();
+    const approveBtn = page
+      .locator("button[aria-label='Approve tool execution']")
+      .first();
     await expect(approveBtn).toBeVisible({ timeout: 15000 });
 
-    const declineBtn = page.locator("button[aria-label='Decline tool execution']").first();
+    const declineBtn = page
+      .locator("button[aria-label='Decline tool execution']")
+      .first();
     await expect(declineBtn).toBeVisible();
 
     const toolName = page.locator("text=adk_request_confirmation").first();

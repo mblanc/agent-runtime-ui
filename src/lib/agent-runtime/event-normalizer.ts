@@ -381,7 +381,9 @@ export function groupTurnSessionEvents(
       ...(unifiedThought ? { thought: unifiedThought } : {}),
       ...(subAgentsList.length > 0 ? { subAgents: subAgentsList } : {}),
       ...(finalEventToolCalls.length > 0 ? { tool_calls: finalEventToolCalls } : {}),
-      ...(finalEventToolResults.length > 0 ? { tool_results: finalEventToolResults } : {}),
+      ...(finalEventToolResults.length > 0
+        ? { tool_results: finalEventToolResults }
+        : {}),
       ...(finalEvent.tool_call ? { tool_call: finalEvent.tool_call } : {}),
       ...(finalEvent.tool_result ? { tool_result: finalEvent.tool_result } : {}),
       rawEvent: finalEvent.rawEvent,
@@ -633,13 +635,19 @@ export function parseRawSessionEvent(
       }
 
       if (record.function_call || record.functionCall) {
-        const fnCall = (record.function_call || record.functionCall) as Record<string, unknown>;
+        const fnCall = (record.function_call || record.functionCall) as Record<
+          string,
+          unknown
+        >;
         const name = String(fnCall.name || "tool");
         const args = (fnCall.args as Record<string, unknown>) || {};
         parsedToolCalls.push({ name, args });
       }
       if (record.function_response || record.functionResponse) {
-        const fnResp = (record.function_response || record.functionResponse) as Record<string, unknown>;
+        const fnResp = (record.function_response || record.functionResponse) as Record<
+          string,
+          unknown
+        >;
         const name = String(fnResp.name || "tool");
         const result = (fnResp.response as Record<string, unknown>) || {};
         parsedToolResults.push({ name, result });

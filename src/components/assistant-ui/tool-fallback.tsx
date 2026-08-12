@@ -177,120 +177,154 @@ export function ToolFallback({
   return (
     <div
       className={cn(
-        "my-2.5 overflow-hidden rounded-2xl border border-[#e3e3e3] bg-[#f8fafd] text-xs transition-all dark:border-[#333537] dark:bg-[#1a1c1e]",
+        "my-3 overflow-hidden rounded-2xl border text-xs transition-all",
+        isRequiresAction
+          ? "border-amber-500/30 bg-amber-500/10 shadow-sm dark:border-amber-400/25 dark:bg-amber-950/25"
+          : "border-[#e3e3e3] bg-[#f8fafd] dark:border-[#333537] dark:bg-[#1a1c1e]",
         className
       )}
     >
-      {/* Header bar */}
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        aria-expanded={isOpen}
-        className="flex w-full items-center justify-between px-3.5 py-2.5 text-left font-medium text-[#444746] transition-colors hover:bg-[#eff2f6] dark:text-[#c4c7c5] dark:hover:bg-[#282a2c]"
-      >
-        <div className="flex items-center gap-2">
-          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#1a73e8]/10 text-[#1a73e8] dark:bg-[#8ab4f8]/15 dark:text-[#8ab4f8]">
-            <Wrench className="h-3.5 w-3.5" />
-          </div>
-          <span className="font-semibold text-[#1f1f1f] dark:text-[#e3e3e3]">
-            {toolName}
-          </span>
-          {isRunning && (
-            <span className="flex items-center gap-1 text-[11px] text-[#1a73e8] dark:text-[#8ab4f8]">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              <span>Running</span>
-            </span>
-          )}
-          {isRequiresAction && (
-            <span className="flex items-center gap-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
-              <AlertTriangle className="h-3 w-3" />
-              <span>Requires Approval</span>
-            </span>
-          )}
-          {isComplete && (
-            <span className="flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400">
-              <CheckCircle2 className="h-3 w-3" />
-              <span>Executed</span>
-            </span>
-          )}
-          {isError && (
-            <span className="flex items-center gap-1 text-[11px] text-destructive">
-              <AlertCircle className="h-3 w-3" />
-              <span>Error</span>
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-1.5 text-muted-foreground">
-          <span className="text-[11px] hover:text-foreground">
-            {isOpen ? "Collapse" : "View Details"}
-          </span>
-          {isOpen ? (
-            <ChevronDown className="h-4 w-4 text-[#1a73e8] dark:text-[#8ab4f8]" />
-          ) : (
-            <ChevronRight className="h-4 w-4" />
-          )}
-        </div>
-      </button>
-
-      {/* HITL Card (visible when requires-action) */}
-      {isRequiresAction && (
-        <div className="border-t border-amber-500/20 bg-amber-500/10 p-3 dark:border-amber-400/20 dark:bg-amber-950/30">
-          <div className="flex items-start gap-2.5">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-            <div className="flex-1 space-y-2">
-              <div className="text-xs font-semibold text-amber-900 dark:text-amber-200">
-                {hitlDescription}
+      {/* For HITL Requires Action: Render prominent confirmation card directly in message area */}
+      {isRequiresAction ? (
+        <div className="p-4 space-y-3">
+          {/* Top header row */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400">
+                <AlertTriangle className="h-4 w-4" />
               </div>
+              <span className="font-semibold text-sm text-amber-950 dark:text-amber-100">
+                Action Requires Approval
+              </span>
+              <span className="rounded-md bg-amber-500/15 px-2 py-0.5 font-mono text-[11px] text-amber-800 dark:text-amber-300">
+                {toolName}
+              </span>
+            </div>
 
-              {!submittedDecision && result === undefined ? (
-                <div className="flex items-center gap-2 pt-0.5">
-                  <Button
-                    size="sm"
-                    type="button"
-                    onClick={handleApprove}
-                    disabled={isSubmitting}
-                    aria-label="Approve tool execution"
-                    className="h-7 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white hover:bg-emerald-700 active:scale-95 disabled:opacity-50 dark:bg-emerald-700 dark:hover:bg-emerald-600"
-                  >
-                    {isSubmitting ? (
-                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                    ) : (
-                      <Check className="mr-1 h-3 w-3" />
-                    )}
-                    Approve
-                  </Button>
-                  <Button
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                    onClick={handleDecline}
-                    disabled={isSubmitting}
-                    aria-label="Decline tool execution"
-                    className="h-7 rounded-lg border-[#d3d7dc] bg-white px-3 text-xs font-medium text-[#444746] hover:bg-[#eff2f6] hover:text-destructive active:scale-95 disabled:opacity-50 dark:border-[#3c4043] dark:bg-[#282a2c] dark:text-[#c4c7c5] dark:hover:bg-[#333537] dark:hover:text-rose-400"
-                  >
-                    <X className="mr-1 h-3 w-3" />
-                    Decline
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-1.5 text-xs font-medium pt-0.5">
-                  {submittedDecision === "approved" ||
-                  (result as Record<string, unknown>)?.confirmed === true ||
-                  (result as Record<string, unknown>)?.approved === true ? (
-                    <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-                      <Check className="h-3.5 w-3.5" /> Approved by user
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1 text-rose-600 dark:text-rose-400">
-                      <X className="h-3.5 w-3.5" /> Declined by user
-                    </span>
-                  )}
-                </div>
-              )}
+            <div className="flex items-center gap-2">
+              <span className="flex items-center gap-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                Requires Approval
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsOpen(!isOpen)}
+                aria-expanded={isOpen}
+                aria-label={toolName}
+                className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-amber-500/15 hover:text-foreground"
+              >
+                <span>{isOpen ? "Hide Details" : "View Details"}</span>
+                {isOpen ? (
+                  <ChevronDown className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronRight className="h-3.5 w-3.5" />
+                )}
+              </button>
             </div>
           </div>
+
+          {/* Action Prompt / Description */}
+          <div className="rounded-xl border border-amber-500/20 bg-white/70 p-3 text-[14px] font-medium leading-relaxed text-[#1f1f1f] shadow-xs dark:border-amber-400/20 dark:bg-black/30 dark:text-[#e3e3e3]">
+            {hitlDescription}
+          </div>
+
+          {/* Action Decision Buttons */}
+          <div className="flex items-center justify-between pt-0.5">
+            {!submittedDecision && result === undefined ? (
+              <div className="flex items-center gap-2.5">
+                <Button
+                  size="sm"
+                  type="button"
+                  onClick={handleApprove}
+                  disabled={isSubmitting}
+                  aria-label="Approve tool execution"
+                  className="h-8 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 active:scale-95 disabled:opacity-50 dark:bg-emerald-700 dark:hover:bg-emerald-600"
+                >
+                  {isSubmitting ? (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Check className="mr-1.5 h-3.5 w-3.5 stroke-[2.5]" />
+                  )}
+                  Approve Action
+                </Button>
+                <Button
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                  onClick={handleDecline}
+                  disabled={isSubmitting}
+                  aria-label="Decline tool execution"
+                  className="h-8 rounded-xl border-amber-300 bg-white px-4 text-xs font-semibold text-[#444746] shadow-xs hover:border-destructive hover:bg-rose-50 hover:text-destructive active:scale-95 disabled:opacity-50 dark:border-amber-800/60 dark:bg-[#282a2c] dark:text-[#c4c7c5] dark:hover:bg-[#333537] dark:hover:text-rose-400"
+                >
+                  <X className="mr-1.5 h-3.5 w-3.5 stroke-[2.5]" />
+                  Decline Action
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 rounded-xl bg-white/60 px-3 py-1.5 text-xs font-medium dark:bg-black/30">
+                {submittedDecision === "approved" ||
+                (result as Record<string, unknown>)?.confirmed === true ||
+                (result as Record<string, unknown>)?.approved === true ? (
+                  <span className="flex items-center gap-1.5 font-semibold text-emerald-600 dark:text-emerald-400">
+                    <Check className="h-4 w-4 stroke-[2.5]" /> Approved by user — resuming
+                    execution
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5 font-semibold text-rose-600 dark:text-rose-400">
+                    <X className="h-4 w-4 stroke-[2.5]" /> Declined by user — execution
+                    canceled
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
         </div>
+      ) : (
+        /* Normal tool execution header */
+        <button
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          aria-expanded={isOpen}
+          aria-label={toolName}
+          className="flex w-full items-center justify-between px-3.5 py-2.5 text-left font-medium text-[#444746] transition-colors hover:bg-[#eff2f6] dark:text-[#c4c7c5] dark:hover:bg-[#282a2c]"
+        >
+          <div className="flex items-center gap-2">
+            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#1a73e8]/10 text-[#1a73e8] dark:bg-[#8ab4f8]/15 dark:text-[#8ab4f8]">
+              <Wrench className="h-3.5 w-3.5" />
+            </div>
+            <span className="font-semibold text-[#1f1f1f] dark:text-[#e3e3e3]">
+              {toolName}
+            </span>
+            {isRunning && (
+              <span className="flex items-center gap-1 text-[11px] text-[#1a73e8] dark:text-[#8ab4f8]">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                <span>Running</span>
+              </span>
+            )}
+            {isComplete && (
+              <span className="flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400">
+                <CheckCircle2 className="h-3 w-3" />
+                <span>Executed</span>
+              </span>
+            )}
+            {isError && (
+              <span className="flex items-center gap-1 text-[11px] text-destructive">
+                <AlertCircle className="h-3 w-3" />
+                <span>Error</span>
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <span className="text-[11px] hover:text-foreground">
+              {isOpen ? "Collapse" : "View Details"}
+            </span>
+            {isOpen ? (
+              <ChevronDown className="h-4 w-4 text-[#1a73e8] dark:text-[#8ab4f8]" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+          </div>
+        </button>
       )}
 
       {/* Expanded Details Panel: Full Args & Full Raw Result */}

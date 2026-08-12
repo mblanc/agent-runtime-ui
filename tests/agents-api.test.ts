@@ -62,7 +62,9 @@ describe("Agents API Route", () => {
     expect(opsAgent.displayName).toBe("Cloud Ops Assistant");
     expect(opsAgent.location).toBe("us-central1");
 
-    const genericAgent = data.agents.find((a: { id: string }) => a.id === "generic-agent");
+    const genericAgent = data.agents.find(
+      (a: { id: string }) => a.id === "generic-agent"
+    );
     expect(genericAgent).toBeDefined();
     expect(genericAgent.displayName).toBe("Generic Agent");
     expect(genericAgent.location).toBe("us-central1");

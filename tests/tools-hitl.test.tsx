@@ -425,9 +425,8 @@ describe("ToolFallback & ADK HITL Integration", () => {
 
   describe("ToolGroup HITL Integration", () => {
     it("renders ToolGroupTrigger with Requires Approval when status is requires-action", async () => {
-      const { ToolGroupRoot, ToolGroupTrigger, ToolGroupContent } = await import(
-        "@/components/assistant-ui/tool-group"
-      );
+      const { ToolGroupRoot, ToolGroupTrigger, ToolGroupContent } =
+        await import("@/components/assistant-ui/tool-group");
 
       render(
         <ToolGroupRoot defaultOpen={true}>
@@ -446,9 +445,8 @@ describe("ToolFallback & ADK HITL Integration", () => {
 
   describe("Session Adapter & History Loading with HITL Tools", () => {
     it("loads session 2648707499674304512 and reconstructs tool-call part with requires-action status", async () => {
-      const { formatRemoteMessagesToThreadMessages } = await import(
-        "@/lib/session-adapter"
-      );
+      const { formatRemoteMessagesToThreadMessages } =
+        await import("@/lib/session-adapter");
 
       const rawMessages = [
         {
@@ -494,9 +492,7 @@ describe("ToolFallback & ADK HITL Integration", () => {
         reason: "tool-calls",
       });
 
-      const toolCallPart = assistantMsg.content.find(
-        (p) => p.type === "tool-call"
-      );
+      const toolCallPart = assistantMsg.content.find((p) => p.type === "tool-call");
       expect(toolCallPart).toBeDefined();
       expect(toolCallPart?.toolName).toBe("adk_request_confirmation");
       expect(toolCallPart?.status).toEqual({

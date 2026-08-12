@@ -1,7 +1,14 @@
 "use client";
 
 import { ReactNode, useState, useEffect, createContext, useContext } from "react";
-import { ChevronDown, ChevronRight, Cpu, Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Cpu,
+  Loader2,
+  CheckCircle2,
+  AlertTriangle,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const ToolGroupContext = createContext<{
@@ -67,7 +74,8 @@ export function ToolGroupTrigger({
       onClick={() => setIsOpen(!isOpen)}
       className={cn(
         "flex w-full items-center justify-between px-3.5 py-2.5 text-left font-medium text-[#444746] transition-colors hover:bg-[#eff2f6] dark:text-[#c4c7c5] dark:hover:bg-[#282a2c]",
-        isRequiresAction && "bg-amber-500/10 hover:bg-amber-500/15 dark:bg-amber-950/30 dark:hover:bg-amber-950/40",
+        isRequiresAction &&
+          "bg-amber-500/10 hover:bg-amber-500/15 dark:bg-amber-950/30 dark:hover:bg-amber-950/40",
         className
       )}
     >
