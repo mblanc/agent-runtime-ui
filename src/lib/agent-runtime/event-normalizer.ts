@@ -73,8 +73,7 @@ export function extractTextFromQueryOutput(output: unknown): {
 export function extractSessionIdFromResourceName(nameStr: string): string {
   if (!nameStr) return "";
   if (nameStr.includes("/sessions/")) {
-    const afterSessions = nameStr.split("/sessions/")[1];
-    return afterSessions.split("/")[0];
+    return nameStr.split("/sessions/")[1].split("/")[0];
   }
   const parts = nameStr.split("/");
   return parts[parts.length - 1] || nameStr;
@@ -83,8 +82,7 @@ export function extractSessionIdFromResourceName(nameStr: string): string {
 export function extractReasoningEngineIdFromResourceName(nameStr: string): string {
   if (!nameStr) return "";
   if (nameStr.includes("/reasoningEngines/")) {
-    const after = nameStr.split("/reasoningEngines/")[1];
-    return after.split("/")[0];
+    return nameStr.split("/reasoningEngines/")[1].split("/")[0];
   }
   const parts = nameStr.split("/");
   return parts[parts.length - 1] || nameStr;
@@ -95,18 +93,27 @@ export function isLocalSessionId(sessionId?: string): boolean {
   return sessionId.startsWith("__LOCALID_") || sessionId.startsWith("local-");
 }
 
-export function isRootWorkflowOutput(rawEvt?: Record<string, unknown>): boolean {
-  if (!rawEvt) return false;
-
+function getNodeInfo(
+  rawEvt?: Record<string, unknown>
+): Record<string, unknown> | undefined {
+  if (!rawEvt) return undefined;
   const config = (rawEvt.config || {}) as Record<string, unknown>;
   const rawEvent = (rawEvt.raw_event || rawEvt.rawEvent || {}) as Record<string, unknown>;
 
-  const nodeInfo = (rawEvt.node_info ||
+  return (rawEvt.node_info ||
     rawEvt.nodeInfo ||
     config.node_info ||
     config.nodeInfo ||
     rawEvent.node_info ||
     rawEvent.nodeInfo) as Record<string, unknown> | undefined;
+}
+
+export function isRootWorkflowOutput(rawEvt?: Record<string, unknown>): boolean {
+  if (!rawEvt) return false;
+
+  const config = (rawEvt.config || {}) as Record<string, unknown>;
+  const rawEvent = (rawEvt.raw_event || rawEvt.rawEvent || {}) as Record<string, unknown>;
+  const nodeInfo = getNodeInfo(rawEvt);
 
   if (nodeInfo) {
     const path = typeof nodeInfo.path === "string" ? nodeInfo.path : "";
@@ -121,18 +128,14 @@ export function isRootWorkflowOutput(rawEvt?: Record<string, unknown>): boolean 
     }
   }
 
-  if (
-    rawEvt.root_output === true ||
-    rawEvt.is_final === true ||
-    config.root_output === true ||
-    config.is_final === true ||
-    rawEvent.root_output === true ||
-    rawEvent.is_final === true
-  ) {
-    return true;
-  }
-
-  return false;
+  return Boolean(
+    rawEvt.root_output ||
+    rawEvt.is_final ||
+    config.root_output ||
+    config.is_final ||
+    rawEvent.root_output ||
+    rawEvent.is_final
+  );
 }
 
 export function isSubagentNode(rawEvt?: Record<string, unknown>): boolean {
@@ -140,13 +143,7 @@ export function isSubagentNode(rawEvt?: Record<string, unknown>): boolean {
 
   const config = (rawEvt.config || {}) as Record<string, unknown>;
   const rawEvent = (rawEvt.raw_event || rawEvt.rawEvent || {}) as Record<string, unknown>;
-
-  const nodeInfo = (rawEvt.node_info ||
-    rawEvt.nodeInfo ||
-    config.node_info ||
-    config.nodeInfo ||
-    rawEvent.node_info ||
-    rawEvent.nodeInfo) as Record<string, unknown> | undefined;
+  const nodeInfo = getNodeInfo(rawEvt);
 
   if (nodeInfo) {
     const path = typeof nodeInfo.path === "string" ? nodeInfo.path : "";
@@ -161,31 +158,50 @@ export function isSubagentNode(rawEvt?: Record<string, unknown>): boolean {
     }
   }
 
-  if (
-    rawEvt.is_subagent === true ||
-    config.is_subagent === true ||
-    rawEvent.is_subagent === true
-  ) {
-    return true;
-  }
-
-  return false;
+  return Boolean(rawEvt.is_subagent || config.is_subagent || rawEvent.is_subagent);
 }
 
 function getEventToolCalls(evt: AgentSessionEvent) {
-  return evt.tool_calls && evt.tool_calls.length > 0
-    ? evt.tool_calls
-    : evt.tool_call
-      ? [evt.tool_call]
-      : [];
+  return evt.tool_calls?.length ? evt.tool_calls : evt.tool_call ? [evt.tool_call] : [];
 }
 
 function getEventToolResults(evt: AgentSessionEvent) {
-  return evt.tool_results && evt.tool_results.length > 0
+  return evt.tool_results?.length
     ? evt.tool_results
     : evt.tool_result
       ? [evt.tool_result]
       : [];
+}
+
+function extractToolCall(
+  fn: unknown
+): { name: string; id?: string; args: Record<string, unknown> } | null {
+  if (!fn || typeof fn !== "object") return null;
+  const obj = fn as Record<string, unknown>;
+  const name = String(obj.name || "tool");
+  const id =
+    obj.id || obj.call_id || obj.callId
+      ? String(obj.id || obj.call_id || obj.callId)
+      : undefined;
+  const args = (obj.args as Record<string, unknown>) || {};
+  return { name, id, args };
+}
+
+function extractToolResult(
+  fn: unknown
+): { name: string; id?: string; result: Record<string, unknown> } | null {
+  if (!fn || typeof fn !== "object") return null;
+  const obj = fn as Record<string, unknown>;
+  const name = String(obj.name || "tool");
+  const id =
+    obj.id || obj.call_id || obj.callId
+      ? String(obj.id || obj.call_id || obj.callId)
+      : undefined;
+  const result =
+    (obj.response as Record<string, unknown>) ||
+    (obj.result as Record<string, unknown>) ||
+    {};
+  return { name, id, result };
 }
 
 export function groupTurnSessionEvents(
@@ -194,7 +210,7 @@ export function groupTurnSessionEvents(
 ): AgentSessionEvent[] {
   if (!rawEvents || rawEvents.length === 0) return [];
 
-  const parsedEvents: AgentSessionEvent[] = rawEvents.map((evt, idx) =>
+  const parsedEvents = rawEvents.map((evt, idx) =>
     parseRawSessionEvent(evt, sessionId, idx)
   );
 
@@ -245,7 +261,7 @@ export function groupTurnSessionEvents(
 
     if (finalIdx === -1) {
       for (let i = turn.assistantEvents.length - 1; i >= 0; i--) {
-        if (turn.assistantEvents[i].content && turn.assistantEvents[i].content.trim()) {
+        if (turn.assistantEvents[i].content?.trim()) {
           finalIdx = i;
           break;
         }
@@ -261,18 +277,15 @@ export function groupTurnSessionEvents(
 
     const reasoningBlocks: string[] = [];
     const subAgentsList = [];
-    const usedIndices = new Set<number>();
     const usedResultKeys = new Set<string>();
     const processedCallKeys = new Set<string>();
 
     for (let i = 0; i < intermediateEvents.length; i++) {
-      if (usedIndices.has(i)) continue;
       const inter = intermediateEvents[i];
-
       const author = inter.author || "sub_agent";
       const displayName = formatAgentDisplayName(author);
-      const content = inter.content ? inter.content.trim() : "";
-      const thought = inter.thought ? inter.thought.trim() : "";
+      const content = inter.content?.trim() || "";
+      const thought = inter.thought?.trim() || "";
 
       if (content) {
         subAgentsList.push({
@@ -319,7 +332,6 @@ export function groupTurnSessionEvents(
           // 2. Look ahead in subsequent intermediate events
           for (let j = i + 1; j < intermediateEvents.length; j++) {
             const nextResults = getEventToolResults(intermediateEvents[j]);
-
             const resIdx = nextResults.findIndex(
               (r, idx) => r.name === toolName && !usedResultKeys.has(`${j}-${idx}`)
             );
@@ -359,7 +371,7 @@ export function groupTurnSessionEvents(
       }
     }
 
-    if (finalEvent.thought && finalEvent.thought.trim()) {
+    if (finalEvent.thought?.trim()) {
       reasoningBlocks.push(finalEvent.thought.trim());
     }
 
@@ -494,7 +506,6 @@ export function parseRawSessionEvent(
     unknown
   >;
 
-  let role: "user" | "assistant" | "model" | "system" = "assistant";
   const authorCandidates = [
     root.author,
     root.role,
@@ -504,21 +515,14 @@ export function parseRawSessionEvent(
     contentObj.author,
     rawEvent.role,
     rawEvent.author,
-    root.userQuery ? "user" : null,
-    root.user_query ? "user" : null,
-    root.modelResponse ? "model" : null,
-    root.model_response ? "model" : null,
+    root.userQuery || root.user_query ? "user" : null,
+    root.modelResponse || root.model_response ? "model" : null,
   ].filter(Boolean) as string[];
 
-  if (
-    authorCandidates.some(
-      (a) => String(a).toLowerCase() === "user" || String(a).toLowerCase() === "human"
-    )
-  ) {
-    role = "user";
-  } else {
-    role = "assistant";
-  }
+  const isUser = authorCandidates.some(
+    (a) => String(a).toLowerCase() === "user" || String(a).toLowerCase() === "human"
+  );
+  const role: "user" | "assistant" = isUser ? "user" : "assistant";
 
   const authorStr =
     (root.author as string) ||
@@ -582,7 +586,6 @@ export function parseRawSessionEvent(
             textPieces.push(part);
           } else if (part && typeof part === "object") {
             const p = part as Record<string, unknown>;
-
             const isPartThought =
               p.thought === true ||
               (typeof p.thought === "string" && Boolean(p.thought.trim())) ||
@@ -603,28 +606,11 @@ export function parseRawSessionEvent(
               textPieces.push(p.text.trim());
             }
 
-            const fnCall = p.functionCall || p.function_call;
-            if (fnCall && typeof fnCall === "object") {
-              const fn = fnCall as Record<string, unknown>;
-              const name = String(fn.name || "agent_tool");
-              const id =
-                fn.id || fn.call_id || fn.callId
-                  ? String(fn.id || fn.call_id || fn.callId)
-                  : undefined;
-              const args = (fn.args as Record<string, unknown>) || {};
-              parsedToolCalls.push({ name, id, args });
-            }
-            const fnResp = p.functionResponse || p.function_response;
-            if (fnResp && typeof fnResp === "object") {
-              const fn = fnResp as Record<string, unknown>;
-              const name = String(fn.name || "tool");
-              const id =
-                fn.id || fn.call_id || fn.callId
-                  ? String(fn.id || fn.call_id || fn.callId)
-                  : undefined;
-              const result = (fn.response as Record<string, unknown>) || {};
-              parsedToolResults.push({ name, id, result });
-            }
+            const tc = extractToolCall(p.functionCall || p.function_call);
+            if (tc) parsedToolCalls.push(tc);
+
+            const tr = extractToolResult(p.functionResponse || p.function_response);
+            if (tr) parsedToolResults.push(tr);
           }
         }
         return;
@@ -657,59 +643,28 @@ export function parseRawSessionEvent(
         }
       }
 
-      if (record.function_call || record.functionCall) {
-        const fnCall = (record.function_call || record.functionCall) as Record<
-          string,
-          unknown
-        >;
-        const name = String(fnCall.name || "tool");
-        const id =
-          fnCall.id || fnCall.call_id || fnCall.callId
-            ? String(fnCall.id || fnCall.call_id || fnCall.callId)
-            : undefined;
-        const args = (fnCall.args as Record<string, unknown>) || {};
-        parsedToolCalls.push({ name, id, args });
-      }
-      if (record.function_response || record.functionResponse) {
-        const fnResp = (record.function_response || record.functionResponse) as Record<
-          string,
-          unknown
-        >;
-        const name = String(fnResp.name || "tool");
-        const id =
-          fnResp.id || fnResp.call_id || fnResp.callId
-            ? String(fnResp.id || fnResp.call_id || fnResp.callId)
-            : undefined;
-        const result = (fnResp.response as Record<string, unknown>) || {};
-        parsedToolResults.push({ name, id, result });
-      }
+      const tc = extractToolCall(
+        record.function_call || record.functionCall || record.tool_call
+      );
+      if (tc) parsedToolCalls.push(tc);
+
+      const tr = extractToolResult(
+        record.function_response || record.functionResponse || record.tool_result
+      );
+      if (tr) parsedToolResults.push(tr);
+
       if (Array.isArray(record.tool_calls)) {
-        for (const tc of record.tool_calls) {
-          if (tc && typeof tc === "object") {
-            const t = tc as Record<string, unknown>;
-            const id =
-              t.id || t.call_id || t.callId
-                ? String(t.id || t.call_id || t.callId)
-                : undefined;
-            parsedToolCalls.push({
-              name: String(t.name || "tool"),
-              id,
-              args: (t.args as Record<string, unknown>) || {},
-            });
-          }
+        for (const item of record.tool_calls) {
+          const extracted = extractToolCall(item);
+          if (extracted) parsedToolCalls.push(extracted);
         }
       }
-      if (record.tool_call && typeof record.tool_call === "object") {
-        const t = record.tool_call as Record<string, unknown>;
-        const id =
-          t.id || t.call_id || t.callId
-            ? String(t.id || t.call_id || t.callId)
-            : undefined;
-        parsedToolCalls.push({
-          name: String(t.name || "tool"),
-          id,
-          args: (t.args as Record<string, unknown>) || {},
-        });
+
+      if (Array.isArray(record.tool_results)) {
+        for (const item of record.tool_results) {
+          const extracted = extractToolResult(item);
+          if (extracted) parsedToolResults.push(extracted);
+        }
       }
 
       if (typeof record.query === "string" && record.query.trim()) {
@@ -743,40 +698,24 @@ export function parseRawSessionEvent(
     inspectObject(root.modelResponse || root.model_response);
 
   if (Array.isArray(root.tool_calls)) {
-    for (const tc of root.tool_calls) {
-      if (tc && typeof tc === "object") {
-        const t = tc as Record<string, unknown>;
-        parsedToolCalls.push({
-          name: String(t.name || "tool"),
-          args: (t.args as Record<string, unknown>) || {},
-        });
-      }
+    for (const item of root.tool_calls) {
+      const extracted = extractToolCall(item);
+      if (extracted) parsedToolCalls.push(extracted);
     }
   }
-  if (root.tool_call && typeof root.tool_call === "object") {
-    const t = root.tool_call as Record<string, unknown>;
-    parsedToolCalls.push({
-      name: String(t.name || "tool"),
-      args: (t.args as Record<string, unknown>) || {},
-    });
+  if (root.tool_call) {
+    const extracted = extractToolCall(root.tool_call);
+    if (extracted) parsedToolCalls.push(extracted);
   }
   if (Array.isArray(root.tool_results)) {
-    for (const tr of root.tool_results) {
-      if (tr && typeof tr === "object") {
-        const t = tr as Record<string, unknown>;
-        parsedToolResults.push({
-          name: String(t.name || "tool"),
-          result: (t.result as Record<string, unknown>) || {},
-        });
-      }
+    for (const item of root.tool_results) {
+      const extracted = extractToolResult(item);
+      if (extracted) parsedToolResults.push(extracted);
     }
   }
-  if (root.tool_result && typeof root.tool_result === "object") {
-    const t = root.tool_result as Record<string, unknown>;
-    parsedToolResults.push({
-      name: String(t.name || "tool"),
-      result: (t.result as Record<string, unknown>) || {},
-    });
+  if (root.tool_result) {
+    const extracted = extractToolResult(root.tool_result);
+    if (extracted) parsedToolResults.push(extracted);
   }
 
   if (textPieces.length === 0) {
@@ -786,23 +725,31 @@ export function parseRawSessionEvent(
   const uniqueTextPieces = Array.from(new Set(textPieces));
   const uniqueThoughtPieces = Array.from(new Set(thoughtPieces));
 
-  const uniqueToolCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const uniqueToolCalls: Array<{
+    name: string;
+    id?: string;
+    args: Record<string, unknown>;
+  }> = [];
   const seenCalls = new Set<string>();
-  for (const tc of parsedToolCalls) {
-    const key = `${tc.name}:${JSON.stringify(tc.args || {})}`;
+  for (const call of parsedToolCalls) {
+    const key = `${call.name}:${JSON.stringify(call.args || {})}`;
     if (!seenCalls.has(key)) {
       seenCalls.add(key);
-      uniqueToolCalls.push(tc);
+      uniqueToolCalls.push(call);
     }
   }
 
-  const uniqueToolResults: Array<{ name: string; result: Record<string, unknown> }> = [];
+  const uniqueToolResults: Array<{
+    name: string;
+    id?: string;
+    result: Record<string, unknown>;
+  }> = [];
   const seenResults = new Set<string>();
-  for (const tr of parsedToolResults) {
-    const key = `${tr.name}:${JSON.stringify(tr.result || {})}`;
+  for (const res of parsedToolResults) {
+    const key = `${res.name}:${JSON.stringify(res.result || {})}`;
     if (!seenResults.has(key)) {
       seenResults.add(key);
-      uniqueToolResults.push(tr);
+      uniqueToolResults.push(res);
     }
   }
 
