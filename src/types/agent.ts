@@ -288,6 +288,10 @@ export interface AgentStreamEvent {
     result: Record<string, unknown>;
   };
   retrieved_memories?: MemoryRetrievalItem[];
+  partial?: boolean;
+  turn_complete?: boolean;
+  turnComplete?: boolean;
+  interrupted?: boolean;
   error?: string;
 }
 

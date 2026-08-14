@@ -12,6 +12,53 @@ function extractEventId(parsed: Record<string, unknown>): string | undefined {
   );
 }
 
+function extractPartial(
+  parsed: Record<string, unknown>,
+  part?: Record<string, unknown>
+): boolean | undefined {
+  if (part && typeof part.partial === "boolean") {
+    return part.partial;
+  }
+  if (typeof parsed.partial === "boolean") {
+    return parsed.partial;
+  }
+  const config = parsed.config as Record<string, unknown> | undefined;
+  if (config && typeof config.partial === "boolean") {
+    return config.partial;
+  }
+  const rawEvent = (parsed.raw_event || parsed.rawEvent) as
+    Record<string, unknown> | undefined;
+  if (rawEvent && typeof rawEvent.partial === "boolean") {
+    return rawEvent.partial;
+  }
+  return undefined;
+}
+
+function extractTurnComplete(parsed: Record<string, unknown>): boolean | undefined {
+  if (typeof parsed.turn_complete === "boolean") return parsed.turn_complete;
+  if (typeof parsed.turnComplete === "boolean") return parsed.turnComplete;
+  const config = parsed.config as Record<string, unknown> | undefined;
+  if (config && typeof config.turn_complete === "boolean") return config.turn_complete;
+  if (config && typeof config.turnComplete === "boolean") return config.turnComplete;
+  const rawEvent = (parsed.raw_event || parsed.rawEvent) as
+    Record<string, unknown> | undefined;
+  if (rawEvent && typeof rawEvent.turn_complete === "boolean")
+    return rawEvent.turn_complete;
+  if (rawEvent && typeof rawEvent.turnComplete === "boolean")
+    return rawEvent.turnComplete;
+  return undefined;
+}
+
+function extractInterrupted(parsed: Record<string, unknown>): boolean | undefined {
+  if (typeof parsed.interrupted === "boolean") return parsed.interrupted;
+  const config = parsed.config as Record<string, unknown> | undefined;
+  if (config && typeof config.interrupted === "boolean") return config.interrupted;
+  const rawEvent = (parsed.raw_event || parsed.rawEvent) as
+    Record<string, unknown> | undefined;
+  if (rawEvent && typeof rawEvent.interrupted === "boolean") return rawEvent.interrupted;
+  return undefined;
+}
+
 function parseToolCall(fnCall: Record<string, unknown>) {
   const name = String(fnCall.name || "");
   const isReqAction =
@@ -94,16 +141,32 @@ export async function* parseSseStream(
     try {
       const parsed = JSON.parse(dataStr);
       const eventId = extractEventId(parsed);
-      const withEventId = (evt: AgentStreamEvent): AgentStreamEvent =>
-        eventId ? { ...evt, eventId } : evt;
+      const rootPartial = extractPartial(parsed);
+      const turnComplete = extractTurnComplete(parsed);
+      const interrupted = extractInterrupted(parsed);
+
+      const withEventMeta = (
+        evt: AgentStreamEvent,
+        partPartial?: boolean
+      ): AgentStreamEvent => {
+        const resolvedPartial =
+          typeof partPartial === "boolean" ? partPartial : rootPartial;
+        return {
+          ...evt,
+          ...(eventId ? { eventId } : {}),
+          ...(typeof resolvedPartial === "boolean" ? { partial: resolvedPartial } : {}),
+          ...(typeof turnComplete === "boolean" ? { turn_complete: turnComplete } : {}),
+          ...(typeof interrupted === "boolean" ? { interrupted } : {}),
+        };
+      };
 
       if (parsed.agent_call) {
-        yield withEventId({
+        yield withEventMeta({
           event_type: "agent_call",
           agent_call: parsed.agent_call,
         });
       } else if (parsed.agent_response) {
-        yield withEventId({
+        yield withEventMeta({
           event_type: "agent_response",
           agent_response: parsed.agent_response,
         });
@@ -115,44 +178,76 @@ export async function* parseSseStream(
         const isSubAgent = isSubagentNode(parsed);
 
         for (const part of parsed.content.parts) {
-          if (part.text) {
-            if (part.thought) {
-              yield withEventId({
+          const partPartial = extractPartial(parsed, part);
+          const isThought =
+            part.thought === true ||
+            (typeof part.thought === "string" && Boolean(part.thought.trim())) ||
+            (part.thought && typeof part.thought === "object");
+
+          const thoughtText =
+            typeof part.thought === "string" && part.thought.trim()
+              ? part.thought.trim()
+              : part.thought &&
+                  typeof part.thought === "object" &&
+                  typeof (part.thought as Record<string, unknown>).text === "string"
+                ? ((part.thought as Record<string, unknown>).text as string).trim()
+                : typeof part.text === "string" && isThought
+                  ? part.text
+                  : "";
+
+          if (isThought && thoughtText) {
+            yield withEventMeta(
+              {
                 event_type: "thought",
-                thought: part.text,
-              });
-            } else if (isSubAgent) {
-              yield withEventId({
-                event_type: "agent_response",
-                agent_response: {
-                  agent: author || "sub_agent",
-                  displayName: formatAgentDisplayName(author),
-                  response: part.text,
+                thought: thoughtText,
+              },
+              partPartial
+            );
+          } else if (part.text && !isThought) {
+            if (isSubAgent) {
+              yield withEventMeta(
+                {
+                  event_type: "agent_response",
+                  agent_response: {
+                    agent: author || "sub_agent",
+                    displayName: formatAgentDisplayName(author),
+                    response: part.text,
+                  },
                 },
-              });
+                partPartial
+              );
             } else {
-              yield withEventId({
-                event_type: "content",
-                content: part.text,
-                author,
-              });
+              yield withEventMeta(
+                {
+                  event_type: "content",
+                  content: part.text,
+                  author,
+                },
+                partPartial
+              );
             }
           }
 
           const fnCall = part.function_call || part.functionCall;
           if (fnCall) {
-            yield withEventId({
-              event_type: "tool_call",
-              tool_call: parseToolCall(fnCall),
-            });
+            yield withEventMeta(
+              {
+                event_type: "tool_call",
+                tool_call: parseToolCall(fnCall),
+              },
+              partPartial
+            );
           }
 
           const fnResp = part.function_response || part.functionResponse;
           if (fnResp) {
-            yield withEventId({
-              event_type: "tool_result",
-              tool_result: parseToolResult(fnResp),
-            });
+            yield withEventMeta(
+              {
+                event_type: "tool_result",
+                tool_result: parseToolResult(fnResp),
+              },
+              partPartial
+            );
           }
         }
       } else if (parsed.text) {
@@ -163,7 +258,7 @@ export async function* parseSseStream(
         const isSubAgent = isSubagentNode(parsed);
 
         if (isSubAgent) {
-          yield withEventId({
+          yield withEventMeta({
             event_type: "agent_response",
             agent_response: {
               agent: author || "sub_agent",
@@ -172,36 +267,42 @@ export async function* parseSseStream(
             },
           });
         } else {
-          yield withEventId({
+          yield withEventMeta({
             event_type: "content",
             content: parsed.text,
             author,
           });
         }
       } else if (parsed.thought) {
-        yield withEventId({
+        const thoughtStr =
+          typeof parsed.thought === "string"
+            ? parsed.thought
+            : typeof (parsed.thought as Record<string, unknown>)?.text === "string"
+              ? ((parsed.thought as Record<string, unknown>).text as string)
+              : JSON.stringify(parsed.thought);
+        yield withEventMeta({
           event_type: "thought",
-          thought: parsed.thought,
+          thought: thoughtStr,
         });
       } else if (parsed.function_call || parsed.functionCall) {
-        yield withEventId({
+        yield withEventMeta({
           event_type: "tool_call",
           tool_call: parseToolCall(parsed.function_call || parsed.functionCall),
         });
       } else if (parsed.function_response || parsed.functionResponse) {
-        yield withEventId({
+        yield withEventMeta({
           event_type: "tool_result",
           tool_result: parseToolResult(
             parsed.function_response || parsed.functionResponse
           ),
         });
       } else if (parsed.tool_call) {
-        yield withEventId({
+        yield withEventMeta({
           event_type: "tool_call",
           tool_call: parsed.tool_call,
         });
       } else if (parsed.tool_result) {
-        yield withEventId({
+        yield withEventMeta({
           event_type: "tool_result",
           tool_result: parsed.tool_result,
         });
@@ -214,10 +315,15 @@ export async function* parseSseStream(
               : typeof parsed.error_message === "string"
                 ? parsed.error_message
                 : JSON.stringify(parsed.error || parsed.error_message);
-        yield withEventId({
+        yield withEventMeta({
           event_type: "error",
           error: errStr,
         });
+      } else if (turnComplete) {
+        yield withEventMeta({
+          event_type: "done",
+        });
+        return;
       }
     } catch {
       yield { event_type: "content", content: dataStr };
