@@ -7,8 +7,6 @@ import {
   Square,
   Mic,
   Paperclip,
-  Sparkles,
-  Cpu,
   X,
   FileText,
 } from "lucide-react";
@@ -16,7 +14,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useOptionalActiveAgent } from "@/lib/agent-context";
@@ -144,15 +141,6 @@ function PlusMenu() {
             <span>Add photos & files</span>
           </DropdownMenuItem>
         </ComposerPrimitive.AddAttachment>
-        <DropdownMenuItem className="cursor-pointer gap-2.5 py-2.5">
-          <Sparkles className="h-4 w-4 text-[#1a73e8] dark:text-[#8ab4f8]" />
-          <span>Deep Research</span>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem className="cursor-pointer gap-2.5 py-2.5">
-          <Cpu className="h-4 w-4 text-[#1a73e8] dark:text-[#8ab4f8]" />
-          <span>Agent Tools</span>
-        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
