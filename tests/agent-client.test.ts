@@ -1017,9 +1017,7 @@ describe("AgentRuntimeClient", () => {
       expect(requestedBody).toHaveProperty("fact");
       expect(requestedBody).toHaveProperty("topics");
       expect(requestedBody.topics).toEqual({
-        managed_memory_topic: {
-          managed_topic_enum: "USER_PREFERENCES",
-        },
+        managed_memory_topic: "USER_PREFERENCES",
       });
 
       expect(updated.id).toBe("mem-12345");
@@ -1027,6 +1025,115 @@ describe("AgentRuntimeClient", () => {
         "Prefers concise weekly summaries of semiconductor market"
       );
       expect(updated.topic).toBe("user_preferences");
+    });
+
+    it("sends valid scalar managed_memory_topic payload on POST createMemory", async () => {
+      const { VertexAiReasoningEngineProvider } =
+        await import("@/lib/agent-runtime/client");
+
+      const provider = new VertexAiReasoningEngineProvider(
+        "projects/test-proj/locations/us-central1/reasoningEngines/industry-watch",
+        "us-central1",
+        () => Promise.resolve("mock-token")
+      );
+
+      let requestedUrl = "";
+      let requestedMethod = "";
+      let requestedBody: Record<string, unknown> = {};
+
+      global.fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+        requestedUrl = url;
+        requestedMethod = init?.method || "GET";
+        requestedBody = JSON.parse((init?.body as string) || "{}");
+
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              name: "projects/test-proj/locations/us-central1/reasoningEngines/industry-watch/memories/mem-67890",
+              fact: "Always uses strict TypeScript",
+              scope: {
+                user_id: "107197175468507396372",
+              },
+              topics: {
+                managedMemoryTopic: "EXPLICIT_INSTRUCTIONS",
+              },
+              createTime: "2026-08-13T20:00:00Z",
+              updateTime: "2026-08-13T20:00:00Z",
+            }),
+        });
+      }) as unknown as typeof fetch;
+
+      const created = await provider.createMemory(
+        "107197175468507396372",
+        "Always uses strict TypeScript",
+        "explicit_instructions"
+      );
+
+      expect(requestedMethod).toBe("POST");
+      expect(requestedUrl).toContain("/memories");
+      expect(requestedBody).toEqual({
+        fact: "Always uses strict TypeScript",
+        scope: { user_id: "107197175468507396372", app_name: "app" },
+        topics: {
+          managed_memory_topic: "EXPLICIT_INSTRUCTIONS",
+        },
+      });
+
+      expect(created.id).toBe("mem-67890");
+      expect(created.topic).toBe("explicit_instructions");
+    });
+
+    it("sends custom_memory_topic_label payload on POST createMemory for custom topics", async () => {
+      const { VertexAiReasoningEngineProvider } =
+        await import("@/lib/agent-runtime/client");
+
+      const provider = new VertexAiReasoningEngineProvider(
+        "projects/test-proj/locations/us-central1/reasoningEngines/industry-watch",
+        "us-central1",
+        () => Promise.resolve("mock-token")
+      );
+
+      let requestedBody: Record<string, unknown> = {};
+
+      global.fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+        requestedBody = JSON.parse((init?.body as string) || "{}");
+
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              name: "projects/test-proj/locations/us-central1/reasoningEngines/industry-watch/memories/mem-99999",
+              fact: "Prefers dark mode UI",
+              scope: {
+                user_id: "107197175468507396372",
+                app_name: "app",
+              },
+              topics: {
+                customMemoryTopicLabel: "ui_preferences",
+              },
+              createTime: "2026-08-13T20:00:00Z",
+              updateTime: "2026-08-13T20:00:00Z",
+            }),
+        });
+      }) as unknown as typeof fetch;
+
+      const created = await provider.createMemory(
+        "107197175468507396372",
+        "Prefers dark mode UI",
+        "ui_preferences"
+      );
+
+      expect(requestedBody).toEqual({
+        fact: "Prefers dark mode UI",
+        scope: { user_id: "107197175468507396372", app_name: "app" },
+        topics: {
+          custom_memory_topic_label: "ui_preferences",
+        },
+      });
+
+      expect(created.id).toBe("mem-99999");
+      expect(created.topic).toBe("ui_preferences");
     });
   });
 });

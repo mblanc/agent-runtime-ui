@@ -15,9 +15,7 @@ export function buildVertexTopicsPayload(
   ];
   if (managedTopics.includes(upper)) {
     return {
-      managed_memory_topic: {
-        managed_topic_enum: upper,
-      },
+      managed_memory_topic: upper,
     };
   }
   return {
@@ -60,13 +58,36 @@ export function normalizeMemoryRecord(
   if (typeof mem.topic === "string" && mem.topic) {
     topic = mem.topic;
   } else if (mem.topics && typeof mem.topics === "object") {
-    const topicsObj = mem.topics as Record<string, string>;
-    topic =
-      topicsObj.custom_memory_topic_label ||
-      topicsObj.customMemoryTopicLabel ||
-      topicsObj.managed_memory_topic ||
-      topicsObj.managedMemoryTopic ||
-      "general";
+    const topicsObj = mem.topics as Record<string, unknown>;
+    let extractedTopic = "";
+    if (
+      typeof topicsObj.custom_memory_topic_label === "string" &&
+      topicsObj.custom_memory_topic_label
+    ) {
+      extractedTopic = topicsObj.custom_memory_topic_label;
+    } else if (
+      typeof topicsObj.customMemoryTopicLabel === "string" &&
+      topicsObj.customMemoryTopicLabel
+    ) {
+      extractedTopic = topicsObj.customMemoryTopicLabel;
+    } else if (
+      typeof topicsObj.managed_memory_topic === "string" &&
+      topicsObj.managed_memory_topic
+    ) {
+      extractedTopic = topicsObj.managed_memory_topic;
+    } else if (
+      typeof topicsObj.managedMemoryTopic === "string" &&
+      topicsObj.managedMemoryTopic
+    ) {
+      extractedTopic = topicsObj.managedMemoryTopic;
+    } else if (
+      topicsObj.managed_memory_topic &&
+      typeof topicsObj.managed_memory_topic === "object"
+    ) {
+      const inner = topicsObj.managed_memory_topic as Record<string, string>;
+      extractedTopic = inner.managed_topic_enum || inner.managedTopicEnum || "";
+    }
+    topic = extractedTopic || fallbackTopic;
   }
 
   let confidenceScore: number | undefined = undefined;
@@ -137,33 +158,42 @@ export class VertexAiMemoryService {
   ): Promise<AgentMemory[]> {
     try {
       const memoriesBaseUrl = this.getMemoriesBaseUrl(agentId, location);
+      const retrievedMap = new Map<string, AgentMemory>();
 
-      // Strategy 1: Attempt Scope-based retrieve endpoint (POST :retrieve)
-      try {
-        const retrieveUrl = `${memoriesBaseUrl}:retrieve`;
-        const retrieveRes = await this.context.fetchWithAuth(retrieveUrl, {
-          method: "POST",
-          body: JSON.stringify({
-            scope: { user_id: userId },
-          }),
-        });
+      // Strategy 1: Attempt Scope-based retrieve endpoint (POST :retrieve) with ADK app scope
+      const scopesToTry = [{ user_id: userId, app_name: "app" }, { user_id: userId }];
 
-        if (retrieveRes.ok) {
-          const data = await retrieveRes.json();
-          const rawMemories = (data.retrievedMemories || data.memories || []) as Array<
-            Record<string, unknown>
-          >;
-          if (rawMemories.length > 0) {
-            let parsed = rawMemories.map((raw) => normalizeMemoryRecord(raw, userId));
-            if (topic && topic !== "all") {
-              const lowerTopic = topic.toLowerCase();
-              parsed = parsed.filter((m) => (m.topic || "").toLowerCase() === lowerTopic);
+      for (const scope of scopesToTry) {
+        try {
+          const retrieveUrl = `${memoriesBaseUrl}:retrieve`;
+          const retrieveRes = await this.context.fetchWithAuth(retrieveUrl, {
+            method: "POST",
+            body: JSON.stringify({ scope }),
+          });
+
+          if (retrieveRes.ok) {
+            const data = await retrieveRes.json();
+            const rawMemories = (data.retrievedMemories || data.memories || []) as Array<
+              Record<string, unknown>
+            >;
+            for (const raw of rawMemories) {
+              const mem = normalizeMemoryRecord(raw, userId);
+              retrievedMap.set(mem.id, mem);
             }
-            return parsed;
           }
+        } catch (e) {
+          console.debug("Retrieve endpoint attempt error:", e);
         }
-      } catch (e) {
-        console.debug("Retrieve endpoint attempt error, trying list endpoint:", e);
+      }
+
+      // If we found memories via :retrieve, apply topic filter and return
+      if (retrievedMap.size > 0) {
+        let parsed = Array.from(retrievedMap.values());
+        if (topic && topic !== "all") {
+          const lowerTopic = topic.toLowerCase();
+          parsed = parsed.filter((m) => (m.topic || "").toLowerCase() === lowerTopic);
+        }
+        return parsed;
       }
 
       // Strategy 2: Attempt standard list endpoint with AIP-160 scope filter
@@ -215,7 +245,7 @@ export class VertexAiMemoryService {
         method: "POST",
         body: JSON.stringify({
           fact,
-          scope: { user_id: userId },
+          scope: { user_id: userId, app_name: "app" },
           ...(topicsPayload ? { topics: topicsPayload } : {}),
         }),
       });
@@ -303,7 +333,7 @@ export class VertexAiMemoryService {
         body: JSON.stringify({
           userId,
           sessionId: cleanSessionId,
-          scope: { user_id: userId },
+          scope: { user_id: userId, app_name: "app" },
         }),
       });
 
@@ -330,36 +360,45 @@ export class VertexAiMemoryService {
   ): Promise<MemoryRetrievalItem[]> {
     try {
       const endpoint = `${this.getMemoriesBaseUrl(agentId, location)}:retrieve`;
-      const response = await this.context.fetchWithAuth(endpoint, {
-        method: "POST",
-        body: JSON.stringify({
-          scope: { user_id: userId },
-          similaritySearchParams: query ? { searchQuery: query, topK: 5 } : undefined,
-          similarity_search_params: query ? { search_query: query, top_k: 5 } : undefined,
-        }),
-      });
+      const scopesToTry = [{ user_id: userId, app_name: "app" }, { user_id: userId }];
+      const resultsMap = new Map<string, MemoryRetrievalItem>();
 
-      if (!response.ok) return [];
+      for (const scope of scopesToTry) {
+        const response = await this.context.fetchWithAuth(endpoint, {
+          method: "POST",
+          body: JSON.stringify({
+            scope,
+            similaritySearchParams: query ? { searchQuery: query, topK: 5 } : undefined,
+            similarity_search_params: query
+              ? { search_query: query, top_k: 5 }
+              : undefined,
+          }),
+        });
 
-      const data = await response.json();
-      const rawMemories = (data.retrievedMemories || data.memories || []) as Array<
-        Record<string, unknown>
-      >;
-      return rawMemories.map((raw) => {
-        const normalized = normalizeMemoryRecord(raw, userId);
-        let relevanceScore = 0.9;
-        if (typeof raw.distance === "number") {
-          relevanceScore = Math.max(0, Math.min(1, 1 - raw.distance));
-        } else if (normalized.confidenceScore !== undefined) {
-          relevanceScore = normalized.confidenceScore;
+        if (response.ok) {
+          const data = await response.json();
+          const rawMemories = (data.retrievedMemories || data.memories || []) as Array<
+            Record<string, unknown>
+          >;
+          for (const raw of rawMemories) {
+            const normalized = normalizeMemoryRecord(raw, userId);
+            let relevanceScore = 0.9;
+            if (typeof raw.distance === "number") {
+              relevanceScore = Math.max(0, Math.min(1, 1 - raw.distance));
+            } else if (normalized.confidenceScore !== undefined) {
+              relevanceScore = normalized.confidenceScore;
+            }
+            resultsMap.set(normalized.id, {
+              id: normalized.id,
+              fact: normalized.fact,
+              topic: normalized.topic,
+              relevanceScore,
+            });
+          }
         }
-        return {
-          id: normalized.id,
-          fact: normalized.fact,
-          topic: normalized.topic,
-          relevanceScore,
-        };
-      });
+      }
+
+      return Array.from(resultsMap.values());
     } catch {
       return [];
     }
