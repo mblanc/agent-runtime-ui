@@ -1,6 +1,7 @@
 import { AgentSessionEvent } from "@/types/agent";
 import { FormattedSessionThreadMessage } from "./types";
 import { formatAgentDisplayName } from "@/lib/utils";
+import { extractGroundingMetadata } from "@/lib/grounding/citation-parser";
 
 export { formatAgentDisplayName };
 
@@ -380,6 +381,16 @@ export function groupTurnSessionEvents(
 
     const finalEventToolCalls = getEventToolCalls(finalEvent);
     const finalEventToolResults = getEventToolResults(finalEvent);
+    const groundingMeta =
+      finalEvent.groundingMetadata ||
+      finalEvent.grounding_metadata ||
+      extractGroundingMetadata(finalEvent) ||
+      turn.assistantEvents
+        .map(
+          (e) =>
+            e.groundingMetadata || e.grounding_metadata || extractGroundingMetadata(e)
+        )
+        .find(Boolean);
 
     result.push({
       id: finalEvent.id,
@@ -398,6 +409,9 @@ export function groupTurnSessionEvents(
         : {}),
       ...(finalEvent.tool_call ? { tool_call: finalEvent.tool_call } : {}),
       ...(finalEvent.tool_result ? { tool_result: finalEvent.tool_result } : {}),
+      ...(groundingMeta
+        ? { groundingMetadata: groundingMeta, grounding_metadata: groundingMeta }
+        : {}),
       rawEvent: finalEvent.rawEvent,
     });
   }
@@ -421,6 +435,8 @@ export function formatSessionEventsToThreadMessages(
     const hasToolResults = Boolean(
       (e.tool_results && e.tool_results.length > 0) || e.tool_result
     );
+    const groundingMetadata =
+      e.groundingMetadata || e.grounding_metadata || extractGroundingMetadata(e);
 
     if (thought) {
       accumulatedThoughts.push(thought);
@@ -449,7 +465,8 @@ export function formatSessionEventsToThreadMessages(
       thought ||
       accumulatedThoughts.length > 0 ||
       hasToolCalls ||
-      hasToolResults
+      hasToolResults ||
+      groundingMetadata
     ) {
       threadMessages.push({
         id: e.id || `msg-${i}`,
@@ -467,6 +484,7 @@ export function formatSessionEventsToThreadMessages(
           custom: {
             ...(e.id ? { eventId: e.id } : {}),
             ...(e.invocationId ? { invocationId: e.invocationId } : {}),
+            ...(groundingMetadata ? { groundingMetadata } : {}),
           },
         },
       });
@@ -779,6 +797,16 @@ export function parseRawSessionEvent(
   const finalRole =
     uniqueToolCalls.length > 0 || uniqueToolResults.length > 0 ? "assistant" : role;
 
+  const groundingMeta = extractGroundingMetadata(
+    root.groundingMetadata ||
+      root.grounding_metadata ||
+      rawEvent.groundingMetadata ||
+      rawEvent.grounding_metadata ||
+      config.groundingMetadata ||
+      config.grounding_metadata ||
+      root
+  );
+
   return {
     id,
     name: nameStr || undefined,
@@ -793,6 +821,9 @@ export function parseRawSessionEvent(
     ...(uniqueToolResults.length > 0 ? { tool_results: uniqueToolResults } : {}),
     ...(uniqueToolCalls.length > 0 ? { tool_call: uniqueToolCalls[0] } : {}),
     ...(uniqueToolResults.length > 0 ? { tool_result: uniqueToolResults[0] } : {}),
+    ...(groundingMeta
+      ? { groundingMetadata: groundingMeta, grounding_metadata: groundingMeta }
+      : {}),
     rawEvent: Object.keys(rawEvent).length > 0 ? rawEvent : root,
   };
 }

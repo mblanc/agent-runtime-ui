@@ -6,6 +6,7 @@ import {
   AgentSessionEvent,
   AgentStreamEvent,
   ChatRequestBody,
+  GroundingMetadata,
   ListAgentsResponse,
   MemoryRetrievalItem,
 } from "@/types/agent";
@@ -527,6 +528,94 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
       await new Promise((r) => setTimeout(r, 40));
     }
 
+    // 5. Google Search & Enterprise RAG Grounding: Simulate for search/specs/docs queries
+    const lowerPromptForGrounding = lastPrompt.toLowerCase();
+    const isGroundingTrigger =
+      lowerPromptForGrounding.includes("ground") ||
+      lowerPromptForGrounding.includes("citation") ||
+      lowerPromptForGrounding.includes("spec") ||
+      lowerPromptForGrounding.includes("search") ||
+      lowerPromptForGrounding.includes("rag") ||
+      lowerPromptForGrounding.includes("doc") ||
+      lowerPromptForGrounding.includes("vertex") ||
+      lowerPromptForGrounding.includes("cloud");
+
+    let simulatedGroundingMetadata: GroundingMetadata | undefined;
+
+    if (isGroundingTrigger && !hasAttachments) {
+      simulatedGroundingMetadata = {
+        webSearchQueries: [
+          lastPrompt,
+          "Vertex AI Agent Runtime specs & Private Service Connect",
+        ],
+        groundingChunks: [
+          {
+            web: {
+              uri: "https://cloud.google.com/vertex-ai/docs/reasoning-engine/overview",
+              title: "Vertex AI Agent Runtime Architecture & Overview",
+              domain: "cloud.google.com",
+            },
+          },
+          {
+            web: {
+              uri: "https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale",
+              title: "Sub-Second Cold Starts & Autoscaling Specifications",
+              domain: "docs.cloud.google.com",
+            },
+          },
+          {
+            retrievedContext: {
+              uri: "gs://corp-bucket/arch/agent-runtime-design.pdf",
+              title: "Agent Runtime Security & Infrastructure Design",
+              text: "Vertex AI Agent Runtime provides managed scaling, stateless session persistence, and enterprise security boundaries with sub-second cold starts.",
+              ragCorpusId: "enterprise-kb-us",
+              confidenceScore: 0.96,
+            },
+          },
+        ],
+        groundingSupports: [
+          {
+            groundingChunkIndices: [0],
+            confidenceScores: [0.98],
+            segment: {
+              startIndex: 0,
+              endIndex: 85,
+              text: "Vertex AI Agent Runtime provides managed auto-scaling and native session persistence",
+            },
+          },
+          {
+            groundingChunkIndices: [1],
+            confidenceScores: [0.95],
+            segment: {
+              startIndex: 86,
+              endIndex: 165,
+              text: "It supports sub-second cold starts and private VPC connectivity",
+            },
+          },
+          {
+            groundingChunkIndices: [2],
+            confidenceScores: [0.96],
+            segment: {
+              startIndex: 166,
+              endIndex: 260,
+              text: "Verified against Google Cloud Architecture Framework policies",
+            },
+          },
+        ],
+        searchEntryPoint: {
+          renderedContent: `<div class="google-search-suggestion" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:16px;background:rgba(26,115,232,0.08);border:1px solid rgba(26,115,232,0.18);font-size:12px;color:#1a73e8;text-decoration:none;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><span>Search: <strong>Vertex AI Agent Runtime</strong></span></div>`,
+        },
+      };
+
+      yield {
+        event_type: "thought",
+        thought: `Grounding response with Google Search ("${lastPrompt}") and Enterprise RAG Vector Search (corpus: enterprise-kb-us). Found 3 authoritative sources.`,
+        grounding_metadata: simulatedGroundingMetadata,
+        groundingMetadata: simulatedGroundingMetadata,
+      };
+      await new Promise((r) => setTimeout(r, 60));
+    }
+
     yield {
       event_type: "thought",
       thought: hasAttachments
@@ -562,7 +651,9 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
     // Streaming content chunks
     const responseText = hasAttachments
       ? `I have successfully analyzed the attached multimodal attachment (\`${fileUris || "file"}\`).\n\n### Document Analysis Summary\n- **Status:** Verified and ingested via Cloud Storage.\n- **Content Assessment:** Document contains structured engineering specifications and architectural requirements.\n- **Recommendation:** Integrate with Google Cloud Agent Runtime using Vertex AI Reasoning Engines.`
-      : `Based on your request regarding **${lastPrompt}**, here is the recommended architecture:\n\n1. **Stateless BFF Layer**: Built using Next.js App Router and Edge/Serverless runtimes with Web Crypto JWT tokens.\n2. **Vertex AI Reasoning Engines**: Managed agent execution environment providing automatic session persistence.\n3. **Google Identity Auth**: Seamless OAuth 2.0 PKCE flow guaranteeing secure enterprise user scoping.\n\n\`\`\`typescript\n// Example: Initializing Vertex AI Agent Runtime Provider\nconst provider = createAgentRuntimeProvider();\nconst response = await provider.streamQuery({ messages }, userId);\n\`\`\``;
+      : simulatedGroundingMetadata
+        ? `Vertex AI Agent Runtime provides managed auto-scaling and native session persistence [1]. It supports sub-second cold starts [2] and private VPC connectivity via Private Service Connect [3].\n\n### Architecture Highlights\n1. **Stateless BFF Layer**: Next.js App Router with Web Crypto JWT tokens.\n2. **Reasoning Engine Backend**: Fully managed agent runtime on Google Cloud.\n3. **Enterprise Grounding**: Direct verification against official Google documentation and private corporate knowledge base [1, 3].`
+        : `Based on your request regarding **${lastPrompt}**, here is the recommended architecture:\n\n1. **Stateless BFF Layer**: Built using Next.js App Router and Edge/Serverless runtimes with Web Crypto JWT tokens.\n2. **Vertex AI Reasoning Engines**: Managed agent execution environment providing automatic session persistence.\n3. **Google Identity Auth**: Seamless OAuth 2.0 PKCE flow guaranteeing secure enterprise user scoping.\n\n\`\`\`typescript\n// Example: Initializing Vertex AI Agent Runtime Provider\nconst provider = createAgentRuntimeProvider();\nconst response = await provider.streamQuery({ messages }, userId);\n\`\`\``;
 
     const chunks = responseText.split(" ");
     for (const chunk of chunks) {
@@ -593,6 +684,8 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
           thought: hasAttachments
             ? `Inspecting uploaded multimodal GCS attachments (${fileUris})...`
             : `Decomposing query "${lastPrompt}"...`,
+          groundingMetadata: simulatedGroundingMetadata,
+          grounding_metadata: simulatedGroundingMetadata,
           createTime: new Date(Date.now() + 1000).toISOString(),
         }
       );

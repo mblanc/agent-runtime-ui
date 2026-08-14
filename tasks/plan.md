@@ -1,296 +1,402 @@
-# Implementation Plan: Agent Platform Memory Bank (User Profile & Semantic Long-Term Memory)
+# Implementation Plan: Google Search & Enterprise RAG Grounding (Source Citations & Truthfulness Inspector)
 
 ## Overview
 
-Integrate Google Cloud Agent Platform Memory Bank into `agent-runtime-ui`, enabling cross-session semantic memory and user personalization for ADK agents on Vertex AI Reasoning Engines. The implementation includes:
-
-1. **Data Contracts & Types**: Core memory entities, retrieval models, and stream event extensions.
-2. **Provider & Mock Store**: In-memory mock store and REST client support for CRUD operations (`CreateMemory`, `ListMemories`, `UpdateMemory`, `DeleteMemory`, `GenerateMemories`, `RetrieveMemories`).
-3. **BFF REST API Endpoints**: Stateless, authenticated Next.js route handlers under `/api/memory` with tenant isolation by `session.user.id`.
-4. **Memory State Provider**: React context hook managing memory state, optimistic mutations, topic filtering, and search.
-5. **Memory Profile Drawer & UI**: User avatar menu integration, slide-over drawer, topic-categorized memory cards, inline creation and editing dialogs.
-6. **In-Chat Memory Retrieval Badges**: Stream adapter parsing of `preload_memory` and `load_memory` tool events, rendering interactive memory badges with fact popovers in assistant chat turns.
+Implement a compliant, high-fidelity Grounding & Citations Visualizer in `agent-runtime-ui` based on [`docs/spec-grounding-citations.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/spec-grounding-citations.md). This feature supports **Grounding with Google Search** and **Vertex AI RAG Engine / Vector Search**, providing fact attribution, source lineage, interactive inline citation badges (`[1]`, `[2]`), the official Google Search suggestion entry point widget (`searchEntryPoint.renderedContent`), an expandable sources accordion, and an Enterprise RAG Document Inspector drawer for internal corporate documents.
 
 ---
 
 ## Architecture Decisions
 
-- **Stateless Tenant Scoping**: All `/api/memory` endpoints wrap with `withAuth` and `withAuthDynamic`, strictly filtering memory queries and mutations by `session.user.id`.
-- **Strategy Pattern Client Architecture**: Follow the established `IAgentRuntimeProvider` and `AgentRuntimeClient` pattern with `MockAgentRuntimeProvider` for offline development and `VertexAgentRuntimeProvider` for GCP REST calls.
-- **Radix UI Dialog & Sheet Primitives**: Build the Memory Profile Drawer using accessible `@radix-ui/react-dialog` primitives styled with Tailwind CSS v3 matching the Google Gemini aesthetic.
-- **In-Chat Retrieval Integration**: Intercept ADK memory tool calls (`preload_memory`, `load_memory`, `retrieved_memories`) in `createGeminiChatAdapter` and attach structured retrieval metadata to assistant messages without cluttering the main conversation text.
-- **Zero Database Requirement**: Keep backend 100% serverless, persisting mock memories in memory during testing and delegating to Vertex AI Memory Bank API in production.
+- **Stateless Metadata Propagation**: Grounding metadata (`groundingMetadata` / `grounding_metadata`) is received over the SSE chat stream (`/api/chat`), normalized, and attached to assistant message metadata (`message.metadata.custom.groundingMetadata`). Zero additional database storage is needed.
+- **Citation Parsing & Non-Destructive Markdown Preprocessing**: Inline citation tokens (e.g. `[1]`, `[2]`, `[1, 2]`) within assistant markdown text are parsed and converted to interactive inline citation badges without corrupting standard markdown links (`[link](url)`) or custom math tags (`$$...$$`, `[math]...[/math]`).
+- **Google Search Attribution Compliance**: The `searchEntryPoint.renderedContent` HTML snippet is embedded securely in `GoogleSearchWidget` preserving official Google Search styling, logo assets, and query suggestions across dark and light themes.
+- **Enterprise RAG Inspector Drawer**: Slide-over panel built with `@radix-ui/react-dialog` displaying deep inspection details for internal corporate documents retrieved via Vector Search (title, GCS URI, RAG corpus ID, similarity confidence score, and text excerpt).
+- **Interactive Source Popovers**: Hovering or clicking an inline citation badge opens a popover displaying source title, URL domain badge, excerpt snippet, confidence score, and a link or button to inspect internal RAG chunks.
+- **Offline Mock Support**: `MockAgentRuntimeProvider` generates realistic grounding metadata for search/RAG queries (e.g. questions about Vertex AI specs, GCP architectures, and enterprise policies), allowing full visual testing without live GCP credentials.
 
 ---
 
 ## Dependency Graph
 
 ```
-┌────────────────────────────────────────────────────────┐
-│ Phase 1: Data Contracts, Types & Mock Store Engine      │
-│ (src/types/agent.ts, mock-store.ts, mock-provider.ts)  │
-└──────────────────────────┬─────────────────────────────┘
-                           │
-                           ▼
-┌────────────────────────────────────────────────────────┐
-│ Phase 2: BFF REST API Endpoints & Client Integration   │
-│ (/api/memory/*, agent-runtime-client.ts, client.ts)    │
-└──────────────────────────┬─────────────────────────────┘
-                           │
-                           ▼
-┌────────────────────────────────────────────────────────┐
-│ Phase 3: Client State Management & React Context       │
-│ (src/lib/memory-context.tsx)                           │
-└──────────────────────────┬─────────────────────────────┘
-                           │
-                           ▼
-┌────────────────────────────────────────────────────────┐
-│ Phase 4: Memory Profile Drawer & Avatar Menu UI        │
-│ (memory-drawer.tsx, memory-item-card.tsx, avatar menu) │
-└──────────────────────────┬─────────────────────────────┘
-                           │
-                           ▼
-┌────────────────────────────────────────────────────────┐
-│ Phase 5: In-Chat Retrieval Badges & Stream Adapter     │
-│ (gemini-message.tsx, chat-adapter.ts, badge component) │
-└──────────────────────────┬─────────────────────────────┘
-                           │
-                           ▼
-┌────────────────────────────────────────────────────────┐
-│ Phase 6: Automated Memory Extraction & End-to-End Test │
-│ (/api/memory/generate, session consolidation, E2E tests)│
-└────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│ Phase 1: Data Contracts, Types & Citation Parsing Engine        │
+│ (src/types/agent.ts, src/lib/grounding/*, parser tests)         │
+└────────────────────────────────┬────────────────────────────────┘
+                                 │
+                                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Phase 2: Stream Adapter & Mock Grounding Generator              │
+│ (chat-adapter.ts, event-normalizer.ts, mock-provider.ts)        │
+└────────────────────────────────┬────────────────────────────────┘
+                                 │
+                                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Phase 3: Visual Grounding Primitives & Citation UI              │
+│ (inline-citation-badge.tsx, source-popover.tsx,                 │
+│  google-search-widget.tsx, enterprise-rag-drawer.tsx)           │
+└────────────────────────────────┬────────────────────────────────┘
+                                 │
+                                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Phase 4: Message Integration & Markdown Text Citation Badges    │
+│ (gemini-message.tsx, markdown-text.tsx, grounding-footer.tsx)   │
+└────────────────────────────────┬────────────────────────────────┘
+                                 │
+                                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Phase 5: Verification, End-to-End Tests & Quality Preflight     │
+│ (tests/grounding-*.test.ts(x), preflight quality gates)         │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## Task List
 
-### Phase 1: Data Contracts, Types & Mock Store Engine
+### Phase 1: Data Contracts, Types & Citation Parsing Engine
 
-#### Task 1: Define Memory Bank Types and Contracts
+#### Task 1: Define Grounding & Citation Data Contracts
 
-- **Description**: Add data structures for `AgentMemory`, `MemoryRetrievalItem`, `AgentMemoryListResponse`, `CreateMemoryRequest`, `UpdateMemoryRequest`, `GenerateMemoriesRequest`, and `GenerateMemoriesResponse` in [`src/types/agent.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/types/agent.ts), and extend `AgentStreamEvent` with `retrieved_memories`.
-- **Acceptance criteria**:
-  - [ ] `AgentMemory` interface contains `id`, `userId`, `fact`, `topic`, `createTime`, `updateTime`, `lastUsedTime`, `confidenceScore`, `sourceSessionId`.
-  - [ ] `MemoryRetrievalItem` interface contains `id`, `fact`, `topic`, and `relevanceScore`.
-  - [ ] `AgentStreamEvent` supports optional `retrieved_memories?: MemoryRetrievalItem[]`.
-  - [ ] All types are exported from [`src/types/agent.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/types/agent.ts).
-- **Verification**:
-  - [ ] `bun run check` passes with zero type errors.
-- **Dependencies**: None
-- **Files likely touched**:
-  - [`src/types/agent.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/types/agent.ts)
-- **Estimated scope**: XS (1 file)
+**Description:** Define TypeScript interfaces for Google Search and Enterprise RAG grounding models (`WebGroundingChunk`, `RetrievedContextChunk`, `GroundingChunk`, `GroundingSupport`, `SearchEntryPoint`, `GroundingMetadata`) in [`src/types/agent.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/types/agent.ts), and extend `AgentMessagePart`, `AgentStreamEvent`, and `AgentSessionEvent` with grounding metadata fields.
 
-#### Task 2: Implement Mock Memory Store & Provider Methods
+**Acceptance criteria:**
 
-- **Description**: Extend `IAgentRuntimeProvider` interface and implement memory CRUD methods in `MockAgentRuntimeProvider` and `mock-store.ts`, populating seeded test memories categorized by topic (`coding_preferences`, `enterprise_context`, `communication_style`, `general`).
-- **Acceptance criteria**:
-  - [ ] `IAgentRuntimeProvider` defines `listMemories`, `createMemory`, `updateMemory`, `deleteMemory`, `generateMemories`, and `retrieveMemories`.
-  - [ ] `mock-store.ts` initializes a Map of seeded `mockMemoriesStore` for `test-user`.
-  - [ ] `MockAgentRuntimeProvider` implements memory operations with user scoping and case-insensitive topic filtering.
-- **Verification**:
-  - [ ] Unit tests in `tests/memory-store.test.ts` pass (`bun run test tests/memory-store.test.ts`).
-  - [ ] `bun run check` passes.
-- **Dependencies**: Task 1
-- **Files likely touched**:
-  - [`src/lib/agent-runtime/types.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/agent-runtime/types.ts)
-  - [`src/lib/agent-runtime/mock/mock-store.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/agent-runtime/mock/mock-store.ts)
-  - [`src/lib/agent-runtime/mock/mock-provider.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/agent-runtime/mock/mock-provider.ts)
-  - `tests/memory-store.test.ts`
-- **Estimated scope**: M (4 files)
+- [ ] `WebGroundingChunk` contains `uri`, `title`, and optional `domain`.
+- [ ] `RetrievedContextChunk` contains `uri`, `title`, `text?`, `ragCorpusId?`, and `confidenceScore?`.
+- [ ] `GroundingChunk` contains optional `web` and `retrievedContext` fields.
+- [ ] `GroundingSupport` contains `groundingChunkIndices: number[]`, `confidenceScores?: number[]`, and `segment?: { startIndex: number; endIndex: number; text: string }`.
+- [ ] `SearchEntryPoint` contains optional `renderedContent` and `sdkBlob`.
+- [ ] `GroundingMetadata` contains `webSearchQueries?`, `groundingChunks?`, `groundingSupports?`, `searchEntryPoint?`, and `retrievalQueries?`.
+- [ ] `AgentStreamEvent`, `AgentMessagePart`, and `AgentSessionEvent` support `grounding_metadata?: GroundingMetadata` and `groundingMetadata?: GroundingMetadata`.
+- [ ] All types are exported from [`src/types/agent.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/types/agent.ts).
 
-### Checkpoint 1: Memory Data & Mock Store Foundation
+**Verification:**
 
-- [ ] `bun run check` passes with no type errors.
-- [ ] `bun test tests/memory-store.test.ts` passes all CRUD tests.
+- [ ] Tests pass: `bun run check`
+- [ ] Build succeeds: `bun run build`
+- [ ] Manual check: Types are strictly typed with zero `any`.
+
+**Dependencies:** None
+
+**Files likely touched:**
+
+- [`src/types/agent.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/types/agent.ts)
+
+**Estimated scope:** XS (1 file)
 
 ---
 
-### Phase 2: BFF REST API Endpoints & Client Integration
+#### Task 2: Implement Grounding Citation Normalizer & Parser Utilities
 
-#### Task 3: Implement BFF Memory API Routes (`/api/memory`, `/api/memory/[memoryId]`, `/api/memory/generate`)
+**Description:** Create citation parsing and index resolution utilities in `src/lib/grounding/citation-parser.ts` to extract citation indices (e.g. `[1]`, `[2]`, `[1, 2]`, `[1][2]`), map 1-based indices to `GroundingChunk` objects, format domain names from URLs, and extract grounding metadata from raw event payloads.
 
-- **Description**: Create Next.js App Router API route handlers under `src/app/api/memory/` wrapping with `withAuth` and `withAuthDynamic` to support listing, creating, updating, deleting memories, and triggering extraction.
-- **Acceptance criteria**:
-  - [ ] `GET /api/memory` lists memories for the authenticated user with optional `?topic=` filter.
-  - [ ] `POST /api/memory` validates request body and creates a new memory fact.
-  - [ ] `PATCH /api/memory/[memoryId]` updates fact and/or topic, ensuring cross-user IDOR protection.
-  - [ ] `DELETE /api/memory/[memoryId]` deletes memory for the authenticated user.
-  - [ ] `POST /api/memory/generate` extracts memories from a session.
-  - [ ] Unauthenticated requests return `401 Unauthorized`.
-- **Verification**:
-  - [ ] Integration tests in `tests/memory-api.test.ts` pass (`bun test tests/memory-api.test.ts`).
-  - [ ] `bun run check` passes.
-- **Dependencies**: Task 2
-- **Files likely touched**:
-  - `src/app/api/memory/route.ts`
-  - `src/app/api/memory/[memoryId]/route.ts`
-  - `src/app/api/memory/generate/route.ts`
-  - [`src/lib/agent-runtime/client.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/agent-runtime/client.ts)
-  - [`src/lib/agent-runtime-client.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/agent-runtime-client.ts)
-  - `tests/memory-api.test.ts`
-- **Estimated scope**: M (6 files)
+**Acceptance criteria:**
 
-#### Task 4: Expose Memory Client Methods on `AgentRuntimeClient` & GCP Provider
+- [ ] `parseCitationIndices(text: string)` extracts citation references without matching standard markdown links `[text](url)` or math tags.
+- [ ] `resolveCitationSource(index: number, chunks: GroundingChunk[])` safely resolves 1-based index to chunk (e.g. index 1 -> `chunks[0]`).
+- [ ] `extractDomainFromUri(uri: string)` extracts clean hostnames (e.g. `cloud.google.com`) or GCS bucket paths (e.g. `gs://corp-bucket`).
+- [ ] `extractGroundingMetadata(raw: unknown)` extracts normalized `GroundingMetadata` from diverse Gemini and Vertex AI event formats.
+- [ ] Unit test suite in `tests/grounding-parser.test.ts` verifies regex matching, edge cases, and normalization.
 
-- **Description**: Add facade methods on `AgentRuntimeClient` and implement Vertex AI REST client methods in `VertexAgentRuntimeProvider` with GCP auth token injection for production deployment.
-- **Acceptance criteria**:
-  - [ ] `AgentRuntimeClient` exposes `listMemories`, `createMemory`, `updateMemory`, `deleteMemory`, and `generateMemories`.
-  - [ ] `VertexAgentRuntimeProvider` maps calls to Vertex AI Reasoning Engine Memory Bank REST API endpoints (`/v1beta1/.../memories`).
-- **Verification**:
-  - [ ] `bun run check` passes.
-  - [ ] Unit tests verify mock and provider delegation.
-- **Dependencies**: Task 3
-- **Files likely touched**:
-  - [`src/lib/agent-runtime-client.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/agent-runtime-client.ts)
-  - [`src/lib/agent-runtime/client.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/agent-runtime/client.ts)
-- **Estimated scope**: S (2 files)
+**Verification:**
 
-### Checkpoint 2: REST API & Client Layer
+- [ ] Tests pass: `bun test tests/grounding-parser.test.ts`
+- [ ] Build succeeds: `bun run check`
+- [ ] Manual check: Edge cases with multiple citations like `[1, 2, 3]` and invalid indices are handled gracefully.
 
-- [ ] `bun test tests/memory-api.test.ts` passes with 100% assertions.
-- [ ] `bun run check` and `bun run lint` succeed.
+**Dependencies:** Task 1
+
+**Files likely touched:**
+
+- `src/lib/grounding/citation-parser.ts`
+- `tests/grounding-parser.test.ts`
+
+**Estimated scope:** S (2 files)
 
 ---
 
-### Phase 3: Client State Management & React Context
+### Checkpoint 1: Data Contracts & Parsing Utilities
 
-#### Task 5: Implement `MemoryProvider` and `useMemory` Hook
-
-- **Description**: Create `src/lib/memory-context.tsx` providing React state management for fetching, caching, searching, creating, editing, and deleting memories with optimistic updates and error handling.
-- **Acceptance criteria**:
-  - [ ] `useMemory()` provides `memories`, `isLoading`, `error`, `activeTopic`, `searchQuery`, `setTopic`, `setSearchQuery`, `createMemory`, `updateMemory`, `deleteMemory`, `refreshMemories`, `isDrawerOpen`, `setIsDrawerOpen`.
-  - [ ] Memory updates apply optimistically and roll back on API error.
-  - [ ] Filtered and searched memories update reactively based on topic and search query.
-- **Verification**:
-  - [ ] Context tests in `tests/memory-context.test.tsx` pass.
-  - [ ] `bun run check` passes.
-- **Dependencies**: Task 3
-- **Files likely touched**:
-  - `src/lib/memory-context.tsx`
-  - `tests/memory-context.test.tsx`
-- **Estimated scope**: S (2 files)
+- [ ] `bun run check` passes with zero type errors.
+- [ ] `bun test tests/grounding-parser.test.ts` passes all citation extraction and normalization tests.
 
 ---
 
-### Phase 4: Memory Profile Drawer & Avatar Menu UI
+### Phase 2: Stream Adapter & Mock Grounding Generator
 
-#### Task 6: Build Memory Fact Cards and Add/Edit Modals
+#### Task 3: Chat Adapter Stream Interception for Grounding Metadata
 
-- **Description**: Create `src/components/memory/memory-item-card.tsx` and `src/components/memory/add-memory-modal.tsx` supporting viewing, inline editing, topic tags, confidence indicators, and deletion confirmation.
-- **Acceptance criteria**:
-  - [ ] `MemoryItemCard` renders fact text, topic badge, timestamp, and edit/delete action triggers.
-  - [ ] Inline editing mode allows editing fact content and topic selector.
-  - [ ] `AddMemoryModal` allows adding a new memory with fact text and category selection (`coding_preferences`, `enterprise_context`, `communication_style`, `general`).
-- **Verification**:
-  - [ ] Component tests in `tests/memory-ui.test.tsx` pass.
-- **Dependencies**: Task 5
-- **Files likely touched**:
-  - `src/components/memory/memory-item-card.tsx`
-  - `src/components/memory/add-memory-modal.tsx`
-- **Estimated scope**: S (2 files)
+**Description:** Update `createGeminiChatAdapter` in [`src/lib/adapters/chat-adapter.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/adapters/chat-adapter.ts) to intercept `grounding_metadata` / `groundingMetadata` in SSE stream events, preserve it across stream chunks, and attach it to message custom metadata (`metadata.custom.groundingMetadata`). Also update `createYieldContent` to accept and emit `groundingMetadata`.
 
-#### Task 7: Build `MemoryDrawer` and Integrate into `UserAvatarMenu` & App Layout
+**Acceptance criteria:**
 
-- **Description**: Create `src/components/memory/memory-drawer.tsx` (slide-over panel with search input, topic chips, fact list, empty states, and auto-consolidation status) and add "Memory Bank Profile" item with Brain icon `🧠` to `UserAvatarMenu`. Mount `MemoryProvider` in `src/app/page.tsx` or layout.
-- **Acceptance criteria**:
-  - [ ] Clicking "Memory Bank Profile" in avatar dropdown opens `MemoryDrawer`.
-  - [ ] Drawer displays user's stored memories grouped or filtered by topic.
-  - [ ] Search input filters facts in real time.
-  - [ ] Drawer can be closed with close button, `Esc` key, or backdrop click.
-- **Verification**:
-  - [ ] Component tests in `tests/memory-ui.test.tsx` pass.
-  - [ ] Visual verification of drawer layout and animations.
-- **Dependencies**: Tasks 5, 6
-- **Files likely touched**:
-  - `src/components/memory/memory-drawer.tsx`
-  - [`src/components/auth/user-avatar-menu.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/auth/user-avatar-menu.tsx)
-  - [`src/app/page.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/page.tsx)
-  - `tests/memory-ui.test.tsx`
-- **Estimated scope**: M (4 files)
+- [ ] `createYieldContent` accepts `groundingMetadata?: GroundingMetadata` and places it in `metadata.custom.groundingMetadata`.
+- [ ] `createGeminiChatAdapter` parses `grounding_metadata` and `groundingMetadata` from stream chunks and accumulates the latest metadata.
+- [ ] On stream `[DONE]`, the final yielded message maintains `metadata.custom.groundingMetadata`.
+- [ ] Thread message history transformation in `event-normalizer.ts` preserves grounding metadata when loading past sessions.
 
-### Checkpoint 3: Memory Drawer & Avatar Menu UI
+**Verification:**
 
-- [ ] User can open Memory Drawer from avatar menu, view categorized facts, add a new fact, and edit or delete existing facts in mock mode.
-- [ ] All component tests pass (`bun test tests/memory-ui.test.tsx`).
+- [ ] Tests pass: `bun test tests/event-normalizer.test.ts`
+- [ ] Build succeeds: `bun run check`
+- [ ] Manual check: Chat adapter outputs metadata with grounding chunks and search entry point intact.
+
+**Dependencies:** Tasks 1, 2
+
+**Files likely touched:**
+
+- [`src/lib/adapters/chat-adapter.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/adapters/chat-adapter.ts)
+- [`src/lib/agent-runtime/event-normalizer.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/agent-runtime/event-normalizer.ts)
+
+**Estimated scope:** S (2 files)
 
 ---
 
-### Phase 5: In-Chat Memory Retrieval Badges & Stream Adapter
+#### Task 4: Implement Mock Provider Grounding Simulation & Multi-Turn Persistence
 
-#### Task 8: Build In-Chat Memory Retrieval Badge & Popover
+**Description:** Update `MockAgentRuntimeProvider.streamQuery` in [`src/lib/agent-runtime/mock/mock-provider.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/agent-runtime/mock/mock-provider.ts) to simulate Google Search and Enterprise RAG grounding when the user asks questions requiring factual specs, docs, search, or RAG. Emit realistic `grounding_metadata` with search queries, web grounding chunks, internal RAG chunks (`gs://corp-bucket/...`), grounding supports, and Google Search entry point HTML snippet. Persist `groundingMetadata` into `mockSessionEventsStore`.
 
-- **Description**: Create `src/components/memory/memory-retrieval-badge.tsx` rendering a subtle Gemini-styled pill ("🧠 N Memories Applied: ... ▾") with an expandable popover listing the exact retrieved facts, topics, and relevance scores.
-- **Acceptance criteria**:
-  - [ ] Renders memory count and preview summary in a rounded pill.
-  - [ ] Clicking/hovering expands a popover detailing each retrieved memory item with topic badge and relevance score.
-  - [ ] Styled cleanly for both Light and Dark mode.
-- **Verification**:
-  - [ ] Component unit tests pass.
-- **Dependencies**: Task 1
-- **Files likely touched**:
-  - `src/components/memory/memory-retrieval-badge.tsx`
-  - `tests/memory-badge.test.tsx`
-- **Estimated scope**: S (2 files)
+**Acceptance criteria:**
 
-#### Task 9: Wire Memory Tool Interception in Chat Adapter & `GeminiMessage`
+- [ ] Questions containing search/specs/docs/grounding keywords trigger mock grounding generation.
+- [ ] Stream generator yields `thought` event indicating Google Search & RAG corpus retrieval.
+- [ ] Stream generator yields `grounding_metadata` containing realistic `webSearchQueries`, `groundingChunks` (both web and GCS RAG documents), `groundingSupports`, and `searchEntryPoint.renderedContent`.
+- [ ] Response text includes natural inline citations `[1]`, `[2]`, `[3]`.
+- [ ] `mockSessionEventsStore` persists `groundingMetadata` on assistant session events.
+- [ ] Integration test in `tests/grounding-stream.test.ts` validates end-to-end stream yielding and metadata attachment.
 
-- **Description**: Update `createGeminiChatAdapter` in `src/lib/adapters/chat-adapter.ts` to intercept `preload_memory` and `load_memory` ADK tool events or `retrieved_memories` stream events, populate `metadata.custom.retrievedMemories`, and render `MemoryRetrievalBadge` in `src/components/assistant-ui/gemini-message.tsx`. Update mock stream generator to emit simulated memory retrievals.
-- **Acceptance criteria**:
-  - [ ] `createGeminiChatAdapter` parses `preload_memory` and `load_memory` tool calls and attaches retrieved memory items to message metadata.
-  - [ ] `GeminiMessage` (assistant message branch) renders `MemoryRetrievalBadge` when `retrievedMemories` exist in message metadata.
-  - [ ] `MockAgentRuntimeProvider.streamQuery` yields simulated retrieved memories when relevant queries are made.
-- **Verification**:
-  - [ ] Unit & stream tests in `tests/memory-chat.test.ts` pass.
-  - [ ] `bun run check` and `bun run test` pass with zero regressions.
-- **Dependencies**: Tasks 7, 8
-- **Files likely touched**:
-  - [`src/lib/adapters/chat-adapter.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/adapters/chat-adapter.ts)
-  - [`src/components/assistant-ui/gemini-message.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/gemini-message.tsx)
-  - [`src/lib/agent-runtime/mock/mock-provider.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/agent-runtime/mock/mock-provider.ts)
-  - `tests/memory-chat.test.ts`
-- **Estimated scope**: M (4 files)
+**Verification:**
 
-### Checkpoint 4: In-Chat Retrieval & End-to-End Integration
+- [ ] Tests pass: `bun test tests/grounding-stream.test.ts`
+- [ ] Build succeeds: `bun run check`
+- [ ] Manual check: Mock responses for search queries stream citations and metadata.
 
-- [ ] Asking a question in chat triggers mock `preload_memory` retrieval and renders the `🧠 Memories Applied` badge.
-- [ ] Clicking the badge displays the retrieved semantic facts and relevance scores.
-- [ ] All tests across the test suite pass cleanly (`bun test`).
+**Dependencies:** Tasks 2, 3
+
+**Files likely touched:**
+
+- [`src/lib/agent-runtime/mock/mock-provider.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/agent-runtime/mock/mock-provider.ts)
+- [`src/lib/agent-runtime/mock/mock-store.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/agent-runtime/mock/mock-store.ts)
+- `tests/grounding-stream.test.ts`
+
+**Estimated scope:** M (3 files)
 
 ---
 
-### Phase 6: Verification, Polish & Preflight
+### Checkpoint 2: Stream Pipeline & Mock Grounding Engine
 
-#### Task 10: Full Test Suite Verification and Quality Preflight
+- [ ] `bun run check` passes.
+- [ ] `bun test tests/grounding-stream.test.ts` passes, verifying stream chunks yield grounding metadata to message state.
 
-- **Description**: Run comprehensive quality preflight (`bun run check`, `bun run lint`, `bun run test`) ensuring zero lint errors, 100% strict TypeScript compliance, complete test coverage, and documentation sync.
-- **Acceptance criteria**:
-  - [ ] `bun run check` passes with 0 type errors.
-  - [ ] `bun run lint` passes with 0 warnings/errors.
-  - [ ] `bun run test` passes all tests (including existing and new memory tests).
-- **Verification**:
-  - [ ] `bun run preflight` exits with code 0.
-- **Dependencies**: Tasks 1 through 9
-- **Files likely touched**:
-  - `tests/`
-  - Codebase documentation
-- **Estimated scope**: S (1-2 files)
+---
+
+### Phase 3: Visual Grounding Primitives & Citation UI
+
+#### Task 5: Build `InlineCitationBadge` and `SourcePopover`
+
+**Description:** Create `src/components/grounding/inline-citation-badge.tsx` and `src/components/grounding/source-popover.tsx`. The citation badge renders as a compact, styled pill/superscript (e.g. `[1]`, `[2]`). Hovering or clicking opens a popover displaying source title, clickable URL link or GCS URI, domain badge, snippet text, and similarity confidence score.
+
+**Acceptance criteria:**
+
+- [ ] `InlineCitationBadge` displays 1-based index (e.g. `[1]`, `[2]`) or multiple indices (e.g. `[1, 2]`).
+- [ ] Clicking or hovering badge opens `SourcePopover` with full source details.
+- [ ] `SourcePopover` displays web favicon/globe icon, title, domain, text snippet, and confidence rating.
+- [ ] For internal RAG chunks (`retrievedContext`), displays document icon, GCS URI, RAG corpus ID, and button to open Enterprise RAG Drawer.
+- [ ] Keyboard accessible (Tab focusable, Enter/Space toggles popover, Escape closes).
+- [ ] Seamless styling for both light and dark modes.
+
+**Verification:**
+
+- [ ] Tests pass: `bun test tests/grounding-ui.test.tsx`
+- [ ] Build succeeds: `bun run check`
+- [ ] Manual check: Popover positions accurately and displays source info.
+
+**Dependencies:** Tasks 1, 2
+
+**Files likely touched:**
+
+- `src/components/grounding/inline-citation-badge.tsx`
+- `src/components/grounding/source-popover.tsx`
+
+**Estimated scope:** S (2 files)
+
+---
+
+#### Task 6: Build `GoogleSearchWidget`
+
+**Description:** Create `src/components/grounding/google-search-widget.tsx` to safely embed the official Google Search suggestion entry point (`searchEntryPoint.renderedContent`) provided by Vertex AI Reasoning Engine / Gemini API, strictly adhering to Google Search Grounding attribution guidelines.
+
+**Acceptance criteria:**
+
+- [ ] Safely renders `searchEntryPoint.renderedContent` HTML inside an attribution-compliant container.
+- [ ] Preserves Google Search logo and suggestion chips without alteration or suppression.
+- [ ] Applies theme-appropriate styling for light and dark modes.
+- [ ] Returns `null` cleanly if `renderedContent` is absent or empty.
+- [ ] Sanitizes rendered content to prevent unsafe script execution while preserving search links and styling.
+
+**Verification:**
+
+- [ ] Tests pass: `bun test tests/grounding-ui.test.tsx`
+- [ ] Build succeeds: `bun run check`
+- [ ] Manual check: Search suggestion chips render cleanly in light/dark themes.
+
+**Dependencies:** Task 1
+
+**Files likely touched:**
+
+- `src/components/grounding/google-search-widget.tsx`
+
+**Estimated scope:** S (1 file)
+
+---
+
+#### Task 7: Build `GroundingSourcesAccordion` & `EnterpriseRagDrawer`
+
+**Description:** Create `src/components/grounding/grounding-sources-accordion.tsx` and `src/components/grounding/enterprise-rag-drawer.tsx`. The accordion displays a summary bar ("🔍 Grounded with Google Search & Enterprise Docs [N Sources ▾]") expandable to show search queries, web source cards, and RAG document items. The `EnterpriseRagDrawer` provides a full slide-over inspector (using `@radix-ui/react-dialog`) to view the complete retrieved corporate text chunks, GCS paths, and confidence scores.
+
+**Acceptance criteria:**
+
+- [ ] `GroundingSourcesAccordion` collapses and expands smoothly with Chevron toggle.
+- [ ] Displays search queries as distinct pill tags ("Searches: ...").
+- [ ] Lists web sources with favicon/globe, title, domain link, and confidence indicator.
+- [ ] Lists enterprise RAG documents with GCS bucket links and "Inspect Document" action.
+- [ ] `EnterpriseRagDrawer` opens slide-over drawer displaying full document text chunk, metadata (corpus ID, GCS URI, confidence score), and close button.
+- [ ] Accessible keyboard navigation and ARIA attributes (`aria-expanded`, `aria-controls`).
+
+**Verification:**
+
+- [ ] Tests pass: `bun test tests/grounding-ui.test.tsx`
+- [ ] Build succeeds: `bun run check`
+- [ ] Manual check: Accordion expands/collapses and drawer slides in from right.
+
+**Dependencies:** Tasks 5, 6
+
+**Files likely touched:**
+
+- `src/components/grounding/grounding-sources-accordion.tsx`
+- `src/components/grounding/enterprise-rag-drawer.tsx`
+
+**Estimated scope:** M (2 files)
+
+---
+
+### Checkpoint 3: Visual Grounding Components
+
+- [ ] `bun run check` passes with zero type errors.
+- [ ] `bun test tests/grounding-ui.test.tsx` passes component tests for citation badge, popover, search widget, accordion, and RAG drawer.
+
+---
+
+### Phase 4: Message Integration & Markdown Text Citation Badges
+
+#### Task 8: Assemble `GroundingFooter` and Mount in `GeminiMessage`
+
+**Description:** Create `src/components/grounding/grounding-footer.tsx` integrating `GroundingSourcesAccordion`, `GoogleSearchWidget`, and `EnterpriseRagDrawer`. Mount `GroundingFooter` in [`src/components/assistant-ui/gemini-message.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/gemini-message.tsx) inside the assistant message branch, extracting `groundingMetadata` from `message.metadata.custom.groundingMetadata` via `useAuiState`.
+
+**Acceptance criteria:**
+
+- [ ] `GroundingFooter` encapsulates sources accordion, Google Search entry point widget, and RAG drawer state.
+- [ ] `GeminiMessage` extracts `metadata.custom.groundingMetadata` and renders `GroundingFooter` below assistant response text and above timing/actions footer.
+- [ ] Renders nothing if no `groundingMetadata` or chunks exist.
+- [ ] Matches the Google Gemini message aesthetic with proper padding and dividers.
+
+**Verification:**
+
+- [ ] Tests pass: `bun test tests/components.test.tsx`
+- [ ] Build succeeds: `bun run check`
+- [ ] Manual check: Grounded messages show the grounding footer in chat UI.
+
+**Dependencies:** Tasks 3, 7
+
+**Files likely touched:**
+
+- `src/components/grounding/grounding-footer.tsx`
+- [`src/components/assistant-ui/gemini-message.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/gemini-message.tsx)
+
+**Estimated scope:** S (2 files)
+
+---
+
+#### Task 9: Integrate Interactive Inline Citation Badges into `MarkdownText`
+
+**Description:** Update [`src/components/assistant-ui/markdown-text.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/markdown-text.tsx) and streamdown pipeline to recognize citation patterns like `[1]`, `[2]`, `[1, 2]` within text and render them as interactive `InlineCitationBadge` components linked to the message's `groundingChunks`.
+
+**Acceptance criteria:**
+
+- [ ] Inline citations `[1]`, `[2]`, `[1, 2]` in assistant text render as clickable `InlineCitationBadge` elements.
+- [ ] Does not corrupt standard markdown links (e.g. `[Google Cloud](https://cloud.google.com)`), code blocks, or math tags.
+- [ ] Badges connect to `groundingMetadata.groundingChunks` in the current message context.
+- [ ] Clicking or hovering on an inline citation badge displays the `SourcePopover`.
+
+**Verification:**
+
+- [ ] Tests pass: `bun test tests/grounding-ui.test.tsx`
+- [ ] Build succeeds: `bun run check`
+- [ ] Manual check: Streaming responses display interactive `[1]` badges inline within paragraphs.
+
+**Dependencies:** Tasks 5, 8
+
+**Files likely touched:**
+
+- [`src/components/assistant-ui/markdown-text.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/markdown-text.tsx)
+- `src/components/grounding/citation-markdown-plugin.tsx`
+
+**Estimated scope:** M (2 files)
+
+---
+
+### Checkpoint 4: End-to-End Chat Grounding Integration
+
+- [ ] Asking a search or specs question in chat displays inline citation badges `[1]`, `[2]` in response text.
+- [ ] Clicking or hovering badges displays source preview popover with title, domain, and confidence score.
+- [ ] Message footer shows Grounding Sources Accordion, Google Search suggestions widget, and opens Enterprise RAG Drawer.
+- [ ] All unit and component tests pass (`bun test`).
+
+---
+
+### Phase 5: Verification, Quality Preflight & Documentation
+
+#### Task 10: Complete Test Suite Verification, Quality Preflight & Docs Sync
+
+**Description:** Run comprehensive verification including `bun run check`, `bun run lint`, `bun run test`, and `bun run preflight`. Ensure 100% strict TypeScript types, zero ESLint warnings, all unit/integration tests passing, and documentation index updated in `AGENTS.md`.
+
+**Acceptance criteria:**
+
+- [ ] `bun run check` passes with zero type errors.
+- [ ] `bun run lint` passes with zero ESLint warnings/errors.
+- [ ] `bun run test` passes all tests across the repository.
+- [ ] `bun run preflight` exits with status 0.
+- [ ] `AGENTS.md` is updated with grounding components index and data contracts.
+
+**Verification:**
+
+- [ ] `bun run preflight` exits cleanly.
+
+**Dependencies:** Tasks 1 through 9
+
+**Files likely touched:**
+
+- `tests/`
+- [`AGENTS.md`](file:///Users/mblanc/projects/agent-runtime-ui/AGENTS.md)
+
+**Estimated scope:** S (2 files)
 
 ---
 
 ## Risks and Mitigations
 
-| Risk                                                 | Impact | Mitigation                                                                                                           |
-| ---------------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------- |
-| Cross-tenant memory data leakage                     | High   | Enforce authenticated `session.user.id` filter on every API route handler via `withAuth` and mock/GCP store methods. |
-| In-chat memory badges cluttering conversation UI     | Med    | Use subtle, collapsible pill components with popovers rather than full expanded cards in message stream.             |
-| Memory mutations causing chat UI re-render thrashing | Low    | Scope memory state within dedicated `MemoryProvider` independent of assistant-ui thread runtime.                     |
-| Mock mode vs GCP Vertex AI divergence                | Med    | Keep `IAgentRuntimeProvider` interface uniform across `MockAgentRuntimeProvider` and `VertexAgentRuntimeProvider`.   |
+| Risk                                                              | Impact | Mitigation                                                                                                                                                                         |
+| ----------------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| XSS vulnerability from `searchEntryPoint.renderedContent` HTML    | High   | Sanitize HTML content before rendering while preserving valid Google Search attribution elements and SVG icons.                                                                    |
+| Citation parser breaking standard markdown links or math formulas | High   | Use regex lookaheads/lookbehinds and token boundary validation so only standalone numeric bracket references `[1]`, `[2]` are transformed, ignoring `[text](url)` and math blocks. |
+| Grounding metadata lost during stream chunks or message updates   | Med    | Maintain accumulated grounding metadata in adapter closure and ensure final yield on `[DONE]` includes complete metadata.                                                          |
+| Google Search attribution policy violation                        | High   | Embed `searchEntryPoint.renderedContent` faithfully without hiding, overlaying, or modifying Google logos or suggestion terms.                                                     |
+| Missing or ungrounded turns throwing runtime errors               | Low    | Gracefully guard all grounding components with optional chaining and return `null` when metadata or chunks are absent.                                                             |
 
 ---
 
 ## Open Questions
 
-- None identified. The spec [`docs/spec-memory-bank.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/spec-memory-bank.md) provides complete data contracts, REST endpoints, and UI guidelines.
+- None. The specification [`docs/spec-grounding-citations.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/spec-grounding-citations.md) fully defines data contracts, component hierarchy, attribution requirements, and mock behavior.

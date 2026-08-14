@@ -1,15 +1,7 @@
 "use client";
 
 import { AuiIf, ComposerPrimitive, AttachmentPrimitive } from "@assistant-ui/react";
-import {
-  Plus,
-  ArrowUp,
-  Square,
-  Mic,
-  Paperclip,
-  X,
-  FileText,
-} from "lucide-react";
+import { Plus, ArrowUp, Square, Mic, Paperclip, X, FileText } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,

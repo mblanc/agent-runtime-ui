@@ -99,6 +99,15 @@ Use this index to quickly locate specific subsystems and implementations across 
 - [`src/components/assistant-ui/markdown-text.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/markdown-text.tsx): Markdown text primitive integration with syntax highlighting.
 - [`src/components/assistant-ui/shiki-highlighter.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/shiki-highlighter.tsx): Code block syntax highlighting component.
 
+### Grounding & Citations Components
+
+- [`src/components/grounding/inline-citation-badge.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/grounding/inline-citation-badge.tsx): Interactive superscript citation pill (`[1]`, `[1, 2]`) with hover/click popover and keyboard navigation.
+- [`src/components/grounding/source-popover.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/grounding/source-popover.tsx): Detailed floating popover displaying source title, domain badge, GCS URI, snippet, and confidence score.
+- [`src/components/grounding/google-search-widget.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/grounding/google-search-widget.tsx): Sanitized Google Search Grounding attribution container rendering official search suggestions.
+- [`src/components/grounding/grounding-sources-accordion.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/grounding/grounding-sources-accordion.tsx): Expandable sources list detailing search queries, web source links, and corporate RAG documents.
+- [`src/components/grounding/enterprise-rag-drawer.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/grounding/enterprise-rag-drawer.tsx): Slide-over drawer for deep inspection of enterprise RAG document text excerpts and GCS metadata.
+- [`src/components/grounding/grounding-footer.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/grounding/grounding-footer.tsx): Composite footer component integrating sources accordion, search widget, and RAG drawer.
+
 ### Auth & UI Primitives
 
 - [`src/components/auth/user-avatar-menu.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/auth/user-avatar-menu.tsx): User profile dropdown with logout button.
@@ -109,6 +118,7 @@ Use this index to quickly locate specific subsystems and implementations across 
 
 - [`src/lib/agent-runtime-client.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/agent-runtime-client.ts): Vertex AI Reasoning Engine REST API client, SSE stream handler, and mock store.
 - [`src/lib/gemini-runtime-adapter.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/gemini-runtime-adapter.ts): `ChatModelAdapter` translating `/api/chat` SSE stream to assistant-ui runtime.
+- [`src/lib/grounding/citation-parser.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/grounding/citation-parser.ts): Citation parsing, domain/GCS extraction, metadata normalization, and markdown citation transformation.
 - [`src/lib/session-adapter.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/session-adapter.tsx): `RemoteThreadListAdapter` connecting assistant-ui thread list to `/api/sessions`.
 - [`src/lib/auth.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/auth.ts): Server-side authentication and session extraction.
 - [`src/lib/auth-client.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/auth-client.ts): Client-side authentication state hook.
@@ -116,12 +126,16 @@ Use this index to quickly locate specific subsystems and implementations across 
 
 ### Types & Specs
 
-- [`src/types/agent.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/types/agent.ts): Data contracts for streams, sessions, subagents, and requests.
+- [`src/types/agent.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/types/agent.ts): Data contracts for streams, sessions, subagents, grounding metadata, and requests.
 - [`docs/spec.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/spec.md): Overall application specification and architecture diagram.
+- [`docs/spec-grounding-citations.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/spec-grounding-citations.md): Specification for Google Search and Enterprise RAG Grounding, citations, and inspection drawer.
 - [`docs/spec-session-service-thread-list.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/spec-session-service-thread-list.md): Detailed specification for session service and sidebar thread list integration.
 
 ### Test Suite
 
+- [`tests/grounding-parser.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/grounding-parser.test.ts): Unit tests for citation regex parsing, 1-based index resolution, and grounding normalization.
+- [`tests/grounding-stream.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/grounding-stream.test.ts): Integration tests for grounding stream SSE interception, chat adapter metadata, and multi-turn persistence.
+- [`tests/grounding-ui.test.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/tests/grounding-ui.test.tsx): Component tests for citation badges, popovers, Google Search widget, and RAG drawer.
 - [`tests/sessions-api.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/sessions-api.test.ts): Integration tests for session REST endpoints.
 - [`tests/chat-api.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/chat-api.test.ts): Unit tests for `/api/chat` SSE streaming proxy.
 - [`tests/thread-sidebar.test.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/tests/thread-sidebar.test.tsx): React testing for thread sidebar primitives.

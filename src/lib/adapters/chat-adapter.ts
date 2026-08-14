@@ -4,7 +4,13 @@ import type {
   ChatModelRunResult,
   ThreadMessage,
 } from "@assistant-ui/react";
-import type { AgentMessage, AgentMessagePart, MemoryRetrievalItem } from "@/types/agent";
+import type {
+  AgentMessage,
+  AgentMessagePart,
+  GroundingMetadata,
+  MemoryRetrievalItem,
+} from "@/types/agent";
+import { extractGroundingMetadata } from "@/lib/grounding/citation-parser";
 import { formatAgentDisplayName } from "@/lib/utils";
 import { defaultAttachmentStore } from "../attachments/attachment-store";
 import { inferMimeType } from "../attachments/mime-types";
@@ -126,7 +132,8 @@ export function createYieldContent(
   text: string,
   toolCalls?: ToolCallYieldItem[],
   eventId?: string,
-  retrievedMemories?: MemoryRetrievalItem[]
+  retrievedMemories?: MemoryRetrievalItem[],
+  groundingMetadata?: GroundingMetadata
 ): ChatModelRunResult {
   const hasRequiresAction = (toolCalls || []).some(
     (tc) => tc.status?.type === "requires-action" && tc.result === undefined
@@ -154,7 +161,9 @@ export function createYieldContent(
           },
         }
       : {}),
-    ...(eventId || (retrievedMemories && retrievedMemories.length > 0)
+    ...(eventId ||
+    (retrievedMemories && retrievedMemories.length > 0) ||
+    groundingMetadata
       ? {
           metadata: {
             custom: {
@@ -162,6 +171,7 @@ export function createYieldContent(
               ...(retrievedMemories && retrievedMemories.length > 0
                 ? { retrievedMemories }
                 : {}),
+              ...(groundingMetadata ? { groundingMetadata } : {}),
             },
           },
         }
@@ -584,6 +594,7 @@ export function createGeminiChatAdapter(
         let latestEventId: string | undefined;
         const toolCallsMap = new Map<string, ToolCallYieldItem>();
         const retrievedMemoriesList: MemoryRetrievalItem[] = [];
+        let latestGroundingMetadata: GroundingMetadata | undefined;
 
         const getThoughtSeparator = (prefix: string) => {
           if (!prefix) return "";
@@ -650,7 +661,8 @@ export function createGeminiChatAdapter(
                   accumulatedText,
                   Array.from(toolCallsMap.values()),
                   latestEventId,
-                  retrievedMemoriesList
+                  retrievedMemoriesList,
+                  latestGroundingMetadata
                 );
                 return;
               }
@@ -692,6 +704,38 @@ export function createGeminiChatAdapter(
                   }
                 }
 
+                const extractedMeta = extractGroundingMetadata(parsed);
+                if (extractedMeta) {
+                  const existingChunks = latestGroundingMetadata?.groundingChunks || [];
+                  const newChunks = (extractedMeta.groundingChunks || []).filter(
+                    (newC) =>
+                      !existingChunks.some(
+                        (c) =>
+                          (c.web?.uri && c.web.uri === newC.web?.uri) ||
+                          (c.retrievedContext?.uri &&
+                            c.retrievedContext.uri === newC.retrievedContext?.uri)
+                      )
+                  );
+
+                  latestGroundingMetadata = {
+                    ...(latestGroundingMetadata || {}),
+                    ...extractedMeta,
+                    webSearchQueries: Array.from(
+                      new Set([
+                        ...(latestGroundingMetadata?.webSearchQueries || []),
+                        ...(extractedMeta.webSearchQueries || []),
+                      ])
+                    ),
+                    retrievalQueries: Array.from(
+                      new Set([
+                        ...(latestGroundingMetadata?.retrievalQueries || []),
+                        ...(extractedMeta.retrievalQueries || []),
+                      ])
+                    ),
+                    groundingChunks: [...existingChunks, ...newChunks],
+                  };
+                }
+
                 if (parsed.event_type === "content" && parsed.content) {
                   if (parsed.partial === true) {
                     currentTextSegment += parsed.content;
@@ -711,7 +755,8 @@ export function createGeminiChatAdapter(
                     accumulatedText,
                     Array.from(toolCallsMap.values()),
                     latestEventId,
-                    retrievedMemoriesList
+                    retrievedMemoriesList,
+                    latestGroundingMetadata
                   );
                 } else if (parsed.event_type === "thought" && parsed.thought) {
                   if (parsed.partial === true) {
@@ -741,7 +786,8 @@ export function createGeminiChatAdapter(
                     accumulatedText,
                     Array.from(toolCallsMap.values()),
                     latestEventId,
-                    retrievedMemoriesList
+                    retrievedMemoriesList,
+                    latestGroundingMetadata
                   );
                 } else if (parsed.event_type === "agent_call" && parsed.agent_call) {
                   flushCurrentThoughtSegment();
@@ -760,7 +806,8 @@ export function createGeminiChatAdapter(
                     accumulatedText,
                     Array.from(toolCallsMap.values()),
                     latestEventId,
-                    retrievedMemoriesList
+                    retrievedMemoriesList,
+                    latestGroundingMetadata
                   );
                 } else if (
                   parsed.event_type === "agent_response" &&
@@ -789,7 +836,8 @@ export function createGeminiChatAdapter(
                     accumulatedText,
                     Array.from(toolCallsMap.values()),
                     latestEventId,
-                    retrievedMemoriesList
+                    retrievedMemoriesList,
+                    latestGroundingMetadata
                   );
                 } else if (parsed.event_type === "tool_call" && parsed.tool_call) {
                   flushCurrentThoughtSegment();
@@ -852,7 +900,8 @@ export function createGeminiChatAdapter(
                     accumulatedText,
                     Array.from(toolCallsMap.values()),
                     latestEventId,
-                    retrievedMemoriesList
+                    retrievedMemoriesList,
+                    latestGroundingMetadata
                   );
                 } else if (parsed.event_type === "tool_result" && parsed.tool_result) {
                   flushCurrentThoughtSegment();
@@ -915,7 +964,17 @@ export function createGeminiChatAdapter(
                     accumulatedText,
                     Array.from(toolCallsMap.values()),
                     latestEventId,
-                    retrievedMemoriesList
+                    retrievedMemoriesList,
+                    latestGroundingMetadata
+                  );
+                } else if (extractedMeta) {
+                  yield createYieldContent(
+                    accumulatedReasoning,
+                    accumulatedText,
+                    Array.from(toolCallsMap.values()),
+                    latestEventId,
+                    retrievedMemoriesList,
+                    latestGroundingMetadata
                   );
                 } else if (parsed.event_type === "error" && parsed.error) {
                   flushCurrentThoughtSegment();
@@ -928,7 +987,8 @@ export function createGeminiChatAdapter(
                     accumulatedText,
                     Array.from(toolCallsMap.values()),
                     latestEventId,
-                    retrievedMemoriesList
+                    retrievedMemoriesList,
+                    latestGroundingMetadata
                   );
                   return;
                 } else if (parsed.event_type === "done") {
@@ -951,7 +1011,8 @@ export function createGeminiChatAdapter(
                     accumulatedText,
                     Array.from(toolCallsMap.values()),
                     latestEventId,
-                    retrievedMemoriesList
+                    retrievedMemoriesList,
+                    latestGroundingMetadata
                   );
                   return;
                 }

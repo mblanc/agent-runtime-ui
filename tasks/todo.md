@@ -1,60 +1,54 @@
-# Task List: Agent Platform Memory Bank
+# Task List: Google Search & Enterprise RAG Grounding (Source Citations & Truthfulness Inspector)
 
-- [x] **Phase 1: Data Contracts, Types & Mock Store Engine**
-  - [x] **Task 1: Define Memory Bank Types and Contracts**
-    - [x] Add `AgentMemory`, `MemoryRetrievalItem`, `AgentMemoryListResponse`, `CreateMemoryRequest`, `UpdateMemoryRequest`, `GenerateMemoriesRequest`, and `GenerateMemoriesResponse` to `src/types/agent.ts`.
-    - [x] Extend `AgentStreamEvent` with `retrieved_memories?: MemoryRetrievalItem[]`.
+- [ ] **Phase 1: Data Contracts, Types & Citation Parsing Engine**
+  - [x] **Task 1: Define Grounding & Citation Data Contracts**
+    - [x] Add `WebGroundingChunk`, `RetrievedContextChunk`, `GroundingChunk`, `GroundingSupport`, `SearchEntryPoint`, `GroundingMetadata` to `src/types/agent.ts`.
+    - [x] Extend `AgentStreamEvent`, `AgentMessagePart`, and `AgentSessionEvent` with `grounding_metadata?: GroundingMetadata` and `groundingMetadata?: GroundingMetadata`.
     - [x] Verify `bun run check`.
-  - [x] **Task 2: Implement Mock Memory Store & Provider Methods**
-    - [x] Extend `IAgentRuntimeProvider` in `src/lib/agent-runtime/types.ts`.
-    - [x] Seed `mockMemoriesStore` in `src/lib/agent-runtime/mock/mock-store.ts`.
-    - [x] Implement memory CRUD in `MockAgentRuntimeProvider` in `src/lib/agent-runtime/mock/mock-provider.ts`.
-    - [x] Create `tests/memory-store.test.ts` and verify with `bun test tests/memory-store.test.ts`.
-  - [x] **Checkpoint 1: Memory Data & Mock Store Foundation**
-    - [x] Verify `bun run check` and `bun test tests/memory-store.test.ts`.
+  - [x] **Task 2: Implement Grounding Citation Normalizer & Parser Utilities**
+    - [x] Create `src/lib/grounding/citation-parser.ts` with `parseCitationIndices`, `resolveCitationSource`, `extractDomainFromUri`, and `extractGroundingMetadata`.
+    - [x] Create `tests/grounding-parser.test.ts` and verify with `bun test tests/grounding-parser.test.ts`.
+  - [x] **Checkpoint 1: Data Contracts & Parsing Utilities**
+    - [x] Verify `bun run check` and `bun test tests/grounding-parser.test.ts`.
 
-- [x] **Phase 2: BFF REST API Endpoints & Client Integration**
-  - [x] **Task 3: Implement BFF Memory API Routes**
-    - [x] Implement `GET /api/memory` (listing & filtering) and `POST /api/memory` (create) in `src/app/api/memory/route.ts`.
-    - [x] Implement `PATCH /api/memory/[memoryId]` (update) and `DELETE /api/memory/[memoryId]` (delete) in `src/app/api/memory/[memoryId]/route.ts`.
-    - [x] Implement `POST /api/memory/generate` in `src/app/api/memory/generate/route.ts`.
-    - [x] Create `tests/memory-api.test.ts` and verify with `bun test tests/memory-api.test.ts`.
-  - [x] **Task 4: Expose Memory Client Methods on AgentRuntimeClient & GCP Provider**
-    - [x] Add facade methods to `AgentRuntimeClient` in `src/lib/agent-runtime-client.ts`.
-    - [x] Implement REST mapping in `VertexAgentRuntimeProvider` in `src/lib/agent-runtime/client.ts`.
-    - [x] Verify `bun run check`.
-  - [x] **Checkpoint 2: REST API & Client Layer**
-    - [x] Verify `bun test tests/memory-api.test.ts` passes.
+- [ ] **Phase 2: Stream Adapter & Mock Grounding Generator**
+  - [x] **Task 3: Chat Adapter Stream Interception for Grounding Metadata**
+    - [x] Update `createYieldContent` and `createGeminiChatAdapter` in `src/lib/adapters/chat-adapter.ts` to parse and yield `metadata.custom.groundingMetadata`.
+    - [x] Update `src/lib/agent-runtime/event-normalizer.ts` to preserve grounding metadata in thread history messages.
+    - [x] Verify `bun run check` and `bun test tests/event-normalizer.test.ts`.
+  - [x] **Task 4: Implement Mock Provider Grounding Simulation & Multi-Turn Persistence**
+    - [x] Update `MockAgentRuntimeProvider.streamQuery` in `src/lib/agent-runtime/mock/mock-provider.ts` to yield grounding metadata and thoughts for search/RAG queries.
+    - [x] Persist grounding metadata in `mockSessionEventsStore` in `src/lib/agent-runtime/mock/mock-store.ts`.
+    - [x] Create `tests/grounding-stream.test.ts` and verify with `bun test tests/grounding-stream.test.ts`.
+  - [x] **Checkpoint 2: Stream Pipeline & Mock Grounding Engine**
+    - [x] Verify `bun run check` and `bun test tests/grounding-stream.test.ts`.
 
-- [x] **Phase 3: Client State Management & React Context**
-  - [x] **Task 5: Implement MemoryProvider and useMemory Hook**
-    - [x] Create `src/lib/memory-context.tsx` with optimistic CRUD, topic filters, search, and drawer state.
-    - [x] Create `tests/memory-context.test.tsx` and verify with `bun test tests/memory-context.test.tsx`.
+- [ ] **Phase 3: Visual Grounding Primitives & Citation UI**
+  - [x] **Task 5: Build InlineCitationBadge and SourcePopover**
+    - [x] Create `src/components/grounding/inline-citation-badge.tsx` with clickable/hoverable `[1]` badge.
+    - [x] Create `src/components/grounding/source-popover.tsx` displaying source details, domain tag, snippet, and confidence score.
+  - [x] **Task 6: Build GoogleSearchWidget**
+    - [x] Create `src/components/grounding/google-search-widget.tsx` to safely render `searchEntryPoint.renderedContent` with compliant Google Search attribution.
+  - [x] **Task 7: Build GroundingSourcesAccordion & EnterpriseRagDrawer**
+    - [x] Create `src/components/grounding/grounding-sources-accordion.tsx` with collapsible search queries, web source cards, and RAG document items.
+    - [x] Create `src/components/grounding/enterprise-rag-drawer.tsx` with slide-over drawer using `@radix-ui/react-dialog` to inspect full RAG text excerpts and GCS metadata.
+    - [x] Create `tests/grounding-ui.test.tsx` and verify component behavior with `bun test tests/grounding-ui.test.tsx`.
+  - [x] **Checkpoint 3: Visual Grounding Components**
+    - [x] Verify `bun run check` and `bun test tests/grounding-ui.test.tsx`.
 
-- [x] **Phase 4: Memory Profile Drawer & Avatar Menu UI**
-  - [x] **Task 6: Build Memory Fact Cards and Add/Edit Modals**
-    - [x] Create `src/components/memory/memory-item-card.tsx` with topic badges, inline editing, and delete actions.
-    - [x] Create `src/components/memory/add-memory-modal.tsx` with fact input and category selection.
-  - [x] **Task 7: Build MemoryDrawer and Integrate into UserAvatarMenu & Layout**
-    - [x] Create `src/components/memory/memory-drawer.tsx` using Radix Dialog/Sheet with search, topic filtering, and auto-consolidation status.
-    - [x] Add "Memory Bank Profile" item with `🧠` Brain icon to `src/components/auth/user-avatar-menu.tsx`.
-    - [x] Mount `MemoryProvider` in `src/app/page.tsx` or root layout.
-    - [x] Create `tests/memory-ui.test.tsx` and verify with `bun test tests/memory-ui.test.tsx`.
-  - [x] **Checkpoint 3: Memory Drawer & Avatar Menu UI**
-    - [x] Verify drawer opens, displays facts, allows adding, editing, and deleting memories.
+- [x] **Phase 4: Message Integration & Markdown Text Citation Badges**
+  - [x] **Task 8: Assemble GroundingFooter and Mount in GeminiMessage**
+    - [x] Create `src/components/grounding/grounding-footer.tsx` combining accordion, search widget, and drawer trigger.
+    - [x] Extract `metadata.custom.groundingMetadata` in `src/components/assistant-ui/gemini-message.tsx` and render `GroundingFooter`.
+    - [x] Verify `bun test tests/components.test.tsx`.
+  - [x] **Task 9: Integrate Interactive Inline Citation Badges into MarkdownText**
+    - [x] Parse inline citation tokens `[1]`, `[2]` in `src/components/assistant-ui/markdown-text.tsx` and render interactive `InlineCitationBadge` components without corrupting markdown links or math formulas.
+    - [x] Verify `bun test tests/grounding-ui.test.tsx` and `bun run check`.
+  - [x] **Checkpoint 4: End-to-End Chat Grounding Integration**
+    - [x] Verify search queries render inline citation badges, expandable sources accordion, and official Google Search widget in chat.
 
-- [x] **Phase 5: In-Chat Memory Retrieval Badges & Stream Adapter**
-  - [x] **Task 8: Build In-Chat Memory Retrieval Badge & Popover**
-    - [x] Create `src/components/memory/memory-retrieval-badge.tsx` with expandable fact details and relevance scores.
-  - [x] **Task 9: Wire Memory Tool Interception in Chat Adapter & GeminiMessage**
-    - [x] Update `createGeminiChatAdapter` in `src/lib/adapters/chat-adapter.ts` to intercept `preload_memory` and `load_memory` tool calls / `retrieved_memories` stream events and attach to message metadata.
-    - [x] Mount `MemoryRetrievalBadge` in `src/components/assistant-ui/gemini-message.tsx`.
-    - [x] Update `MockAgentRuntimeProvider.streamQuery` to yield simulated memory retrieval events.
-    - [x] Create `tests/memory-chat.test.ts` and verify.
-  - [x] **Checkpoint 4: In-Chat Retrieval & End-to-End Integration**
-    - [x] Verify `🧠 Memories Applied` badge appears in chat messages and expands details.
-
-- [x] **Phase 6: Verification, Polish & Preflight**
-  - [x] **Task 10: Full Test Suite Verification and Quality Preflight**
+- [ ] **Phase 5: Verification, Quality Preflight & Documentation**
+  - [x] **Task 10: Complete Test Suite Verification, Quality Preflight & Docs Sync**
     - [x] Run `bun run check`, `bun run lint`, and `bun run test`.
-    - [x] Ensure `bun run preflight` exits with code 0.
+    - [x] Update `AGENTS.md` with grounding components and architecture index.
+    - [x] Ensure `bun run preflight` exits with status 0.

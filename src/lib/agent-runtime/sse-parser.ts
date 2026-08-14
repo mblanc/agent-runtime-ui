@@ -1,5 +1,6 @@
 import { AgentStreamEvent } from "@/types/agent";
 import { formatAgentDisplayName, isSubagentNode } from "./event-normalizer";
+import { extractGroundingMetadata } from "@/lib/grounding/citation-parser";
 
 function extractEventId(parsed: Record<string, unknown>): string | undefined {
   return (
@@ -144,6 +145,7 @@ export async function* parseSseStream(
       const rootPartial = extractPartial(parsed);
       const turnComplete = extractTurnComplete(parsed);
       const interrupted = extractInterrupted(parsed);
+      const groundingMetadata = extractGroundingMetadata(parsed);
 
       const withEventMeta = (
         evt: AgentStreamEvent,
@@ -151,12 +153,20 @@ export async function* parseSseStream(
       ): AgentStreamEvent => {
         const resolvedPartial =
           typeof partPartial === "boolean" ? partPartial : rootPartial;
+        const metaToAttach =
+          evt.groundingMetadata || evt.grounding_metadata || groundingMetadata;
         return {
           ...evt,
           ...(eventId ? { eventId } : {}),
           ...(typeof resolvedPartial === "boolean" ? { partial: resolvedPartial } : {}),
           ...(typeof turnComplete === "boolean" ? { turn_complete: turnComplete } : {}),
           ...(typeof interrupted === "boolean" ? { interrupted } : {}),
+          ...(metaToAttach
+            ? {
+                groundingMetadata: metaToAttach,
+                grounding_metadata: metaToAttach,
+              }
+            : {}),
         };
       };
 
@@ -318,6 +328,13 @@ export async function* parseSseStream(
         yield withEventMeta({
           event_type: "error",
           error: errStr,
+        });
+      } else if (groundingMetadata) {
+        yield withEventMeta({
+          event_type: "thought",
+          thought: "Grounding metadata updated.",
+          groundingMetadata,
+          grounding_metadata: groundingMetadata,
         });
       } else if (turnComplete) {
         yield withEventMeta({
