@@ -11,3 +11,48 @@ export function formatAgentDisplayName(authorOrPath?: string): string {
   const clean = leaf.replace(/@\d+$/, "").replace(/[_-]/g, " ").trim();
   return clean.replace(/\b\w/g, (c) => c.toUpperCase());
 }
+
+/**
+ * Sanitizes URLs to prevent javascript: or data: XSS vectors.
+ */
+export function sanitizeUrl(url?: string | null): string {
+  if (!url) return "#";
+  const trimmed = url.trim();
+  if (trimmed.startsWith("#") || trimmed.startsWith("/")) return trimmed;
+  try {
+    const parsed = new URL(trimmed, "http://localhost");
+    if (["http:", "https:", "mailto:", "tel:"].includes(parsed.protocol)) {
+      return trimmed;
+    }
+  } catch {
+    // Malformed URL
+  }
+  return "#";
+}
+
+/**
+ * Safely copies text to the clipboard with fallback for non-secure / restricted contexts.
+ */
+export async function copyToClipboardSafe(text: string): Promise<boolean> {
+  try {
+    if (typeof window !== "undefined" && navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+    if (typeof document !== "undefined") {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      const success = document.execCommand("copy");
+      document.body.removeChild(textarea);
+      return success;
+    }
+    return false;
+  } catch (err) {
+    console.warn("[Clipboard] Copy failed:", err);
+    return false;
+  }
+}

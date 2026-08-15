@@ -78,14 +78,13 @@ test.describe("ADK HITL Webpage Summarization E2E", () => {
     if (!isApproveDirectlyVisible) {
       // If the agent responded with a natural language text confirmation request first
       const askingText = page
-        .locator(
-          "text=/permission|require your permission|would you like me to use|confirm if you want/i"
-        )
+        .locator("text=/permission|require|would you like me to|confirm|proceed/i")
         .first();
-      if (await askingText.isVisible({ timeout: 10000 }).catch(() => false)) {
+      if (await askingText.isVisible({ timeout: 15000 }).catch(() => false)) {
         console.log(
           "Agent requested confirmation via text. Submitting affirmative response: 'Yes, please execute load_web_page now'"
         );
+        await promptInput.click();
         await promptInput.fill("Yes, please execute load_web_page now");
         await promptInput.press("Enter");
       }

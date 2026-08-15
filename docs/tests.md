@@ -1,0 +1,2 @@
+- Grounding with Vertex AI Search
+- HITL with all the different techniques possibles

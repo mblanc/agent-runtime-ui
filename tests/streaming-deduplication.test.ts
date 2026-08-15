@@ -440,5 +440,125 @@ describe("Streaming Deduplication & ADK Event Handling", () => {
       expect(toolPart?.toolName).toBe("get_weather");
       expect(textPart?.text).toBe("The weather in Tokyo is sunny with 22°C.");
     });
+
+    it("consolidates 20 consecutive stream chunks from a subagent into a single subagent block", async () => {
+      const chunks = [
+        "In 1950, ",
+        "Alan Turing ",
+        "published ",
+        "Computing Machinery ",
+        "and Intelligence. ",
+        "In 1956, ",
+        "the Dartmouth ",
+        "Workshop ",
+        "officially ",
+        "coined ",
+        "the term ",
+        "Artificial Intelligence. ",
+        "In the 1960s, ",
+        "ELIZA ",
+        "was developed. ",
+        "In the 1980s, ",
+        "expert systems ",
+        "emerged. ",
+        "In 2012, ",
+        "AlexNet triggered the deep learning era.",
+      ];
+
+      const ssePayload: string[] = [
+        `data: ${JSON.stringify({
+          event_type: "thought",
+          thought: "Council Member Alpha is reviewing AI timeline...",
+          partial: true,
+        })}\n\n`,
+      ];
+
+      for (let i = 0; i < chunks.length; i++) {
+        ssePayload.push(
+          `data: ${JSON.stringify({
+            event_type: "agent_response",
+            agent_response: {
+              agent: "council_member_alpha",
+              displayName: "Council Member Alpha",
+              response: chunks[i],
+            },
+            partial: i < chunks.length - 1,
+          })}\n\n`
+        );
+      }
+
+      ssePayload.push(
+        `data: ${JSON.stringify({
+          event_type: "content",
+          content: "Here is the final council summary.",
+          partial: false,
+        })}\n\n`
+      );
+      ssePayload.push("data: [DONE]\n\n");
+
+      const encoder = new TextEncoder();
+      const mockStream = new ReadableStream({
+        start(controller) {
+          for (const c of ssePayload) {
+            controller.enqueue(encoder.encode(c));
+          }
+          controller.close();
+        },
+      });
+
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+        ok: true,
+        body: mockStream,
+      } as unknown as Response);
+
+      const adapter = createGeminiChatAdapter();
+      const results: ChatModelRunResult[] = [];
+
+      const generator = adapter.run({
+        messages: [
+          {
+            id: "msg-1",
+            role: "user",
+            content: [{ type: "text", text: "Explain AI history" }],
+            attachments: [],
+            createdAt: new Date(),
+            metadata: {},
+          },
+        ],
+        abortSignal: new AbortController().signal,
+      } as unknown as Parameters<typeof adapter.run>[0]) as AsyncGenerator<
+        ChatModelRunResult,
+        void,
+        unknown
+      >;
+
+      for await (const result of generator) {
+        results.push(result);
+      }
+
+      expect(results.length).toBeGreaterThan(0);
+      const finalResult = results[results.length - 1];
+
+      const reasoningPart = finalResult.content?.find(
+        (p): p is { type: "reasoning"; text: string } => p.type === "reasoning"
+      );
+      const textPart = finalResult.content?.find(
+        (p): p is { type: "text"; text: string } => p.type === "text"
+      );
+
+      expect(reasoningPart).toBeDefined();
+      const reasoningText = reasoningPart?.text || "";
+
+      // Must have exactly ONE subagent block for Council Member Alpha
+      const alphaMatches = reasoningText.match(/:::subagent\[Council Member Alpha\]/g);
+      expect(alphaMatches?.length).toBe(1);
+
+      // Must contain the complete concatenated response text
+      expect(reasoningText).toContain(chunks.join(""));
+      expect(reasoningText).toContain('status="complete"');
+
+      // Main content has final summary
+      expect(textPart?.text).toBe("Here is the final council summary.");
+    });
   });
 });

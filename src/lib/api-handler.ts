@@ -33,8 +33,12 @@ async function authenticateRequest(
 
 function handleApiError(req: NextRequest, err: unknown): NextResponse {
   const errorMessage = err instanceof Error ? err.message : "Internal server error";
-  console.error(`[API Error] ${req.nextUrl?.pathname || "route"}:`, errorMessage);
-  return NextResponse.json({ error: errorMessage }, { status: 500 });
+  console.error(`[API Error] ${req.nextUrl?.pathname || "route"}:`, err);
+  const clientMessage =
+    process.env.NODE_ENV === "production"
+      ? "An internal server error occurred. Please try again later."
+      : errorMessage;
+  return NextResponse.json({ error: clientMessage }, { status: 500 });
 }
 
 /**

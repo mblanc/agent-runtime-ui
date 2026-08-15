@@ -146,12 +146,14 @@ function ChatMessageImpl() {
                     }
                     case "image":
                       return (
-                        <div className="my-1.5 overflow-hidden rounded-2xl border border-[#e3e3e3] dark:border-[#3c4043] max-w-sm">
+                        <div className="my-1.5 overflow-hidden rounded-2xl border border-[#e3e3e3] bg-muted/20 dark:border-[#3c4043] max-w-sm min-h-[120px] flex items-center justify-center">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={part.image}
                             alt={part.filename || "Attached image"}
-                            className="max-h-72 w-auto object-contain rounded-2xl"
+                            loading="lazy"
+                            decoding="async"
+                            className="max-h-72 w-full object-contain rounded-2xl"
                           />
                         </div>
                       );
@@ -241,12 +243,14 @@ function ChatMessageImpl() {
                       return <MarkdownText />;
                     case "image":
                       return (
-                        <div className="my-2 overflow-hidden rounded-2xl border border-[#e3e3e3] dark:border-[#3c4043] max-w-md">
+                        <div className="my-2 overflow-hidden rounded-2xl border border-[#e3e3e3] bg-muted/20 dark:border-[#3c4043] max-w-md min-h-[140px] flex items-center justify-center">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={part.image}
                             alt={part.filename || "Assistant image"}
-                            className="max-h-80 w-auto object-contain rounded-2xl"
+                            loading="lazy"
+                            decoding="async"
+                            className="max-h-80 w-full object-contain rounded-2xl"
                           />
                         </div>
                       );

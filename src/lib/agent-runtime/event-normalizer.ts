@@ -1,7 +1,15 @@
-import { AgentSessionEvent } from "@/types/agent";
+import {
+  AgentActionsDelta,
+  AgentNodeInfo,
+  AgentSessionEvent,
+  AgentUsageMetadata,
+} from "@/types/agent";
 import { FormattedSessionThreadMessage } from "./types";
 import { formatAgentDisplayName } from "@/lib/utils";
-import { extractGroundingMetadata } from "@/lib/grounding/citation-parser";
+import {
+  extractGroundingMetadata,
+  mergeGroundingMetadata,
+} from "@/lib/grounding/citation-parser";
 
 export { formatAgentDisplayName };
 
@@ -109,6 +117,24 @@ function getNodeInfo(
     rawEvent.nodeInfo) as Record<string, unknown> | undefined;
 }
 
+function isTargetRootContainer(target: string, rootContainer: string): boolean {
+  if (!target) return false;
+  if (target.includes("/")) {
+    return target === rootContainer;
+  }
+  const baseTarget = target.split("@")[0];
+  const baseRoot = rootContainer.split("@")[0];
+  return (
+    target === rootContainer ||
+    baseTarget === baseRoot ||
+    target === "root" ||
+    baseTarget === "root" ||
+    target === "*" ||
+    target === "workflow" ||
+    baseTarget === "workflow"
+  );
+}
+
 export function isRootWorkflowOutput(rawEvt?: Record<string, unknown>): boolean {
   if (!rawEvt) return false;
 
@@ -119,11 +145,19 @@ export function isRootWorkflowOutput(rawEvt?: Record<string, unknown>): boolean 
   if (nodeInfo) {
     const path = typeof nodeInfo.path === "string" ? nodeInfo.path : "";
     const outputForRaw = nodeInfo.output_for || nodeInfo.outputFor;
-    const outputFor = Array.isArray(outputForRaw) ? (outputForRaw as string[]) : [];
+    const outputFor = Array.isArray(outputForRaw)
+      ? (outputForRaw as string[])
+      : typeof outputForRaw === "string"
+        ? [outputForRaw]
+        : [];
 
     if (path && outputFor.length > 0) {
       const rootContainer = path.split("/")[0];
-      if (outputFor.includes(rootContainer) && path !== rootContainer) {
+      const matchesRoot = outputFor.some((target) =>
+        isTargetRootContainer(target, rootContainer)
+      );
+
+      if (matchesRoot && path !== rootContainer) {
         return true;
       }
     }
@@ -132,15 +166,62 @@ export function isRootWorkflowOutput(rawEvt?: Record<string, unknown>): boolean 
   return Boolean(
     rawEvt.root_output ||
     rawEvt.is_final ||
+    rawEvt.final_response ||
     config.root_output ||
     config.is_final ||
+    config.final_response ||
     rawEvent.root_output ||
-    rawEvent.is_final
+    rawEvent.is_final ||
+    rawEvent.final_response
   );
+}
+
+export function extractSubagentName(rawEvt?: Record<string, unknown>): string {
+  if (!rawEvt) return "sub_agent";
+  const author =
+    (rawEvt.author as string) ||
+    (rawEvt.content && typeof rawEvt.content === "object"
+      ? ((rawEvt.content as Record<string, unknown>).author as string)
+      : undefined) ||
+    (rawEvt.config && typeof rawEvt.config === "object"
+      ? ((rawEvt.config as Record<string, unknown>).author as string)
+      : undefined) ||
+    (rawEvt.agent as string);
+
+  const genericAuthors = new Set([
+    "agent",
+    "sub_agent",
+    "subagent",
+    "root",
+    "workflow",
+    "model",
+    "assistant",
+    "user",
+  ]);
+
+  if (author && !genericAuthors.has(author.toLowerCase())) {
+    return author;
+  }
+
+  const nodeInfo = getNodeInfo(rawEvt);
+  if (nodeInfo && typeof nodeInfo.path === "string" && nodeInfo.path.includes("/")) {
+    const segments = nodeInfo.path.split("/");
+    const leaf = segments[segments.length - 1] || "";
+    const cleanLeaf = leaf.split("@")[0];
+    if (cleanLeaf && !genericAuthors.has(cleanLeaf.toLowerCase())) {
+      return cleanLeaf;
+    }
+  }
+
+  return author || "sub_agent";
 }
 
 export function isSubagentNode(rawEvt?: Record<string, unknown>): boolean {
   if (!rawEvt) return false;
+
+  if (isRootWorkflowOutput(rawEvt)) {
+    return false;
+  }
 
   const config = (rawEvt.config || {}) as Record<string, unknown>;
   const rawEvent = (rawEvt.raw_event || rawEvt.rawEvent || {}) as Record<string, unknown>;
@@ -149,17 +230,32 @@ export function isSubagentNode(rawEvt?: Record<string, unknown>): boolean {
   if (nodeInfo) {
     const path = typeof nodeInfo.path === "string" ? nodeInfo.path : "";
     const outputForRaw = nodeInfo.output_for || nodeInfo.outputFor;
-    const outputFor = Array.isArray(outputForRaw) ? (outputForRaw as string[]) : [];
+    const outputFor = Array.isArray(outputForRaw)
+      ? (outputForRaw as string[])
+      : typeof outputForRaw === "string"
+        ? [outputForRaw]
+        : [];
 
     if (path && path.includes("/")) {
       const rootContainer = path.split("/")[0];
-      if (path !== rootContainer && !outputFor.includes(rootContainer)) {
+      const matchesRoot = outputFor.some((target) =>
+        isTargetRootContainer(target, rootContainer)
+      );
+
+      if (path !== rootContainer && !matchesRoot) {
         return true;
       }
     }
   }
 
-  return Boolean(rawEvt.is_subagent || config.is_subagent || rawEvent.is_subagent);
+  return Boolean(
+    rawEvt.is_subagent ||
+    config.is_subagent ||
+    rawEvent.is_subagent ||
+    rawEvt.isSubagent ||
+    config.isSubagent ||
+    rawEvent.isSubagent
+  );
 }
 
 function getEventToolCalls(evt: AgentSessionEvent) {
@@ -281,31 +377,48 @@ export function groupTurnSessionEvents(
     const usedResultKeys = new Set<string>();
     const processedCallKeys = new Set<string>();
 
+    // Group intermediate events by subagent identity to avoid one box per chunk
+    const subagentsGrouped = new Map<
+      string,
+      {
+        id: string;
+        agentName: string;
+        displayName: string;
+        contentParts: string[];
+        thoughtParts: string[];
+        timestamp?: string;
+      }
+    >();
+
     for (let i = 0; i < intermediateEvents.length; i++) {
       const inter = intermediateEvents[i];
-      const author = inter.author || "sub_agent";
+      const author =
+        extractSubagentName(inter.rawEvent as Record<string, unknown> | undefined) ||
+        inter.author ||
+        "sub_agent";
       const displayName = formatAgentDisplayName(author);
       const content = inter.content?.trim() || "";
       const thought = inter.thought?.trim() || "";
 
-      if (content) {
-        subAgentsList.push({
-          id: inter.id,
-          agentName: author,
-          displayName,
-          status: "complete" as const,
-          content,
-          thought: thought || undefined,
-          timestamp: inter.createTime,
-        });
-
-        reasoningBlocks.push(
-          `:::subagent[${displayName}]{id="${inter.id}" agent="${author}" status="complete"}\n${content}\n:::`
-        );
-      }
-
-      if (thought) {
-        reasoningBlocks.push(thought);
+      if (content || thought) {
+        const existing = subagentsGrouped.get(author);
+        if (existing) {
+          if (content && !existing.contentParts.includes(content)) {
+            existing.contentParts.push(content);
+          }
+          if (thought && !existing.thoughtParts.includes(thought)) {
+            existing.thoughtParts.push(thought);
+          }
+        } else {
+          subagentsGrouped.set(author, {
+            id: inter.id,
+            agentName: author,
+            displayName,
+            contentParts: content ? [content] : [],
+            thoughtParts: thought ? [thought] : [],
+            timestamp: inter.createTime,
+          });
+        }
       }
 
       const calls = getEventToolCalls(inter);
@@ -372,6 +485,29 @@ export function groupTurnSessionEvents(
       }
     }
 
+    for (const sub of subagentsGrouped.values()) {
+      const combinedContent = sub.contentParts.join("\n\n").trim();
+      const combinedThought = sub.thoughtParts.join("\n\n").trim();
+
+      if (combinedContent) {
+        subAgentsList.push({
+          id: sub.id,
+          agentName: sub.agentName,
+          displayName: sub.displayName,
+          status: "complete" as const,
+          content: combinedContent,
+          thought: combinedThought || undefined,
+          timestamp: sub.timestamp,
+        });
+
+        reasoningBlocks.push(
+          `:::subagent[${sub.displayName}]{id="${sub.id}" agent="${sub.agentName}" status="complete"}\n${combinedContent}\n:::`
+        );
+      } else if (combinedThought) {
+        reasoningBlocks.push(combinedThought);
+      }
+    }
+
     if (finalEvent.thought?.trim()) {
       reasoningBlocks.push(finalEvent.thought.trim());
     }
@@ -381,16 +517,76 @@ export function groupTurnSessionEvents(
 
     const finalEventToolCalls = getEventToolCalls(finalEvent);
     const finalEventToolResults = getEventToolResults(finalEvent);
-    const groundingMeta =
+
+    const allTurnGroundingMetas = [
+      ...turn.assistantEvents.map(
+        (e) => e.groundingMetadata || e.grounding_metadata || extractGroundingMetadata(e)
+      ),
       finalEvent.groundingMetadata ||
-      finalEvent.grounding_metadata ||
-      extractGroundingMetadata(finalEvent) ||
-      turn.assistantEvents
-        .map(
-          (e) =>
-            e.groundingMetadata || e.grounding_metadata || extractGroundingMetadata(e)
-        )
-        .find(Boolean);
+        finalEvent.grounding_metadata ||
+        extractGroundingMetadata(finalEvent),
+    ];
+    const groundingMeta = mergeGroundingMetadata(allTurnGroundingMetas);
+
+    const modelVersion =
+      finalEvent.modelVersion ||
+      finalEvent.model_version ||
+      turn.assistantEvents.find((e) => e.modelVersion || e.model_version)?.modelVersion ||
+      turn.assistantEvents.find((e) => e.modelVersion || e.model_version)?.model_version;
+
+    const invocationId =
+      finalEvent.invocationId ||
+      finalEvent.invocation_id ||
+      turn.assistantEvents.find((e) => e.invocationId || e.invocation_id)?.invocationId ||
+      turn.assistantEvents.find((e) => e.invocationId || e.invocation_id)?.invocation_id;
+
+    const usageMetadata =
+      finalEvent.usageMetadata ||
+      finalEvent.usage_metadata ||
+      turn.assistantEvents.find((e) => e.usageMetadata || e.usage_metadata)
+        ?.usageMetadata ||
+      turn.assistantEvents.find((e) => e.usageMetadata || e.usage_metadata)
+        ?.usage_metadata;
+
+    const avgLogprobs =
+      finalEvent.avgLogprobs ??
+      finalEvent.avg_logprobs ??
+      turn.assistantEvents.find(
+        (e) => e.avgLogprobs !== undefined || e.avg_logprobs !== undefined
+      )?.avgLogprobs ??
+      turn.assistantEvents.find(
+        (e) => e.avgLogprobs !== undefined || e.avg_logprobs !== undefined
+      )?.avg_logprobs;
+
+    const nodeInfo =
+      finalEvent.nodeInfo ||
+      finalEvent.node_info ||
+      turn.assistantEvents.find((e) => e.nodeInfo || e.node_info)?.nodeInfo ||
+      turn.assistantEvents.find((e) => e.nodeInfo || e.node_info)?.node_info;
+
+    const nodePath =
+      finalEvent.nodePath ||
+      finalEvent.node_path ||
+      nodeInfo?.path ||
+      turn.assistantEvents.find((e) => e.nodePath || e.node_path)?.nodePath ||
+      turn.assistantEvents.find((e) => e.nodePath || e.node_path)?.node_path;
+
+    const thoughtSignature =
+      finalEvent.thoughtSignature ||
+      finalEvent.thought_signature ||
+      turn.assistantEvents.find((e) => e.thoughtSignature || e.thought_signature)
+        ?.thoughtSignature ||
+      turn.assistantEvents.find((e) => e.thoughtSignature || e.thought_signature)
+        ?.thought_signature;
+
+    const actions =
+      finalEvent.actions || turn.assistantEvents.find((e) => e.actions)?.actions;
+
+    const finishReason =
+      finalEvent.finishReason ||
+      finalEvent.finish_reason ||
+      turn.assistantEvents.find((e) => e.finishReason || e.finish_reason)?.finishReason ||
+      turn.assistantEvents.find((e) => e.finishReason || e.finish_reason)?.finish_reason;
 
     result.push({
       id: finalEvent.id,
@@ -399,9 +595,13 @@ export function groupTurnSessionEvents(
       createTime: finalEvent.createTime,
       role: "assistant",
       author: finalEvent.author,
-      invocationId: finalEvent.invocationId,
+      invocationId: invocationId,
+      ...(modelVersion ? { modelVersion, model_version: modelVersion } : {}),
       content: finalEvent.content,
       ...(unifiedThought ? { thought: unifiedThought } : {}),
+      ...(thoughtSignature
+        ? { thoughtSignature, thought_signature: thoughtSignature }
+        : {}),
       ...(subAgentsList.length > 0 ? { subAgents: subAgentsList } : {}),
       ...(finalEventToolCalls.length > 0 ? { tool_calls: finalEventToolCalls } : {}),
       ...(finalEventToolResults.length > 0
@@ -412,6 +612,13 @@ export function groupTurnSessionEvents(
       ...(groundingMeta
         ? { groundingMetadata: groundingMeta, grounding_metadata: groundingMeta }
         : {}),
+      ...(usageMetadata ? { usageMetadata, usage_metadata: usageMetadata } : {}),
+      ...(avgLogprobs !== undefined ? { avgLogprobs, avg_logprobs: avgLogprobs } : {}),
+      ...(nodeInfo ? { nodeInfo, node_info: nodeInfo } : {}),
+      ...(nodePath ? { nodePath, node_path: nodePath } : {}),
+      ...(actions ? { actions } : {}),
+      ...(finishReason ? { finishReason, finish_reason: finishReason } : {}),
+      ...(finalEvent.timestamp !== undefined ? { timestamp: finalEvent.timestamp } : {}),
       rawEvent: finalEvent.rawEvent,
     });
   }
@@ -438,6 +645,16 @@ export function formatSessionEventsToThreadMessages(
     const groundingMetadata =
       e.groundingMetadata || e.grounding_metadata || extractGroundingMetadata(e);
 
+    const modelVersion = e.modelVersion || e.model_version;
+    const usageMetadata = e.usageMetadata || e.usage_metadata;
+    const avgLogprobs = e.avgLogprobs ?? e.avg_logprobs;
+    const nodeInfo = e.nodeInfo || e.node_info;
+    const nodePath = e.nodePath || e.node_path || nodeInfo?.path;
+    const thoughtSignature = e.thoughtSignature || e.thought_signature;
+    const actions = e.actions;
+    const finishReason = e.finishReason || e.finish_reason;
+    const timestamp = e.timestamp;
+
     if (thought) {
       accumulatedThoughts.push(thought);
     }
@@ -453,6 +670,13 @@ export function formatSessionEventsToThreadMessages(
             custom: {
               ...(e.id ? { eventId: e.id } : {}),
               ...(e.invocationId ? { invocationId: e.invocationId } : {}),
+              ...(modelVersion ? { modelVersion } : {}),
+              ...(usageMetadata ? { usageMetadata } : {}),
+              ...(avgLogprobs !== undefined ? { avgLogprobs } : {}),
+              ...(nodeInfo ? { nodeInfo } : {}),
+              ...(nodePath ? { nodePath } : {}),
+              ...(actions ? { actions } : {}),
+              ...(timestamp !== undefined ? { timestamp } : {}),
             },
           },
         });
@@ -484,6 +708,15 @@ export function formatSessionEventsToThreadMessages(
           custom: {
             ...(e.id ? { eventId: e.id } : {}),
             ...(e.invocationId ? { invocationId: e.invocationId } : {}),
+            ...(modelVersion ? { modelVersion } : {}),
+            ...(usageMetadata ? { usageMetadata } : {}),
+            ...(avgLogprobs !== undefined ? { avgLogprobs } : {}),
+            ...(nodeInfo ? { nodeInfo } : {}),
+            ...(nodePath ? { nodePath } : {}),
+            ...(thoughtSignature ? { thoughtSignature } : {}),
+            ...(actions ? { actions } : {}),
+            ...(finishReason ? { finishReason } : {}),
+            ...(timestamp !== undefined ? { timestamp } : {}),
             ...(groundingMetadata ? { groundingMetadata } : {}),
           },
         },
@@ -807,6 +1040,192 @@ export function parseRawSessionEvent(
       root
   );
 
+  const modelVersionStr =
+    (root.modelVersion as string) ||
+    (root.model_version as string) ||
+    (config.modelVersion as string) ||
+    (config.model_version as string) ||
+    (rawEvent.modelVersion as string) ||
+    (rawEvent.model_version as string) ||
+    (root.model as string) ||
+    undefined;
+
+  const usageMeta = (root.usageMetadata ||
+    root.usage_metadata ||
+    config.usageMetadata ||
+    config.usage_metadata ||
+    rawEvent.usageMetadata ||
+    rawEvent.usage_metadata) as Record<string, unknown> | undefined;
+
+  let parsedUsageMetadata: AgentUsageMetadata | undefined;
+  if (usageMeta && typeof usageMeta === "object") {
+    const promptCount =
+      typeof usageMeta.prompt_token_count === "number"
+        ? usageMeta.prompt_token_count
+        : typeof usageMeta.promptTokenCount === "number"
+          ? usageMeta.promptTokenCount
+          : undefined;
+    const candidatesCount =
+      typeof usageMeta.candidates_token_count === "number"
+        ? usageMeta.candidates_token_count
+        : typeof usageMeta.candidatesTokenCount === "number"
+          ? usageMeta.candidatesTokenCount
+          : undefined;
+    const thoughtsCount =
+      typeof usageMeta.thoughts_token_count === "number"
+        ? usageMeta.thoughts_token_count
+        : typeof usageMeta.thoughtsTokenCount === "number"
+          ? usageMeta.thoughtsTokenCount
+          : undefined;
+    const totalCount =
+      typeof usageMeta.total_token_count === "number"
+        ? usageMeta.total_token_count
+        : typeof usageMeta.totalTokenCount === "number"
+          ? usageMeta.totalTokenCount
+          : undefined;
+    const trafficType =
+      typeof usageMeta.traffic_type === "string"
+        ? usageMeta.traffic_type
+        : typeof usageMeta.trafficType === "string"
+          ? usageMeta.trafficType
+          : undefined;
+
+    parsedUsageMetadata = {
+      ...(promptCount !== undefined
+        ? { prompt_token_count: promptCount, promptTokenCount: promptCount }
+        : {}),
+      ...(candidatesCount !== undefined
+        ? {
+            candidates_token_count: candidatesCount,
+            candidatesTokenCount: candidatesCount,
+          }
+        : {}),
+      ...(thoughtsCount !== undefined
+        ? { thoughts_token_count: thoughtsCount, thoughtsTokenCount: thoughtsCount }
+        : {}),
+      ...(totalCount !== undefined
+        ? { total_token_count: totalCount, totalTokenCount: totalCount }
+        : {}),
+      ...(trafficType ? { traffic_type: trafficType, trafficType } : {}),
+      ...(Array.isArray(usageMeta.prompt_tokens_details || usageMeta.promptTokensDetails)
+        ? {
+            prompt_tokens_details: (usageMeta.prompt_tokens_details ||
+              usageMeta.promptTokensDetails) as AgentUsageMetadata["prompt_tokens_details"],
+            promptTokensDetails: (usageMeta.prompt_tokens_details ||
+              usageMeta.promptTokensDetails) as AgentUsageMetadata["prompt_tokens_details"],
+          }
+        : {}),
+      ...(Array.isArray(
+        usageMeta.candidates_tokens_details || usageMeta.candidatesTokensDetails
+      )
+        ? {
+            candidates_tokens_details: (usageMeta.candidates_tokens_details ||
+              usageMeta.candidatesTokensDetails) as AgentUsageMetadata["candidates_tokens_details"],
+            candidatesTokensDetails: (usageMeta.candidates_tokens_details ||
+              usageMeta.candidatesTokensDetails) as AgentUsageMetadata["candidates_tokens_details"],
+          }
+        : {}),
+    };
+  }
+
+  const avgLogprobsVal =
+    typeof root.avg_logprobs === "number"
+      ? root.avg_logprobs
+      : typeof root.avgLogprobs === "number"
+        ? root.avgLogprobs
+        : typeof rawEvent.avg_logprobs === "number"
+          ? rawEvent.avg_logprobs
+          : typeof rawEvent.avgLogprobs === "number"
+            ? rawEvent.avgLogprobs
+            : typeof config.avg_logprobs === "number"
+              ? config.avg_logprobs
+              : typeof config.avgLogprobs === "number"
+                ? config.avgLogprobs
+                : undefined;
+
+  const nodeInfoObj = (root.node_info ||
+    root.nodeInfo ||
+    rawEvent.node_info ||
+    rawEvent.nodeInfo ||
+    config.node_info ||
+    config.nodeInfo) as AgentNodeInfo | undefined;
+
+  const nodePathStr =
+    nodeInfoObj?.path ||
+    (typeof root.node_path === "string" ? root.node_path : undefined) ||
+    (typeof root.nodePath === "string" ? root.nodePath : undefined) ||
+    (typeof rawEvent.node_path === "string" ? rawEvent.node_path : undefined) ||
+    (typeof rawEvent.nodePath === "string" ? rawEvent.nodePath : undefined) ||
+    (typeof config.node_path === "string" ? config.node_path : undefined) ||
+    (typeof config.nodePath === "string" ? config.nodePath : undefined) ||
+    undefined;
+
+  let thoughtSigStr =
+    (typeof root.thought_signature === "string" ? root.thought_signature : undefined) ||
+    (typeof root.thoughtSignature === "string" ? root.thoughtSignature : undefined) ||
+    (typeof rawEvent.thought_signature === "string"
+      ? rawEvent.thought_signature
+      : undefined) ||
+    (typeof rawEvent.thoughtSignature === "string"
+      ? rawEvent.thoughtSignature
+      : undefined) ||
+    (typeof config.thought_signature === "string"
+      ? config.thought_signature
+      : undefined) ||
+    (typeof config.thoughtSignature === "string" ? config.thoughtSignature : undefined) ||
+    undefined;
+
+  const contentCandidates = [root.content, rawEvent.content, config.content];
+
+  if (!thoughtSigStr) {
+    for (const c of contentCandidates) {
+      if (
+        c &&
+        typeof c === "object" &&
+        Array.isArray((c as Record<string, unknown>).parts)
+      ) {
+        for (const p of (c as Record<string, unknown>).parts as Array<
+          Record<string, unknown>
+        >) {
+          if (p && typeof p === "object") {
+            if (typeof p.thought_signature === "string" && p.thought_signature) {
+              thoughtSigStr = p.thought_signature;
+              break;
+            }
+            if (typeof p.thoughtSignature === "string" && p.thoughtSignature) {
+              thoughtSigStr = p.thoughtSignature;
+              break;
+            }
+          }
+        }
+      }
+      if (thoughtSigStr) break;
+    }
+  }
+
+  const actionsObj = (root.actions || rawEvent.actions || config.actions) as
+    AgentActionsDelta | undefined;
+
+  const finishReasonStr =
+    (typeof root.finish_reason === "string" ? root.finish_reason : undefined) ||
+    (typeof root.finishReason === "string" ? root.finishReason : undefined) ||
+    (typeof rawEvent.finish_reason === "string" ? rawEvent.finish_reason : undefined) ||
+    (typeof rawEvent.finishReason === "string" ? rawEvent.finishReason : undefined) ||
+    (typeof config.finish_reason === "string" ? config.finish_reason : undefined) ||
+    (typeof config.finishReason === "string" ? config.finishReason : undefined) ||
+    undefined;
+
+  const rawTimestamp =
+    root.timestamp ??
+    rawEvent.timestamp ??
+    config.timestamp ??
+    (typeof root.createTime === "string" ? root.createTime : undefined);
+
+  const timestampVal =
+    typeof rawTimestamp === "number" || typeof rawTimestamp === "string"
+      ? rawTimestamp
+      : undefined;
+
   return {
     id,
     name: nameStr || undefined,
@@ -815,8 +1234,14 @@ export function parseRawSessionEvent(
     role: finalRole,
     author: authorStr,
     invocationId: invocationIdStr,
+    ...(modelVersionStr
+      ? { modelVersion: modelVersionStr, model_version: modelVersionStr }
+      : {}),
     content,
     ...(thought ? { thought } : {}),
+    ...(thoughtSigStr
+      ? { thoughtSignature: thoughtSigStr, thought_signature: thoughtSigStr }
+      : {}),
     ...(uniqueToolCalls.length > 0 ? { tool_calls: uniqueToolCalls } : {}),
     ...(uniqueToolResults.length > 0 ? { tool_results: uniqueToolResults } : {}),
     ...(uniqueToolCalls.length > 0 ? { tool_call: uniqueToolCalls[0] } : {}),
@@ -824,6 +1249,19 @@ export function parseRawSessionEvent(
     ...(groundingMeta
       ? { groundingMetadata: groundingMeta, grounding_metadata: groundingMeta }
       : {}),
+    ...(parsedUsageMetadata
+      ? { usageMetadata: parsedUsageMetadata, usage_metadata: parsedUsageMetadata }
+      : {}),
+    ...(avgLogprobsVal !== undefined
+      ? { avgLogprobs: avgLogprobsVal, avg_logprobs: avgLogprobsVal }
+      : {}),
+    ...(nodeInfoObj ? { nodeInfo: nodeInfoObj, node_info: nodeInfoObj } : {}),
+    ...(nodePathStr ? { nodePath: nodePathStr, node_path: nodePathStr } : {}),
+    ...(actionsObj ? { actions: actionsObj } : {}),
+    ...(finishReasonStr
+      ? { finishReason: finishReasonStr, finish_reason: finishReasonStr }
+      : {}),
+    ...(timestampVal !== undefined ? { timestamp: timestampVal } : {}),
     rawEvent: Object.keys(rawEvent).length > 0 ? rawEvent : root,
   };
 }

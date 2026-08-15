@@ -24,6 +24,8 @@ This document provides a comprehensive catalog of all **Google Gemini Enterprise
 | **Artifacts Service**           | Side-by-Side Live Workspace Canvas (HTML Apps, CSVs, SVGs)       | **Later** | [`docs/spec-artifacts-canvas.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/spec-artifacts-canvas.md)                                                     |
 | **Grounding & Citations**       | Google Search Grounding Widget & Enterprise RAG Inspector        | **Later** | [`docs/spec-grounding-citations.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/spec-grounding-citations.md)                                               |
 | **Skill Registry**              | Dynamic Runtime Skill Discovery & Loading (`load_skill`)         | **Later** | [`docs/spec-skill-ingestion.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/spec-skill-ingestion.md)                                                       |
+| **Context Caching & State**     | Vertex AI Cache Savings Telemetry & ADK Session State Inspector  | **Later** | [`docs/spec-context-caching-and-session-state.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/spec-context-caching-and-session-state.md)                   |
+| **Python Code Execution**       | Vertex AI Sandboxed Code Execution & Rich Output Visualizer      | **Later** | [`docs/spec-code-execution.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/spec-code-execution.md)                                                         |
 | **MCP 3-Legged OAuth**          | In-Thread User Authorization for External MCP Services           | **Later** | [`docs/message_info.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/message_info.md)                                                                       |
 | **Deep Observability**          | Cloud Trace Deep-Links, Token Breakdown & Logprobs               | **Later** | [`docs/message_info.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/message_info.md)                                                                       |
 
@@ -149,6 +151,18 @@ The following specifications are designed and documented in [`docs/`](file:///Us
 - **Specification**: [`docs/message_info.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/message_info.md)
 - **Subsystem**: Google Cloud Trace, BigQuery Agent Analytics, and OpenTelemetry.
 - **User Experience**: Message footer metadata displaying token counts (`prompt`, `candidate`, `thought`), log-probability confidence scores, and single-click deep links to Google Cloud Trace (`tid={invocationId}`).
+
+### 3.7 Vertex AI Context Caching & ADK Session State Inspector
+
+- **Specification**: [`docs/spec-context-caching-and-session-state.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/spec-context-caching-and-session-state.md)
+- **Subsystem**: Vertex AI Context Caching & ADK Session Service (`session.state` / `actions.state_delta`).
+- **User Experience**: Visual `[ ⚡ 3,420 Cached Tokens (81%) ▾ ]` telemetry badges with cost/latency breakdown popovers, in-chat state mutation diff chips (`[ 🗄️ State Updated: +2 keys ]`), and a dedicated slide-over Session State Inspector drawer.
+
+### 3.8 Vertex AI Sandboxed Python Code Execution
+
+- **Specification**: [`docs/spec-code-execution.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/spec-code-execution.md)
+- **Subsystem**: Google Cloud / Vertex AI Code Execution (`executable_code` & `code_execution_result`).
+- **User Experience**: Collapsible execution cards featuring syntax-highlighted Python code, runtime duration, exit outcome badges (`Exit 0: OK`, `Exit 1: Error`), dark terminal stdout/stderr view, and inline zoomable Matplotlib/Seaborn plot visualizers.
 
 ---
 

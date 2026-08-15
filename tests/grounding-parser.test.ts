@@ -3,6 +3,7 @@ import {
   extractDomainFromUri,
   extractGroundingMetadata,
   isGrounded,
+  mergeGroundingMetadata,
   parseCitationIndices,
   resolveCitationSource,
   transformCitationsToMarkdownLinks,
@@ -251,6 +252,83 @@ describe("Grounding Citation Parser & Utilities", () => {
       expect(extractGroundingMetadata({ text: "Hello world" })).toBeUndefined();
       expect(isGrounded(undefined)).toBe(false);
       expect(isGrounded(null)).toBe(false);
+    });
+  });
+
+  describe("mergeGroundingMetadata & mergeSearchEntryPoints", () => {
+    it("merges multiple subagent grounding metadata objects, deduplicating chunks, queries, and suggestion chips", () => {
+      const meta1 = {
+        webSearchQueries: ["history of AI", "Dartmouth 1956"],
+        groundingChunks: [
+          {
+            web: {
+              uri: "https://wikipedia.org/wiki/AI",
+              title: "Wikipedia AI",
+              domain: "wikipedia.org",
+            },
+          },
+          {
+            web: {
+              uri: "https://britannica.com/ai",
+              title: "Britannica AI",
+              domain: "britannica.com",
+            },
+          },
+        ],
+        searchEntryPoint: {
+          renderedContent: `<div class="container"><div class="headline">Google</div><div class="carousel"><a class="chip" href="https://google.com/1">history of AI</a><a class="chip" href="https://google.com/2">Dartmouth 1956</a></div></div>`,
+        },
+      };
+
+      const meta2 = {
+        webSearchQueries: ["Dartmouth 1956", "Transformer 2017"],
+        groundingChunks: [
+          {
+            web: {
+              uri: "https://wikipedia.org/wiki/AI",
+              title: "Wikipedia AI Duplicate",
+              domain: "wikipedia.org",
+            },
+          },
+          {
+            web: {
+              uri: "https://arxiv.org/abs/1706.03762",
+              title: "Attention Is All You Need",
+              domain: "arxiv.org",
+            },
+          },
+        ],
+        searchEntryPoint: {
+          renderedContent: `<div class="container"><div class="headline">Google</div><div class="carousel"><a class="chip" href="https://google.com/2">Dartmouth 1956</a><a class="chip" href="https://google.com/3">Transformer 2017</a></div></div>`,
+        },
+      };
+
+      const merged = mergeGroundingMetadata([meta1, meta2]);
+      expect(merged).toBeDefined();
+      expect(merged?.groundingChunks).toHaveLength(3);
+      expect(merged?.groundingChunks?.map((c) => c.web?.uri)).toEqual([
+        "https://wikipedia.org/wiki/AI",
+        "https://britannica.com/ai",
+        "https://arxiv.org/abs/1706.03762",
+      ]);
+      expect(merged?.webSearchQueries).toEqual([
+        "history of AI",
+        "Dartmouth 1956",
+        "Transformer 2017",
+      ]);
+      expect(merged?.searchEntryPoint?.renderedContent).toContain("history of AI");
+      expect(merged?.searchEntryPoint?.renderedContent).toContain("Dartmouth 1956");
+      expect(merged?.searchEntryPoint?.renderedContent).toContain("Transformer 2017");
+
+      const chipsCount =
+        merged?.searchEntryPoint?.renderedContent?.match(/<a class="chip"/g)?.length;
+      expect(chipsCount).toBe(3);
+    });
+
+    it("handles null, undefined, or empty metadata arrays gracefully", () => {
+      expect(mergeGroundingMetadata([])).toBeUndefined();
+      expect(mergeGroundingMetadata([undefined, null])).toBeUndefined();
+      expect(mergeGroundingMetadata([{}, { webSearchQueries: [] }])).toBeUndefined();
     });
   });
 

@@ -455,6 +455,138 @@ export function isGrounded(metadata?: GroundingMetadata | null): boolean {
 }
 
 /**
+ * Merges multiple SearchEntryPoint objects into a single container by deduplicating
+ * and combining all `<a class="chip">...</a>` search suggestion links across all subagent entry points.
+ */
+export function mergeSearchEntryPoints(
+  entryPoints: Array<SearchEntryPoint | undefined | null>
+): SearchEntryPoint | undefined {
+  const valid = entryPoints.filter((ep): ep is SearchEntryPoint =>
+    Boolean(ep && (ep.renderedContent || ep.sdkBlob))
+  );
+  if (valid.length === 0) return undefined;
+  if (valid.length === 1) return valid[0];
+
+  const firstWithHtml = valid.find((ep) => Boolean(ep.renderedContent));
+  if (!firstWithHtml || !firstWithHtml.renderedContent) {
+    return valid[0];
+  }
+
+  const baseHtml = firstWithHtml.renderedContent;
+  const chipRegex = /<a class="chip"[^>]*>([\s\S]*?)<\/a>/gi;
+  const seenChipKeys = new Set<string>();
+  const mergedChips: string[] = [];
+
+  for (const ep of valid) {
+    const html = ep.renderedContent || "";
+    let match: RegExpExecArray | null;
+    const regex = new RegExp(chipRegex);
+    while ((match = regex.exec(html)) !== null) {
+      const fullAnchor = match[0];
+      const text = match[1].trim();
+      const hrefMatch = fullAnchor.match(/href="([^"]*)"/i);
+      const key = `${text}::${hrefMatch ? hrefMatch[1] : ""}`;
+      if (!seenChipKeys.has(key)) {
+        seenChipKeys.add(key);
+        mergedChips.push(fullAnchor);
+      }
+    }
+  }
+
+  const carouselRegex = /<div class="carousel">([\s\S]*?)<\/div>/i;
+  let newHtml = baseHtml;
+  if (carouselRegex.test(baseHtml) && mergedChips.length > 0) {
+    newHtml = baseHtml.replace(
+      carouselRegex,
+      `<div class="carousel">\n    ${mergedChips.join("\n    ")}\n  </div>`
+    );
+  }
+
+  const sdkBlob = valid.find((ep) => Boolean(ep.sdkBlob))?.sdkBlob;
+
+  return {
+    renderedContent: newHtml,
+    ...(sdkBlob ? { sdkBlob } : {}),
+  };
+}
+
+/**
+ * Merges multiple GroundingMetadata objects into a single comprehensive metadata object,
+ * deduplicating chunks, web search queries, and combining search suggestion chips.
+ */
+export function mergeGroundingMetadata(
+  metaList: Array<GroundingMetadata | undefined | null>
+): GroundingMetadata | undefined {
+  const valid = metaList.filter(
+    (m): m is GroundingMetadata => m != null && isGrounded(m)
+  );
+  if (valid.length === 0) return undefined;
+  if (valid.length === 1) return valid[0];
+
+  const groundingChunks: GroundingChunk[] = [];
+  const seenUris = new Set<string>();
+
+  for (const meta of valid) {
+    if (Array.isArray(meta.groundingChunks)) {
+      for (const chunk of meta.groundingChunks) {
+        const uri = chunk.web?.uri || chunk.retrievedContext?.uri || "";
+        if (uri && !seenUris.has(uri)) {
+          seenUris.add(uri);
+          groundingChunks.push(chunk);
+        } else if (!uri) {
+          groundingChunks.push(chunk);
+        }
+      }
+    }
+  }
+
+  const webSearchQueries: string[] = [];
+  for (const meta of valid) {
+    if (Array.isArray(meta.webSearchQueries)) {
+      for (const q of meta.webSearchQueries) {
+        const trimmed = typeof q === "string" ? q.trim() : "";
+        if (trimmed && !webSearchQueries.includes(trimmed)) {
+          webSearchQueries.push(trimmed);
+        }
+      }
+    }
+  }
+
+  const retrievalQueries: string[] = [];
+  for (const meta of valid) {
+    if (Array.isArray(meta.retrievalQueries)) {
+      for (const q of meta.retrievalQueries) {
+        const trimmed = typeof q === "string" ? q.trim() : "";
+        if (trimmed && !retrievalQueries.includes(trimmed)) {
+          retrievalQueries.push(trimmed);
+        }
+      }
+    }
+  }
+
+  const groundingSupports: GroundingSupport[] = [];
+  for (const meta of valid) {
+    if (Array.isArray(meta.groundingSupports)) {
+      for (const s of meta.groundingSupports) {
+        groundingSupports.push(s);
+      }
+    }
+  }
+
+  const searchEntryPoint = mergeSearchEntryPoints(
+    valid.map((m) => m.searchEntryPoint).filter(Boolean)
+  );
+
+  return {
+    ...(webSearchQueries.length > 0 ? { webSearchQueries } : {}),
+    ...(retrievalQueries.length > 0 ? { retrievalQueries } : {}),
+    ...(groundingChunks.length > 0 ? { groundingChunks } : {}),
+    ...(groundingSupports.length > 0 ? { groundingSupports } : {}),
+    ...(searchEntryPoint ? { searchEntryPoint } : {}),
+  };
+}
+
+/**
  * Transforms standalone numeric citation brackets like [1], [2], [1, 2]
  * into citation markdown links [1](#cite-1) without modifying standard markdown links [text](url),
  * images ![alt](url), or array literals inside fenced code blocks and inline code spans.

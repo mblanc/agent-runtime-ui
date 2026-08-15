@@ -92,6 +92,9 @@ Use this index to quickly locate specific subsystems and implementations across 
 - [`src/components/assistant-ui/gemini-thread.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/gemini-thread.tsx): Active conversation view, empty state greeting, and viewport footer.
 - [`src/components/assistant-ui/gemini-composer.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/gemini-composer.tsx): Single-row pill composer with model selector (Flash/Pro) and controls.
 - [`src/components/assistant-ui/gemini-message.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/gemini-message.tsx): Message part rendering (user bubbles, markdown text, thinking indicators).
+- [`src/components/assistant-ui/gemini-message-timing.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/gemini-message-timing.tsx): Generation duration, token throughput, and execution telemetry badge integration.
+- [`src/components/assistant-ui/message-info-popover.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/message-info-popover.tsx): Detailed floating popover displaying model version, invocation/trace ID, token breakdown progress bar, and model confidence rating.
+- [`src/components/assistant-ui/thought-signature-badge.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/thought-signature-badge.tsx): Cryptographic reasoning trace verification badge and signature inspection popover.
 - [`src/components/assistant-ui/gemini-reasoning.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/gemini-reasoning.tsx): Collapsible reasoning/thought accordion block.
 - [`src/components/assistant-ui/gemini-tools.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/gemini-tools.tsx): Tool call execution chips and output payloads.
 - [`src/components/assistant-ui/subagent-collapsible.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/subagent-collapsible.tsx): Subagent execution trace accordion.
@@ -136,6 +139,7 @@ Use this index to quickly locate specific subsystems and implementations across 
 - [`tests/grounding-parser.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/grounding-parser.test.ts): Unit tests for citation regex parsing, 1-based index resolution, and grounding normalization.
 - [`tests/grounding-stream.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/grounding-stream.test.ts): Integration tests for grounding stream SSE interception, chat adapter metadata, and multi-turn persistence.
 - [`tests/grounding-ui.test.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/tests/grounding-ui.test.tsx): Component tests for citation badges, popovers, Google Search widget, and RAG drawer.
+- [`tests/message-info.test.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/tests/message-info.test.tsx): Component and interaction tests for `MessageInfoPopover` and `ThoughtSignatureBadge`.
 - [`tests/sessions-api.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/sessions-api.test.ts): Integration tests for session REST endpoints.
 - [`tests/chat-api.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/chat-api.test.ts): Unit tests for `/api/chat` SSE streaming proxy.
 - [`tests/thread-sidebar.test.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/tests/thread-sidebar.test.tsx): React testing for thread sidebar primitives.

@@ -56,6 +56,8 @@ export interface BaseAgentMessagePart {
   };
   grounding_metadata?: GroundingMetadata;
   groundingMetadata?: GroundingMetadata;
+  thought_signature?: string;
+  thoughtSignature?: string;
 }
 
 export interface AgentTextPart extends BaseAgentMessagePart {
@@ -296,6 +298,72 @@ export interface GroundingMetadata {
   retrievalQueries?: string[];
 }
 
+export interface UsageMetadataTokenDetail {
+  modality: string;
+  token_count?: number;
+  tokenCount?: number;
+}
+
+export interface AgentUsageMetadata {
+  prompt_token_count?: number;
+  promptTokenCount?: number;
+  candidates_token_count?: number;
+  candidatesTokenCount?: number;
+  thoughts_token_count?: number;
+  thoughtsTokenCount?: number;
+  total_token_count?: number;
+  totalTokenCount?: number;
+  traffic_type?: "ON_DEMAND" | "PROVISIONED" | string;
+  trafficType?: "ON_DEMAND" | "PROVISIONED" | string;
+  prompt_tokens_details?: UsageMetadataTokenDetail[];
+  promptTokensDetails?: UsageMetadataTokenDetail[];
+  candidates_tokens_details?: UsageMetadataTokenDetail[];
+  candidatesTokensDetails?: UsageMetadataTokenDetail[];
+}
+
+export interface AgentNodeInfo {
+  path?: string;
+  output_for?: string | string[];
+  outputFor?: string | string[];
+  [key: string]: unknown;
+}
+
+export interface AgentActionsDelta {
+  state_delta?: Record<string, unknown>;
+  stateDelta?: Record<string, unknown>;
+  artifact_delta?: Record<string, unknown>;
+  artifactDelta?: Record<string, unknown>;
+  requested_auth_configs?: Record<string, unknown>;
+  requestedAuthConfigs?: Record<string, unknown>;
+  requested_tool_confirmations?: Record<string, unknown>;
+  requestedToolConfirmations?: Record<string, unknown>;
+}
+
+export interface AgentMessageInfoMetadata {
+  eventId?: string;
+  event_id?: string;
+  id?: string;
+  invocationId?: string;
+  invocation_id?: string;
+  modelVersion?: string;
+  model_version?: string;
+  usageMetadata?: AgentUsageMetadata;
+  usage_metadata?: AgentUsageMetadata;
+  avgLogprobs?: number;
+  avg_logprobs?: number;
+  nodeInfo?: AgentNodeInfo;
+  node_info?: AgentNodeInfo;
+  nodePath?: string;
+  node_path?: string;
+  thoughtSignature?: string;
+  thought_signature?: string;
+  actions?: AgentActionsDelta;
+  finishReason?: string;
+  finish_reason?: string;
+  timestamp?: number | string;
+  [key: string]: unknown;
+}
+
 export interface AgentStreamEvent {
   event_type?:
     | "content"
@@ -308,8 +376,14 @@ export interface AgentStreamEvent {
     | "done";
   eventId?: string;
   author?: string;
+  invocation_id?: string;
+  invocationId?: string;
+  model_version?: string;
+  modelVersion?: string;
   content?: string;
   thought?: string;
+  thought_signature?: string;
+  thoughtSignature?: string;
   agent_call?: {
     agent: string;
     displayName?: string;
@@ -336,6 +410,18 @@ export interface AgentStreamEvent {
   retrieved_memories?: MemoryRetrievalItem[];
   grounding_metadata?: GroundingMetadata;
   groundingMetadata?: GroundingMetadata;
+  usage_metadata?: AgentUsageMetadata;
+  usageMetadata?: AgentUsageMetadata;
+  avg_logprobs?: number;
+  avgLogprobs?: number;
+  node_info?: AgentNodeInfo;
+  nodeInfo?: AgentNodeInfo;
+  node_path?: string;
+  nodePath?: string;
+  actions?: AgentActionsDelta;
+  finish_reason?: string;
+  finishReason?: string;
+  timestamp?: number | string;
   partial?: boolean;
   turn_complete?: boolean;
   turnComplete?: boolean;
@@ -362,8 +448,13 @@ export interface AgentSessionEvent {
   role: "user" | "assistant" | "model" | "system";
   author?: string;
   invocationId?: string;
+  invocation_id?: string;
+  modelVersion?: string;
+  model_version?: string;
   content: string;
   thought?: string;
+  thoughtSignature?: string;
+  thought_signature?: string;
   subAgents?: SubAgentExecution[];
   tool_calls?: Array<{
     id?: string;
@@ -385,6 +476,18 @@ export interface AgentSessionEvent {
   };
   grounding_metadata?: GroundingMetadata;
   groundingMetadata?: GroundingMetadata;
+  usageMetadata?: AgentUsageMetadata;
+  usage_metadata?: AgentUsageMetadata;
+  avgLogprobs?: number;
+  avg_logprobs?: number;
+  nodeInfo?: AgentNodeInfo;
+  node_info?: AgentNodeInfo;
+  nodePath?: string;
+  node_path?: string;
+  actions?: AgentActionsDelta;
+  finishReason?: string;
+  finish_reason?: string;
+  timestamp?: number | string;
   rawEvent?: Record<string, unknown>;
 }
 

@@ -13,7 +13,7 @@ import {
 import type { GroundingMetadata, RetrievedContextChunk } from "@/types/agent";
 import { extractDomainFromUri } from "@/lib/grounding/citation-parser";
 import { useGrounding } from "./grounding-context";
-import { cn } from "@/lib/utils";
+import { cn, sanitizeUrl } from "@/lib/utils";
 
 interface GroundingSourcesAccordionProps {
   metadata?: GroundingMetadata;
@@ -144,7 +144,7 @@ export function GroundingSourcesAccordion({
                           )}
                           {isWeb ? (
                             <a
-                              href={uri}
+                              href={sanitizeUrl(uri)}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="inline-flex items-center gap-0.5 text-[#1a73e8] hover:underline dark:text-[#8ab4f8] truncate max-w-xs"

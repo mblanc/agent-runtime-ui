@@ -5,7 +5,7 @@ import { ChatRequestBody } from "@/types/agent";
 
 export const runtime = "nodejs";
 
-export const POST = withAuth(async (req, { userId }) => {
+export const POST = withAuth(async (req, { userId, userEmail }) => {
   let body: ChatRequestBody;
   try {
     body = await req.json();
@@ -21,6 +21,34 @@ export const POST = withAuth(async (req, { userId }) => {
     req.headers.get("x-reasoning-engine-id") || body.reasoningEngineId;
   const customLocation = req.headers.get("x-location") || body.location;
   const agentClient = new AgentRuntimeClient(customEngineId, customLocation);
+
+  // Validate session ownership for non-local persisted sessions
+  if (
+    body.sessionId &&
+    !body.sessionId.startsWith("__LOCALID_") &&
+    !body.sessionId.startsWith("local-")
+  ) {
+    try {
+      const sessionDetails = await agentClient.getSession(
+        body.sessionId,
+        customEngineId,
+        customLocation
+      );
+      if (
+        sessionDetails &&
+        sessionDetails.userId &&
+        sessionDetails.userId !== userId &&
+        sessionDetails.userId !== userEmail
+      ) {
+        return NextResponse.json(
+          { error: "Forbidden. You do not own this session." },
+          { status: 403 }
+        );
+      }
+    } catch {
+      // Allow new sessions or un-persisted session creation to proceed to streamQuery
+    }
+  }
 
   let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   let isCancelled = false;

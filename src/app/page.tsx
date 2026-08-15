@@ -20,10 +20,15 @@ import { AgentHeaderSelector } from "@/components/agent-switcher/agent-header-se
 import { MemoryHeaderButton } from "@/components/memory/memory-header-button";
 import { AgentProvider, useActiveAgent } from "@/lib/agent-context";
 import { MemoryProvider } from "@/lib/memory-context";
-import { MemoryDrawer } from "@/components/memory/memory-drawer";
 import { useSession } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef } from "react";
+
+const MemoryDrawer = dynamic(
+  () => import("@/components/memory/memory-drawer").then((m) => m.MemoryDrawer),
+  { ssr: false }
+);
 
 function ChatContent() {
   const { data: session, isPending } = useSession();

@@ -1,54 +1,64 @@
-# Task List: Google Search & Enterprise RAG Grounding (Source Citations & Truthfulness Inspector)
+# Task List: Agent Stream Metadata & Message Info (Inspection, Trace & Verified Reasoning)
 
-- [ ] **Phase 1: Data Contracts, Types & Citation Parsing Engine**
-  - [x] **Task 1: Define Grounding & Citation Data Contracts**
-    - [x] Add `WebGroundingChunk`, `RetrievedContextChunk`, `GroundingChunk`, `GroundingSupport`, `SearchEntryPoint`, `GroundingMetadata` to `src/types/agent.ts`.
-    - [x] Extend `AgentStreamEvent`, `AgentMessagePart`, and `AgentSessionEvent` with `grounding_metadata?: GroundingMetadata` and `groundingMetadata?: GroundingMetadata`.
+- [x] **Phase 1: Data Contracts, Types & Metadata Parser Engine**
+  - [x] **Task 1: Define Message Info & Stream Metadata Type Contracts**
+    - [x] Add `AgentUsageMetadata`, `UsageMetadataTokenDetail`, `AgentNodeInfo`, `AgentActionsDelta`, and `AgentMessageInfoMetadata` to [`src/types/agent.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/types/agent.ts).
+    - [x] Extend `AgentStreamEvent`, `AgentSessionEvent`, and `AgentMessagePart` with message info metadata fields.
     - [x] Verify `bun run check`.
-  - [x] **Task 2: Implement Grounding Citation Normalizer & Parser Utilities**
-    - [x] Create `src/lib/grounding/citation-parser.ts` with `parseCitationIndices`, `resolveCitationSource`, `extractDomainFromUri`, and `extractGroundingMetadata`.
-    - [x] Create `tests/grounding-parser.test.ts` and verify with `bun test tests/grounding-parser.test.ts`.
-  - [x] **Checkpoint 1: Data Contracts & Parsing Utilities**
-    - [x] Verify `bun run check` and `bun test tests/grounding-parser.test.ts`.
+  - [x] **Task 2: Implement Stream Parser Telemetry Extraction**
+    - [x] Update [`src/lib/agent-runtime/sse-parser.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/agent-runtime/sse-parser.ts) to extract `usage_metadata`, `model_version`, `invocation_id`, `avg_logprobs`, `node_info`, `thought_signature`, `actions`, `finish_reason`, and `timestamp`.
+    - [x] Add unit test assertions in [`tests/sse-parser.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/sse-parser.test.ts).
+    - [x] Verify `bun test tests/sse-parser.test.ts`.
+  - [x] **Task 3: Implement Session Event Normalizer Telemetry Preservation**
+    - [x] Update `parseRawSessionEvent`, `groupTurnSessionEvents`, and `formatSessionEventsToThreadMessages` in [`src/lib/agent-runtime/event-normalizer.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/agent-runtime/event-normalizer.ts) to parse and preserve metadata.
+    - [x] Add test cases in [`tests/event-normalizer.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/event-normalizer.test.ts).
+    - [x] Verify `bun test tests/event-normalizer.test.ts`.
+  - [x] **Checkpoint 1: Foundation & Parser Quality Gate**
+    - [x] Verify `bun run check` and parser/normalizer tests pass.
 
-- [ ] **Phase 2: Stream Adapter & Mock Grounding Generator**
-  - [x] **Task 3: Chat Adapter Stream Interception for Grounding Metadata**
-    - [x] Update `createYieldContent` and `createGeminiChatAdapter` in `src/lib/adapters/chat-adapter.ts` to parse and yield `metadata.custom.groundingMetadata`.
-    - [x] Update `src/lib/agent-runtime/event-normalizer.ts` to preserve grounding metadata in thread history messages.
-    - [x] Verify `bun run check` and `bun test tests/event-normalizer.test.ts`.
-  - [x] **Task 4: Implement Mock Provider Grounding Simulation & Multi-Turn Persistence**
-    - [x] Update `MockAgentRuntimeProvider.streamQuery` in `src/lib/agent-runtime/mock/mock-provider.ts` to yield grounding metadata and thoughts for search/RAG queries.
-    - [x] Persist grounding metadata in `mockSessionEventsStore` in `src/lib/agent-runtime/mock/mock-store.ts`.
-    - [x] Create `tests/grounding-stream.test.ts` and verify with `bun test tests/grounding-stream.test.ts`.
-  - [x] **Checkpoint 2: Stream Pipeline & Mock Grounding Engine**
-    - [x] Verify `bun run check` and `bun test tests/grounding-stream.test.ts`.
+- [x] **Phase 2: Chat Adapter Stream Pipeline & Mock Parity**
+  - [x] **Task 4: Wire Message Info Telemetry into Chat Adapter Stream Loop**
+    - [x] Update `createYieldContent` and stream processing in [`src/lib/adapters/chat-adapter.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/adapters/chat-adapter.ts) to populate `metadata.custom`.
+    - [x] Ensure [`src/lib/session-adapter.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/session-adapter.tsx) passes `metadata.custom` into `ThreadMessageLike`.
+    - [x] Verify `bun run check`.
+  - [x] **Task 5: Implement Mock Provider Stream Metadata & Multi-Turn Persistence**
+    - [x] Update `MockAgentRuntimeProvider.streamQuery` in [`src/lib/agent-runtime/mock/mock-provider.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/agent-runtime/mock/mock-provider.ts) to emit realistic telemetry chunks.
+    - [x] Store telemetry payload in `mockSessionEventsStore` in [`src/lib/agent-runtime/mock/mock-store.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/agent-runtime/mock/mock-store.ts).
+    - [x] Verify `bun test tests/agent-client.test.ts`.
+  - [x] **Checkpoint 2: Stream Pipeline & Adapter Quality Gate**
+    - [x] Verify `bun run check` and adapter streaming tests pass.
 
-- [ ] **Phase 3: Visual Grounding Primitives & Citation UI**
-  - [x] **Task 5: Build InlineCitationBadge and SourcePopover**
-    - [x] Create `src/components/grounding/inline-citation-badge.tsx` with clickable/hoverable `[1]` badge.
-    - [x] Create `src/components/grounding/source-popover.tsx` displaying source details, domain tag, snippet, and confidence score.
-  - [x] **Task 6: Build GoogleSearchWidget**
-    - [x] Create `src/components/grounding/google-search-widget.tsx` to safely render `searchEntryPoint.renderedContent` with compliant Google Search attribution.
-  - [x] **Task 7: Build GroundingSourcesAccordion & EnterpriseRagDrawer**
-    - [x] Create `src/components/grounding/grounding-sources-accordion.tsx` with collapsible search queries, web source cards, and RAG document items.
-    - [x] Create `src/components/grounding/enterprise-rag-drawer.tsx` with slide-over drawer using `@radix-ui/react-dialog` to inspect full RAG text excerpts and GCS metadata.
-    - [x] Create `tests/grounding-ui.test.tsx` and verify component behavior with `bun test tests/grounding-ui.test.tsx`.
-  - [x] **Checkpoint 3: Visual Grounding Components**
-    - [x] Verify `bun run check` and `bun test tests/grounding-ui.test.tsx`.
+- [x] **Phase 3: Visual Telemetry Primitives & Info Popovers**
+  - [x] **Task 6: Build Model Version Badge and Token Usage Popover**
+    - [x] Create [`src/components/assistant-ui/model-badge.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/model-badge.tsx) with model icon, version text, and model tier pills.
+    - [x] Create [`src/components/assistant-ui/token-usage-popover.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/token-usage-popover.tsx) with prompt/candidate/thinking token breakdown and billing tier.
+    - [x] Verify `bun run check`.
+  - [x] **Task 7: Build Cloud Trace Deep Link & Message Info Inspection Modal**
+    - [x] Create [`src/components/assistant-ui/cloud-trace-link.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/cloud-trace-link.tsx) with Turn ID copy button and Google Cloud Trace console URL.
+    - [x] Create [`src/components/assistant-ui/message-info-dialog.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/message-info-dialog.tsx) with full turn metadata inspection, confidence rating, and DAG node path.
+    - [x] Verify `bun run check`.
+  - [x] **Task 8: Build Verified Reasoning & Thought Signature Indicator**
+    - [x] Update [`src/components/assistant-ui/reasoning.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/reasoning.tsx) and [`src/components/assistant-ui/thought-collapsible.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/thought-collapsible.tsx) to render Verified Reasoning badge.
+    - [x] Verify `bun run check`.
+  - [x] **Checkpoint 3: Visual Telemetry Primitives Gate**
+    - [x] Verify `bun run check` and component rendering.
 
-- [x] **Phase 4: Message Integration & Markdown Text Citation Badges**
-  - [x] **Task 8: Assemble GroundingFooter and Mount in GeminiMessage**
-    - [x] Create `src/components/grounding/grounding-footer.tsx` combining accordion, search widget, and drawer trigger.
-    - [x] Extract `metadata.custom.groundingMetadata` in `src/components/assistant-ui/gemini-message.tsx` and render `GroundingFooter`.
+- [x] **Phase 4: Gemini Message Integration & UX Polish**
+  - [x] **Task 9: Integrate Message Info Subsystems into Gemini Message Footer**
+    - [x] Wire `ModelBadge`, `TokenUsagePopover`, `CloudTraceLink`, and `MessageInfoDialog` into [`src/components/assistant-ui/gemini-message.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/gemini-message.tsx) and [`src/components/assistant-ui/gemini-message-timing.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/gemini-message-timing.tsx).
     - [x] Verify `bun test tests/components.test.tsx`.
-  - [x] **Task 9: Integrate Interactive Inline Citation Badges into MarkdownText**
-    - [x] Parse inline citation tokens `[1]`, `[2]` in `src/components/assistant-ui/markdown-text.tsx` and render interactive `InlineCitationBadge` components without corrupting markdown links or math formulas.
-    - [x] Verify `bun test tests/grounding-ui.test.tsx` and `bun run check`.
-  - [x] **Checkpoint 4: End-to-End Chat Grounding Integration**
-    - [x] Verify search queries render inline citation badges, expandable sources accordion, and official Google Search widget in chat.
+  - [x] **Task 10: Build Message Info Test Suite**
+    - [x] Create [`tests/message-info-parser.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/message-info-parser.test.ts) for SSE parsing verification.
+    - [x] Create [`tests/message-info-stream.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/message-info-stream.test.ts) for chat adapter integration.
+    - [x] Create [`tests/message-info-ui.test.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/tests/message-info-ui.test.tsx) for component interactions.
+    - [x] Verify `bun test tests/message-info-*.test.ts*`.
+  - [x] **Checkpoint 4: UI Integration & Verification Gate**
+    - [x] Verify full test suite passes: `bun run test`.
 
-- [ ] **Phase 5: Verification, Quality Preflight & Documentation**
-  - [x] **Task 10: Complete Test Suite Verification, Quality Preflight & Docs Sync**
+- [x] **Phase 5: Verification, Quality Preflight & Documentation**
+  - [x] **Task 11: Execute Full Preflight & Update Documentation**
     - [x] Run `bun run check`, `bun run lint`, and `bun run test`.
-    - [x] Update `AGENTS.md` with grounding components and architecture index.
+    - [x] Update [`AGENTS.md`](file:///Users/mblanc/projects/agent-runtime-ui/AGENTS.md) with message info components, utilities, and telemetry architecture index.
     - [x] Ensure `bun run preflight` exits with status 0.
+  - [x] **Checkpoint 5: Complete & Ready for Review**
+    - [x] All acceptance criteria verified and quality gates clear.

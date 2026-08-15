@@ -4,6 +4,8 @@ import { useAuiState } from "@assistant-ui/react";
 import { Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { MessageInfoPopover } from "./message-info-popover";
+
 interface GeminiMessageTimingProps {
   durationSeconds?: number;
   tokensPerSecond?: number;
@@ -25,7 +27,23 @@ interface AuiMessageState {
   message?: {
     status?: { type?: string };
     content?: ReadonlyArray<MessageContentPart>;
-    metadata?: { timing?: MessageTimingMetadata };
+    metadata?: {
+      timing?: MessageTimingMetadata;
+      custom?: {
+        usageMetadata?: {
+          candidates_token_count?: number;
+          candidatesTokenCount?: number;
+          total_token_count?: number;
+          totalTokenCount?: number;
+        };
+        usage_metadata?: {
+          candidates_token_count?: number;
+          candidatesTokenCount?: number;
+          total_token_count?: number;
+          totalTokenCount?: number;
+        };
+      };
+    };
   };
 }
 
@@ -53,6 +71,19 @@ export function GeminiMessageTiming({
     "message" in s ? s.message?.metadata?.timing : undefined
   );
 
+  const exactTokenCount = useAuiState((s: AuiMessageState) => {
+    if (!("message" in s)) return undefined;
+    const usage =
+      s.message?.metadata?.custom?.usageMetadata ||
+      s.message?.metadata?.custom?.usage_metadata;
+    return (
+      usage?.candidates_token_count ??
+      usage?.candidatesTokenCount ??
+      usage?.total_token_count ??
+      usage?.totalTokenCount
+    );
+  });
+
   // Track elapsed generation duration when streaming finishes
   useEffect(() => {
     if (isRunning) {
@@ -75,20 +106,23 @@ export function GeminiMessageTiming({
       ? metadataTiming.duration / 1000
       : (elapsedDuration ?? 1.8));
 
-  const calculatedTokens = Math.max(1, Math.round(charCount / 4));
+  const calculatedTokens = exactTokenCount ?? Math.max(1, Math.round(charCount / 4));
   const calculatedTps = Math.round(calculatedTokens / Math.max(0.5, duration));
 
   const tps = propTps ?? metadataTiming?.tokensPerSecond ?? calculatedTps;
   const engine = propEngine ?? metadataTiming?.engineName ?? "Vertex AI Reasoning Engine";
 
   return (
-    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/80 font-mono pt-1">
-      <Zap className="h-3 w-3 text-amber-500" />
-      <span>{duration.toFixed(1)}s</span>
-      <span>•</span>
-      <span>{tps} tok/s</span>
-      <span>•</span>
-      <span className="truncate max-w-[180px]">{engine}</span>
+    <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground/80 font-mono pt-1">
+      <div className="flex items-center gap-1.5">
+        <Zap className="h-3 w-3 text-amber-500" />
+        <span>{duration.toFixed(1)}s</span>
+        <span>•</span>
+        <span>{tps} tok/s</span>
+        <span>•</span>
+        <span className="truncate max-w-[180px]">{engine}</span>
+      </div>
+      <MessageInfoPopover />
     </div>
   );
 }

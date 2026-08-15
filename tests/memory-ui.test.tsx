@@ -165,4 +165,55 @@ describe("Memory Bank UI Components", () => {
       });
     });
   });
+
+  describe("UserAvatarMenu & MemoryDrawer Integration", () => {
+    it("renders Memory Bank Profile option in avatar menu and opens drawer on click", async () => {
+      const { UserAvatarMenu } = await import("@/components/auth/user-avatar-menu");
+      const authClient = await import("@/lib/auth-client");
+      vi.spyOn(authClient, "useSession").mockReturnValue({
+        data: {
+          user: {
+            id: "test-user",
+            name: "Test User",
+            email: "test@example.com",
+          },
+          session: {
+            expiresAt: new Date(Date.now() + 86400000).toISOString(),
+          },
+        },
+        isPending: false,
+        refetch: vi.fn().mockResolvedValue(undefined),
+      });
+
+      function TestApp() {
+        return (
+          <MemoryProvider initialMemories={[mockSampleMemory]}>
+            <div>
+              <UserAvatarMenu />
+              <MemoryDrawer />
+            </div>
+          </MemoryProvider>
+        );
+      }
+
+      render(<TestApp />);
+
+      // Open avatar dropdown trigger
+      const trigger = screen.getByRole("button", { name: /test user/i });
+      fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+
+      // Memory Bank Profile item should be in dropdown
+      const memoryProfileItem = await screen.findByText("Memory Bank Profile");
+      expect(memoryProfileItem).toBeDefined();
+
+      // Click Memory Bank Profile
+      fireEvent.click(memoryProfileItem);
+
+      // Verify drawer opened
+      await waitFor(() => {
+        expect(screen.getByText("Personalized semantic context for")).toBeDefined();
+        expect(screen.getByText(/Prefers TypeScript with strict typing/)).toBeDefined();
+      });
+    });
+  });
 });

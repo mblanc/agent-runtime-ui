@@ -6,8 +6,14 @@ import { cn } from "@/lib/utils";
 import { SubAgentCollapsible } from "./subagent-collapsible";
 import { ToolCollapsible } from "./tool-collapsible";
 import { ThoughtCollapsible } from "./thought-collapsible";
+import { ThoughtSignatureBadge } from "./thought-signature-badge";
 
-export { SubAgentCollapsible, ToolCollapsible, ThoughtCollapsible };
+export {
+  SubAgentCollapsible,
+  ToolCollapsible,
+  ThoughtCollapsible,
+  ThoughtSignatureBadge,
+};
 
 interface ReasoningRootProps {
   children: ReactNode;
@@ -61,11 +67,18 @@ export function ReasoningTrigger({ active, className }: ReasoningTriggerProps) {
   const isRunning = active ?? streaming;
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={() => setIsOpen(!isOpen)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          setIsOpen(!isOpen);
+        }
+      }}
       className={cn(
-        "flex w-full items-center justify-between px-3.5 py-2.5 text-left text-xs font-medium text-[#444746] transition-colors hover:bg-[#eff2f6] dark:text-[#c4c7c5] dark:hover:bg-[#282a2c]",
+        "flex w-full cursor-pointer items-center justify-between px-3.5 py-2.5 text-left text-xs font-medium text-[#444746] transition-colors hover:bg-[#eff2f6] dark:text-[#c4c7c5] dark:hover:bg-[#282a2c] select-none",
         className
       )}
     >
@@ -83,14 +96,15 @@ export function ReasoningTrigger({ active, className }: ReasoningTriggerProps) {
         )}
       </div>
 
-      <div className="flex items-center gap-1 text-muted-foreground">
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <ThoughtSignatureBadge variant="badge" />
         {isOpen ? (
           <ChevronDown className="h-4 w-4" />
         ) : (
           <ChevronRight className="h-4 w-4" />
         )}
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -225,7 +239,7 @@ function parseReasoningBlocks(rawText: string): ParsedReasoningBlock[] {
 }
 
 function deduplicateParsedBlocks(blocks: ParsedReasoningBlock[]): ParsedReasoningBlock[] {
-  const completedKeys = new Set<string>();
+  const completedToolKeys = new Set<string>();
 
   for (const block of blocks) {
     if (block.type === "tool" && block.title) {
@@ -234,35 +248,67 @@ function deduplicateParsedBlocks(blocks: ParsedReasoningBlock[]): ParsedReasonin
       if (isComplete) {
         const { args } = parseToolBlockContent(block.content);
         const key = `${block.title}-${args || ""}`;
-        completedKeys.add(key);
+        completedToolKeys.add(key);
       }
     }
   }
 
-  if (completedKeys.size === 0) {
-    return blocks;
-  }
-
-  const seenComplete = new Set<string>();
+  const seenCompleteTools = new Set<string>();
+  const subagentMergedMap = new Map<string, ParsedReasoningBlock>();
   const filtered: ParsedReasoningBlock[] = [];
 
   for (const block of blocks) {
+    if (block.type === "subagent") {
+      const agentKey = block.meta?.agent || block.title || "sub_agent";
+      const existing = subagentMergedMap.get(agentKey);
+      if (existing) {
+        const p1 = parseSubAgentBlockContent(existing.content);
+        const p2 = parseSubAgentBlockContent(block.content);
+        const mergedInput = p1.input || p2.input;
+        const o1 = p1.output || (!p1.input ? existing.content : "");
+        const o2 = p2.output || (!p2.input ? block.content : "");
+        const mergedOutput = o1 && o2 ? `${o1}\n${o2}` : o1 || o2;
+
+        let newBody = "";
+        if (mergedInput) {
+          newBody += `**Input:**\n\`\`\`json\n${mergedInput}\n\`\`\`\n`;
+        }
+        if (mergedOutput) {
+          if (mergedInput) {
+            newBody += `**Response:**\n${mergedOutput}`;
+          } else {
+            newBody += mergedOutput;
+          }
+        }
+        existing.content = newBody.trim();
+        if (block.meta?.status) {
+          existing.meta = { ...existing.meta, status: block.meta.status };
+        }
+        continue;
+      } else {
+        subagentMergedMap.set(agentKey, block);
+        filtered.push(block);
+        continue;
+      }
+    }
+
     if (block.type === "tool" && block.title) {
       const { args } = parseToolBlockContent(block.content);
       const key = `${block.title}-${args || ""}`;
 
-      if (completedKeys.has(key)) {
+      if (completedToolKeys.has(key)) {
         const isComplete =
           block.meta?.status === "complete" || block.content.includes("**Result:**");
         if (isComplete) {
-          if (!seenComplete.has(key)) {
-            seenComplete.add(key);
+          if (!seenCompleteTools.has(key)) {
+            seenCompleteTools.add(key);
             filtered.push(block);
           }
         }
         continue;
       }
     }
+
     filtered.push(block);
   }
 

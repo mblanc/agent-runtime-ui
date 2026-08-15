@@ -6,7 +6,10 @@ import {
   isRootWorkflowOutput,
   groupTurnSessionEvents,
 } from "@/lib/agent-runtime-client";
-import { appendToolResultToReasoning } from "@/lib/gemini-runtime-adapter";
+import {
+  appendToolResultToReasoning,
+  createYieldContent,
+} from "@/lib/gemini-runtime-adapter";
 
 describe("AgentRuntimeClient", () => {
   it("appends tool results inside running tool blocks and converts status to complete", () => {
@@ -525,6 +528,125 @@ describe("AgentRuntimeClient", () => {
       "**Response:**\nQ3 revenue increased by 14% YoY driven by data center AI chips."
     );
     expect(updated).not.toContain('status="running"');
+  });
+
+  it("accumulates multiple streaming delta chunks into the same subagent block without creating duplicates", async () => {
+    const { appendAgentResponseToReasoning } =
+      await import("@/lib/gemini-runtime-adapter");
+
+    let reasoning =
+      ':::subagent[Panel Member 1]{status="running" agent="member_1"}\n**Task Input:**\nAnalyze AI History\n:::';
+
+    // Chunk 1
+    reasoning = appendAgentResponseToReasoning(
+      reasoning,
+      "member_1",
+      "In 1950, ",
+      "Panel Member 1",
+      "running"
+    );
+    // Chunk 2
+    reasoning = appendAgentResponseToReasoning(
+      reasoning,
+      "member_1",
+      "Alan Turing proposed the Turing Test.",
+      "Panel Member 1",
+      "complete"
+    );
+
+    const matches = reasoning.match(/:::subagent\[Panel Member 1\]/g);
+    expect(matches?.length).toBe(1);
+    expect(reasoning).toContain(
+      "**Response:**\nIn 1950, Alan Turing proposed the Turing Test."
+    );
+    expect(reasoning).toContain('status="complete"');
+    expect(reasoning).not.toContain('status="running"');
+  });
+
+  it("streams council subagents and Chairman final response into unified thread parts", async () => {
+    const { createGeminiChatAdapter } = await import("@/lib/adapters/chat-adapter");
+
+    const councilStreamChunks = [
+      // 1. Council member Alpha called
+      'data: {"event_type":"agent_call","agent_call":{"agent":"alpha","displayName":"Council Member Alpha","input":{"topic":"history of AI"}}}\n\n',
+      // 2. Council member Alpha response chunk 1
+      'data: {"event_type":"agent_response","agent_response":{"agent":"alpha","displayName":"Council Member Alpha","response":"Part 1: 1950s Dartmouth "},"partial":true}\n\n',
+      // 3. Council member Alpha response chunk 2
+      'data: {"event_type":"agent_response","agent_response":{"agent":"alpha","displayName":"Council Member Alpha","response":"and early symbolic AI."},"partial":false}\n\n',
+      // 4. Council member Beta called
+      'data: {"event_type":"agent_call","agent_call":{"agent":"beta","displayName":"Council Member Beta","input":{"topic":"modern era"}}}\n\n',
+      // 5. Council member Beta response chunk 1
+      'data: {"event_type":"agent_response","agent_response":{"agent":"beta","displayName":"Council Member Beta","response":"Part 2: 2012 AlexNet & Deep Learning."},"partial":false}\n\n',
+      // 6. Chairman final synthesis (main content)
+      'data: {"event_type":"content","content":"# Complete 45-min AI Video Structure\\n\\n1. 1950-1970: Birth of AI\\n2. 2012-Present: Deep Learning","partial":false}\n\n',
+      "data: [DONE]\n\n",
+    ];
+
+    const encoder = new TextEncoder();
+    const mockStream = new ReadableStream({
+      start(controller) {
+        for (const c of councilStreamChunks) {
+          controller.enqueue(encoder.encode(c));
+        }
+        controller.close();
+      },
+    });
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+      ok: true,
+      body: mockStream,
+    } as unknown as Response);
+
+    const adapter = createGeminiChatAdapter();
+    const yieldedResults = [];
+
+    const runResult = adapter.run({
+      messages: [
+        {
+          id: "msg-1",
+          role: "user",
+          content: [{ type: "text", text: "Create video structure on AI history" }],
+          createdAt: new Date(),
+          attachments: [],
+          metadata: { custom: {} },
+        },
+      ],
+      abortSignal: new AbortController().signal,
+    } as unknown as Parameters<typeof adapter.run>[0]) as AsyncGenerator<
+      { content?: readonly { type: string; [k: string]: unknown }[] },
+      void,
+      unknown
+    >;
+
+    for await (const result of runResult) {
+      yieldedResults.push(result);
+    }
+
+    expect(yieldedResults.length).toBeGreaterThan(0);
+    const lastResult = yieldedResults[yieldedResults.length - 1];
+
+    const reasoningPart = lastResult.content?.find(
+      (p: { type: string }) => p.type === "reasoning"
+    ) as { text: string } | undefined;
+    const textPart = lastResult.content?.find(
+      (p: { type: string }) => p.type === "text"
+    ) as { text: string } | undefined;
+
+    // Main content has Chairman's video structure
+    expect(textPart).toBeDefined();
+    expect(textPart?.text).toContain("# Complete 45-min AI Video Structure");
+
+    // Reasoning has exactly ONE block for Alpha and ONE block for Beta
+    expect(reasoningPart).toBeDefined();
+    const reasoningText = reasoningPart?.text || "";
+    const alphaMatches = reasoningText.match(/:::subagent\[Council Member Alpha\]/g);
+    const betaMatches = reasoningText.match(/:::subagent\[Council Member Beta\]/g);
+    expect(alphaMatches?.length).toBe(1);
+    expect(betaMatches?.length).toBe(1);
+
+    // Alpha block contains the full concatenated response text from both chunks
+    expect(reasoningText).toContain("Part 1: 1950s Dartmouth and early symbolic AI.");
+    expect(reasoningText).toContain("Part 2: 2012 AlexNet & Deep Learning.");
   });
 
   describe("AgentRuntimeClient.submitFeedback", () => {
@@ -1134,6 +1256,46 @@ describe("AgentRuntimeClient", () => {
 
       expect(created.id).toBe("mem-99999");
       expect(created.topic).toBe("ui_preferences");
+    });
+  });
+
+  describe("Stream Telemetry & Message Info Propagation", () => {
+    it("packs message info telemetry into metadata.custom via createYieldContent", () => {
+      const result = createYieldContent(
+        "Reasoning thought",
+        "Final response text",
+        undefined,
+        "evt-123",
+        undefined,
+        undefined,
+        {
+          invocationId: "e-inv-456",
+          modelVersion: "gemini-2.5-pro",
+          usageMetadata: {
+            prompt_token_count: 1500,
+            candidates_token_count: 500,
+            thoughts_token_count: 150,
+            total_token_count: 2150,
+          },
+          avgLogprobs: -0.198,
+          nodePath: "root_agent@1",
+          thoughtSignature: "Sig-XYZ-789",
+          finishReason: "STOP",
+        }
+      );
+
+      const custom = result.metadata?.custom as Record<string, unknown>;
+      expect(custom).toBeDefined();
+      expect(custom.eventId).toBe("evt-123");
+      expect(custom.invocationId).toBe("e-inv-456");
+      expect(custom.modelVersion).toBe("gemini-2.5-pro");
+      expect((custom.usageMetadata as Record<string, unknown>).total_token_count).toBe(
+        2150
+      );
+      expect(custom.avgLogprobs).toBe(-0.198);
+      expect(custom.nodePath).toBe("root_agent@1");
+      expect(custom.thoughtSignature).toBe("Sig-XYZ-789");
+      expect(custom.finishReason).toBe("STOP");
     });
   });
 });

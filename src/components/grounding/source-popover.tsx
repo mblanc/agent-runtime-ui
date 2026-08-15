@@ -3,7 +3,7 @@
 import { ExternalLink, FileText, Globe, Database, Sparkles, Search } from "lucide-react";
 import type { GroundingChunk, RetrievedContextChunk } from "@/types/agent";
 import { extractDomainFromUri } from "@/lib/grounding/citation-parser";
-import { cn } from "@/lib/utils";
+import { cn, sanitizeUrl } from "@/lib/utils";
 
 interface SourcePopoverContentProps {
   chunk: GroundingChunk;
@@ -71,7 +71,7 @@ export function SourcePopoverContent({
 
         {isWeb && uri && (
           <a
-            href={uri}
+            href={sanitizeUrl(uri)}
             target="_blank"
             rel="noopener noreferrer"
             className="group mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-[#1a73e8] hover:underline dark:text-[#8ab4f8]"

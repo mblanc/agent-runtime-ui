@@ -289,5 +289,63 @@ describe("Agent Runtime Event Normalizer", () => {
         "Semiconductor stocks are up 2.4% on strong earnings reports."
       );
     });
+
+    it("extracts and preserves telemetry attributes (model_version, usage_metadata, avg_logprobs, node_info, thought_signature) across session events", () => {
+      const rawGcpEvent = {
+        name: "projects/123/locations/us-central1/reasoningEngines/456/sessions/789/events/10",
+        invocationId: "e-trace-999",
+        modelVersion: "gemini-2.5-flash",
+        avgLogprobs: -0.154,
+        nodeInfo: { path: "root_agent@1" },
+        usageMetadata: {
+          promptTokenCount: 1500,
+          candidatesTokenCount: 350,
+          thoughtsTokenCount: 120,
+          totalTokenCount: 1970,
+          trafficType: "ON_DEMAND",
+        },
+        actions: {
+          stateDelta: { sessionStep: 5 },
+          artifactDelta: { "plan.md": "# Updated Plan" },
+        },
+        rawEvent: {
+          id: "otel-uuid-10",
+          content: {
+            parts: [
+              {
+                thought: true,
+                text: "Reasoning about cloud architecture...",
+                thoughtSignature: "Sig-ABC-123",
+              },
+              {
+                text: "Here is your multi-region architecture plan.",
+              },
+            ],
+          },
+        },
+      };
+
+      const parsed = parseRawSessionEvent(rawGcpEvent, "789", 0);
+      expect(parsed.modelVersion).toBe("gemini-2.5-flash");
+      expect(parsed.invocationId).toBe("e-trace-999");
+      expect(parsed.avgLogprobs).toBe(-0.154);
+      expect(parsed.nodeInfo?.path).toBe("root_agent@1");
+      expect(parsed.thoughtSignature).toBe("Sig-ABC-123");
+      expect(parsed.usageMetadata?.totalTokenCount).toBe(1970);
+      expect(parsed.actions?.stateDelta).toEqual({ sessionStep: 5 });
+
+      const grouped = groupTurnSessionEvents([rawGcpEvent], "789");
+      expect(grouped.length).toBe(1);
+      expect(grouped[0].modelVersion).toBe("gemini-2.5-flash");
+      expect(grouped[0].usageMetadata?.totalTokenCount).toBe(1970);
+
+      const threadMessages = formatSessionEventsToThreadMessages(grouped);
+      expect(threadMessages.length).toBe(1);
+      expect(threadMessages[0].metadata?.custom?.modelVersion).toBe("gemini-2.5-flash");
+      expect(threadMessages[0].metadata?.custom?.invocationId).toBe("e-trace-999");
+      expect(threadMessages[0].metadata?.custom?.avgLogprobs).toBe(-0.154);
+      expect(threadMessages[0].metadata?.custom?.nodePath).toBe("root_agent@1");
+      expect(threadMessages[0].metadata?.custom?.thoughtSignature).toBe("Sig-ABC-123");
+    });
   });
 });

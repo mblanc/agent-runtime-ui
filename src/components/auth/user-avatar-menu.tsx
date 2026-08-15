@@ -10,9 +10,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { LogOut } from "lucide-react";
+import { Brain, LogOut } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { useOptionalMemory } from "@/lib/memory-context";
 
 interface UserAvatarMenuProps {
   showName?: boolean;
@@ -28,6 +29,7 @@ export function UserAvatarMenu({
   align = "end",
 }: UserAvatarMenuProps) {
   const { data: session, isPending } = useSession();
+  const memoryContext = useOptionalMemory();
 
   if (isPending) {
     return (
@@ -102,6 +104,15 @@ export function UserAvatarMenu({
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        {memoryContext && (
+          <DropdownMenuItem
+            className="cursor-pointer gap-2"
+            onClick={() => memoryContext.setIsDrawerOpen(true)}
+          >
+            <Brain className="h-4 w-4 text-[#1a73e8] dark:text-[#8ab4f8]" />
+            <span>Memory Bank Profile</span>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem
           className="cursor-pointer gap-2 text-destructive focus:text-destructive"
           onClick={() => signOut()}

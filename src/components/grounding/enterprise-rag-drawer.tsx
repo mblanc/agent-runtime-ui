@@ -4,6 +4,7 @@ import { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Database, FileText, X, Copy, Check, Sparkles } from "lucide-react";
 import type { RetrievedContextChunk } from "@/types/agent";
+import { copyToClipboardSafe } from "@/lib/utils";
 
 interface EnterpriseRagDrawerProps {
   isOpen: boolean;
@@ -22,11 +23,13 @@ export function EnterpriseRagDrawer({
     return null;
   }
 
-  const handleCopyUri = () => {
+  const handleCopyUri = async () => {
     if (chunk.uri) {
-      navigator.clipboard.writeText(chunk.uri);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      const success = await copyToClipboardSafe(chunk.uri);
+      if (success) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
     }
   };
 

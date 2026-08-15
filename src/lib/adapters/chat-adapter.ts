@@ -5,12 +5,19 @@ import type {
   ThreadMessage,
 } from "@assistant-ui/react";
 import type {
+  AgentActionsDelta,
   AgentMessage,
+  AgentMessageInfoMetadata,
   AgentMessagePart,
+  AgentNodeInfo,
+  AgentUsageMetadata,
   GroundingMetadata,
   MemoryRetrievalItem,
 } from "@/types/agent";
-import { extractGroundingMetadata } from "@/lib/grounding/citation-parser";
+import {
+  extractGroundingMetadata,
+  mergeGroundingMetadata,
+} from "@/lib/grounding/citation-parser";
 import { formatAgentDisplayName } from "@/lib/utils";
 import { defaultAttachmentStore } from "../attachments/attachment-store";
 import { inferMimeType } from "../attachments/mime-types";
@@ -83,31 +90,61 @@ export function appendAgentResponseToReasoning(
   reasoning: string,
   agentName: string,
   responseStr: string,
-  displayName?: string
+  displayName?: string,
+  status: "running" | "complete" = "complete"
 ): string {
   const name = displayName || formatAgentDisplayName(agentName);
-  const runningHeader = `:::subagent[${name}]{status="running" agent="${agentName}"}`;
-  const lastIdx = reasoning.lastIndexOf(runningHeader);
+  const subagentRegex = new RegExp(
+    `:::subagent\\[${escapeRegex(name)}\\](\\{[^}]*agent="${escapeRegex(agentName)}"[^}]*\\})\\s*\\r?\\n([\\s\\S]*?)(?:\\r?\\n:::|$)`,
+    "g"
+  );
 
-  if (lastIdx !== -1) {
-    const before = reasoning.substring(0, lastIdx);
-    const after = reasoning.substring(lastIdx);
-    const closeIdx = after.indexOf("\n:::", runningHeader.length);
-    if (closeIdx !== -1) {
-      const blockInside = after
-        .substring(0, closeIdx)
-        .replace(
-          runningHeader,
-          `:::subagent[${name}]{status="complete" agent="${agentName}"}`
-        );
-      const remainder = after.substring(closeIdx);
-      return `${before}${blockInside}\n**Response:**\n${responseStr}${remainder}`;
+  let lastMatch: RegExpExecArray | null = null;
+  let match: RegExpExecArray | null;
+  while ((match = subagentRegex.exec(reasoning)) !== null) {
+    lastMatch = match;
+  }
+
+  if (lastMatch) {
+    const matchIndex = lastMatch.index;
+    const fullMatch = lastMatch[0];
+    const attrGroup = lastMatch[1];
+    const bodyGroup = lastMatch[2];
+
+    const updatedAttr = attrGroup.replace(/status="[^"]*"/, `status="${status}"`);
+
+    let updatedBody = bodyGroup.replace(/\r?\n$/, "");
+    if (updatedBody.includes("**Response:**")) {
+      const respRegex = /(\*\*Response:\*\*\s*\r?\n)([\s\S]*)/i;
+      const respMatch = updatedBody.match(respRegex);
+      if (respMatch) {
+        const prefix = updatedBody.substring(0, respMatch.index! + respMatch[1].length);
+        const currentResp = respMatch[2];
+        const newResp = currentResp ? `${currentResp}${responseStr}` : responseStr;
+        updatedBody = `${prefix}${newResp}`;
+      } else {
+        updatedBody = `${updatedBody}\n${responseStr}`;
+      }
+    } else if (
+      updatedBody.includes("**Task Input:**") ||
+      updatedBody.includes("**Input:**")
+    ) {
+      updatedBody = `${updatedBody.trimEnd()}\n**Response:**\n${responseStr}`;
+    } else {
+      updatedBody = updatedBody ? `${updatedBody}${responseStr}` : responseStr;
     }
+
+    const replacement = `:::subagent[${name}]${updatedAttr}\n${updatedBody}\n:::`;
+    return (
+      reasoning.substring(0, matchIndex) +
+      replacement +
+      reasoning.substring(matchIndex + fullMatch.length)
+    );
   }
 
   return (
     reasoning +
-    `\n\n:::subagent[${name}]{status="complete" agent="${agentName}"}\n${responseStr}\n:::`
+    `\n\n:::subagent[${name}]{status="${status}" agent="${agentName}"}\n${responseStr.trim()}\n:::`
   );
 }
 
@@ -133,7 +170,8 @@ export function createYieldContent(
   toolCalls?: ToolCallYieldItem[],
   eventId?: string,
   retrievedMemories?: MemoryRetrievalItem[],
-  groundingMetadata?: GroundingMetadata
+  groundingMetadata?: GroundingMetadata,
+  messageInfo?: AgentMessageInfoMetadata
 ): ChatModelRunResult {
   const hasRequiresAction = (toolCalls || []).some(
     (tc) => tc.status?.type === "requires-action" && tc.result === undefined
@@ -163,7 +201,8 @@ export function createYieldContent(
       : {}),
     ...(eventId ||
     (retrievedMemories && retrievedMemories.length > 0) ||
-    groundingMetadata
+    groundingMetadata ||
+    messageInfo
       ? {
           metadata: {
             custom: {
@@ -172,6 +211,30 @@ export function createYieldContent(
                 ? { retrievedMemories }
                 : {}),
               ...(groundingMetadata ? { groundingMetadata } : {}),
+              ...(messageInfo?.invocationId
+                ? { invocationId: messageInfo.invocationId }
+                : {}),
+              ...(messageInfo?.modelVersion
+                ? { modelVersion: messageInfo.modelVersion }
+                : {}),
+              ...(messageInfo?.usageMetadata
+                ? { usageMetadata: messageInfo.usageMetadata }
+                : {}),
+              ...(messageInfo?.avgLogprobs !== undefined
+                ? { avgLogprobs: messageInfo.avgLogprobs }
+                : {}),
+              ...(messageInfo?.nodeInfo ? { nodeInfo: messageInfo.nodeInfo } : {}),
+              ...(messageInfo?.nodePath ? { nodePath: messageInfo.nodePath } : {}),
+              ...(messageInfo?.thoughtSignature
+                ? { thoughtSignature: messageInfo.thoughtSignature }
+                : {}),
+              ...(messageInfo?.actions ? { actions: messageInfo.actions } : {}),
+              ...(messageInfo?.finishReason
+                ? { finishReason: messageInfo.finishReason }
+                : {}),
+              ...(messageInfo?.timestamp !== undefined
+                ? { timestamp: messageInfo.timestamp }
+                : {}),
             },
           },
         }
@@ -584,35 +647,116 @@ export function createGeminiChatAdapter(
         let buffer = "";
 
         let accumulatedReasoning = "";
-        let currentThoughtSegment = "";
-        let finalizedThoughtPrefix = "";
+
+        interface SubagentStreamItem {
+          agentName: string;
+          displayName: string;
+          input?: string;
+          response: string;
+          status: "running" | "complete";
+        }
+
+        type ReasoningEntry =
+          | { type: "thought"; text: string }
+          | { type: "subagent"; agentName: string }
+          | { type: "tool"; toolName: string; block: string };
+
+        const subagentsMap = new Map<string, SubagentStreamItem>();
+        const reasoningEntries: ReasoningEntry[] = [];
+        let activeSubagentName: string | null = null;
 
         let accumulatedText = "";
         let currentTextSegment = "";
         let finalizedTextPrefix = "";
 
         let latestEventId: string | undefined;
+        let latestInvocationId: string | undefined;
+        let latestModelVersion: string | undefined;
+        let latestUsageMetadata: AgentUsageMetadata | undefined;
+        let latestAvgLogprobs: number | undefined;
+        let latestNodeInfo: AgentNodeInfo | undefined;
+        let latestNodePath: string | undefined;
+        let latestThoughtSignature: string | undefined;
+        let latestActions: AgentActionsDelta | undefined;
+        let latestFinishReason: string | undefined;
+        let latestTimestamp: number | string | undefined;
         const toolCallsMap = new Map<string, ToolCallYieldItem>();
         const retrievedMemoriesList: MemoryRetrievalItem[] = [];
         let latestGroundingMetadata: GroundingMetadata | undefined;
 
-        const getThoughtSeparator = (prefix: string) => {
-          if (!prefix) return "";
-          if (prefix.endsWith(":::") || prefix.endsWith(":::\n")) {
-            return "\n\n";
+        const getMessageInfo = (): AgentMessageInfoMetadata | undefined => {
+          if (
+            !latestInvocationId &&
+            !latestModelVersion &&
+            !latestUsageMetadata &&
+            latestAvgLogprobs === undefined &&
+            !latestNodeInfo &&
+            !latestNodePath &&
+            !latestThoughtSignature &&
+            !latestActions &&
+            !latestFinishReason &&
+            latestTimestamp === undefined
+          ) {
+            return undefined;
           }
-          return "";
+          return {
+            ...(latestInvocationId ? { invocationId: latestInvocationId } : {}),
+            ...(latestModelVersion ? { modelVersion: latestModelVersion } : {}),
+            ...(latestUsageMetadata ? { usageMetadata: latestUsageMetadata } : {}),
+            ...(latestAvgLogprobs !== undefined
+              ? { avgLogprobs: latestAvgLogprobs }
+              : {}),
+            ...(latestNodeInfo ? { nodeInfo: latestNodeInfo } : {}),
+            ...(latestNodePath ? { nodePath: latestNodePath } : {}),
+            ...(latestThoughtSignature
+              ? { thoughtSignature: latestThoughtSignature }
+              : {}),
+            ...(latestActions ? { actions: latestActions } : {}),
+            ...(latestFinishReason ? { finishReason: latestFinishReason } : {}),
+            ...(latestTimestamp !== undefined ? { timestamp: latestTimestamp } : {}),
+          };
         };
 
-        const flushCurrentThoughtSegment = () => {
-          if (currentThoughtSegment) {
-            const sep = getThoughtSeparator(finalizedThoughtPrefix);
-            finalizedThoughtPrefix = finalizedThoughtPrefix
-              ? finalizedThoughtPrefix + sep + currentThoughtSegment
-              : currentThoughtSegment;
-            currentThoughtSegment = "";
-            accumulatedReasoning = finalizedThoughtPrefix;
+        const formatSubagentMarkdown = (sub: SubagentStreamItem) => {
+          let body = "";
+          if (sub.input) {
+            body += `**Input:**\n\`\`\`json\n${sub.input}\n\`\`\`\n`;
           }
+          if (sub.response) {
+            if (sub.input) {
+              body += `**Response:**\n${sub.response}`;
+            } else {
+              body += sub.response;
+            }
+          }
+          return `:::subagent[${sub.displayName}]{status="${sub.status}" agent="${sub.agentName}"}\n${body.trim()}\n:::`;
+        };
+
+        const buildReasoningMarkdown = () => {
+          const parts: string[] = [];
+          for (const entry of reasoningEntries) {
+            if (entry.type === "thought") {
+              const trimmed = entry.text.trim();
+              if (trimmed) parts.push(trimmed);
+            } else if (entry.type === "subagent") {
+              const sub = subagentsMap.get(entry.agentName);
+              if (sub) {
+                parts.push(formatSubagentMarkdown(sub));
+              }
+            } else if (entry.type === "tool") {
+              if (entry.block.trim()) {
+                parts.push(entry.block.trim());
+              }
+            }
+          }
+          return parts.join("\n\n");
+        };
+
+        const finalizeAllSubagents = () => {
+          for (const sub of subagentsMap.values()) {
+            sub.status = "complete";
+          }
+          activeSubagentName = null;
         };
 
         const flushCurrentTextSegment = () => {
@@ -622,6 +766,9 @@ export function createGeminiChatAdapter(
             accumulatedText = finalizedTextPrefix;
           }
         };
+
+        let lastStreamYieldTime = 0;
+        const STREAM_YIELD_THROTTLE_MS = 25;
 
         try {
           while (true) {
@@ -642,18 +789,22 @@ export function createGeminiChatAdapter(
               const jsonStr = trimmed.substring(dataPrefix.length).trim();
               if (jsonStr === "[DONE]") {
                 console.log("[createGeminiChatAdapter] Received [DONE]");
-                flushCurrentThoughtSegment();
+                finalizeAllSubagents();
                 flushCurrentTextSegment();
                 for (const tc of toolCallsMap.values()) {
                   if (tc.status?.type === "running") {
                     tc.status = { type: "complete" };
                   }
                 }
-                finalizedThoughtPrefix = finalizedThoughtPrefix.replaceAll(
-                  'status="running"',
-                  'status="complete"'
-                );
-                accumulatedReasoning = finalizedThoughtPrefix;
+                for (const entry of reasoningEntries) {
+                  if (entry.type === "tool") {
+                    entry.block = entry.block.replaceAll(
+                      'status="running"',
+                      'status="complete"'
+                    );
+                  }
+                }
+                accumulatedReasoning = buildReasoningMarkdown();
                 accumulatedText = finalizedTextPrefix;
 
                 yield createYieldContent(
@@ -662,7 +813,8 @@ export function createGeminiChatAdapter(
                   Array.from(toolCallsMap.values()),
                   latestEventId,
                   retrievedMemoriesList,
-                  latestGroundingMetadata
+                  latestGroundingMetadata,
+                  getMessageInfo()
                 );
                 return;
               }
@@ -674,17 +826,31 @@ export function createGeminiChatAdapter(
                   parsed.event_type
                 );
 
-                if (
+                latestEventId =
                   parsed.eventId ||
                   parsed.event_id ||
                   parsed.id ||
-                  parsed.invocation_id
-                ) {
-                  latestEventId =
-                    parsed.eventId ||
-                    parsed.event_id ||
-                    parsed.id ||
-                    parsed.invocation_id;
+                  parsed.invocation_id ||
+                  latestEventId;
+                latestInvocationId =
+                  parsed.invocationId || parsed.invocation_id || latestInvocationId;
+                latestModelVersion =
+                  parsed.modelVersion || parsed.model_version || latestModelVersion;
+                latestUsageMetadata =
+                  parsed.usageMetadata || parsed.usage_metadata || latestUsageMetadata;
+                latestAvgLogprobs =
+                  parsed.avgLogprobs ?? parsed.avg_logprobs ?? latestAvgLogprobs;
+                latestNodeInfo = parsed.nodeInfo || parsed.node_info || latestNodeInfo;
+                latestNodePath = parsed.nodePath || parsed.node_path || latestNodePath;
+                latestThoughtSignature =
+                  parsed.thoughtSignature ||
+                  parsed.thought_signature ||
+                  latestThoughtSignature;
+                latestActions = parsed.actions || latestActions;
+                latestFinishReason =
+                  parsed.finishReason || parsed.finish_reason || latestFinishReason;
+                if (parsed.timestamp !== undefined) {
+                  latestTimestamp = parsed.timestamp;
                 }
 
                 if (parsed.retrieved_memories || parsed.retrievedMemories) {
@@ -706,37 +872,20 @@ export function createGeminiChatAdapter(
 
                 const extractedMeta = extractGroundingMetadata(parsed);
                 if (extractedMeta) {
-                  const existingChunks = latestGroundingMetadata?.groundingChunks || [];
-                  const newChunks = (extractedMeta.groundingChunks || []).filter(
-                    (newC) =>
-                      !existingChunks.some(
-                        (c) =>
-                          (c.web?.uri && c.web.uri === newC.web?.uri) ||
-                          (c.retrievedContext?.uri &&
-                            c.retrievedContext.uri === newC.retrievedContext?.uri)
-                      )
-                  );
-
-                  latestGroundingMetadata = {
-                    ...(latestGroundingMetadata || {}),
-                    ...extractedMeta,
-                    webSearchQueries: Array.from(
-                      new Set([
-                        ...(latestGroundingMetadata?.webSearchQueries || []),
-                        ...(extractedMeta.webSearchQueries || []),
-                      ])
-                    ),
-                    retrievalQueries: Array.from(
-                      new Set([
-                        ...(latestGroundingMetadata?.retrievalQueries || []),
-                        ...(extractedMeta.retrievalQueries || []),
-                      ])
-                    ),
-                    groundingChunks: [...existingChunks, ...newChunks],
-                  };
+                  latestGroundingMetadata = mergeGroundingMetadata([
+                    latestGroundingMetadata,
+                    extractedMeta,
+                  ]);
                 }
 
+                const now = Date.now();
+                const isHighFrequencyPartial = parsed.partial === true;
+                const shouldYield =
+                  !isHighFrequencyPartial ||
+                  now - lastStreamYieldTime >= STREAM_YIELD_THROTTLE_MS;
+
                 if (parsed.event_type === "content" && parsed.content) {
+                  finalizeAllSubagents();
                   if (parsed.partial === true) {
                     currentTextSegment += parsed.content;
                     accumulatedText = finalizedTextPrefix + currentTextSegment;
@@ -750,97 +899,145 @@ export function createGeminiChatAdapter(
                     accumulatedText = finalizedTextPrefix;
                   }
 
-                  yield createYieldContent(
-                    accumulatedReasoning,
-                    accumulatedText,
-                    Array.from(toolCallsMap.values()),
-                    latestEventId,
-                    retrievedMemoriesList,
-                    latestGroundingMetadata
-                  );
+                  accumulatedReasoning = buildReasoningMarkdown();
+                  if (shouldYield) {
+                    lastStreamYieldTime = now;
+                    yield createYieldContent(
+                      accumulatedReasoning,
+                      accumulatedText,
+                      Array.from(toolCallsMap.values()),
+                      latestEventId,
+                      retrievedMemoriesList,
+                      latestGroundingMetadata,
+                      getMessageInfo()
+                    );
+                  }
                 } else if (parsed.event_type === "thought" && parsed.thought) {
-                  if (parsed.partial === true) {
-                    currentThoughtSegment += parsed.thought;
-                    const sep = getThoughtSeparator(finalizedThoughtPrefix);
-                    accumulatedReasoning = finalizedThoughtPrefix
-                      ? finalizedThoughtPrefix + sep + currentThoughtSegment
-                      : currentThoughtSegment;
-                  } else if (parsed.partial === false) {
-                    currentThoughtSegment = parsed.thought;
-                    const sep = getThoughtSeparator(finalizedThoughtPrefix);
-                    finalizedThoughtPrefix = finalizedThoughtPrefix
-                      ? finalizedThoughtPrefix + sep + currentThoughtSegment
-                      : currentThoughtSegment;
-                    currentThoughtSegment = "";
-                    accumulatedReasoning = finalizedThoughtPrefix;
+                  const last = reasoningEntries[reasoningEntries.length - 1];
+                  if (last && last.type === "thought") {
+                    if (parsed.partial === true) {
+                      last.text += parsed.thought;
+                    } else if (parsed.partial === false) {
+                      last.text = parsed.thought;
+                    } else {
+                      last.text = last.text
+                        ? `${last.text}\n\n${parsed.thought}`
+                        : parsed.thought;
+                    }
                   } else {
-                    const sep = getThoughtSeparator(finalizedThoughtPrefix);
-                    finalizedThoughtPrefix = finalizedThoughtPrefix
-                      ? finalizedThoughtPrefix + sep + parsed.thought
-                      : parsed.thought;
-                    accumulatedReasoning = finalizedThoughtPrefix;
+                    reasoningEntries.push({
+                      type: "thought",
+                      text: parsed.thought,
+                    });
                   }
 
-                  yield createYieldContent(
-                    accumulatedReasoning,
-                    accumulatedText,
-                    Array.from(toolCallsMap.values()),
-                    latestEventId,
-                    retrievedMemoriesList,
-                    latestGroundingMetadata
-                  );
+                  accumulatedReasoning = buildReasoningMarkdown();
+                  if (shouldYield) {
+                    lastStreamYieldTime = now;
+                    yield createYieldContent(
+                      accumulatedReasoning,
+                      accumulatedText,
+                      Array.from(toolCallsMap.values()),
+                      latestEventId,
+                      retrievedMemoriesList,
+                      latestGroundingMetadata,
+                      getMessageInfo()
+                    );
+                  }
                 } else if (parsed.event_type === "agent_call" && parsed.agent_call) {
-                  flushCurrentThoughtSegment();
                   const subagent = parsed.agent_call;
                   const agentName = subagent.agent || "subagent";
                   const displayName =
                     subagent.displayName || formatAgentDisplayName(agentName);
                   const inputStr = JSON.stringify(subagent.input || {}, null, 2);
 
-                  const traceText = `\n\n:::subagent[${displayName}]{status="running" agent="${agentName}"}\n${inputStr}\n:::`;
-                  finalizedThoughtPrefix += traceText;
-                  accumulatedReasoning = finalizedThoughtPrefix;
+                  if (activeSubagentName && activeSubagentName !== agentName) {
+                    const prev = subagentsMap.get(activeSubagentName);
+                    if (prev) prev.status = "complete";
+                  }
+                  activeSubagentName = agentName;
 
+                  const existing = subagentsMap.get(agentName);
+                  if (existing) {
+                    existing.status = "running";
+                    if (inputStr && !existing.input) {
+                      existing.input = inputStr;
+                    }
+                  } else {
+                    subagentsMap.set(agentName, {
+                      agentName,
+                      displayName,
+                      input: inputStr,
+                      response: "",
+                      status: "running",
+                    });
+                    reasoningEntries.push({
+                      type: "subagent",
+                      agentName,
+                    });
+                  }
+
+                  accumulatedReasoning = buildReasoningMarkdown();
                   yield createYieldContent(
                     accumulatedReasoning,
                     accumulatedText,
                     Array.from(toolCallsMap.values()),
                     latestEventId,
                     retrievedMemoriesList,
-                    latestGroundingMetadata
+                    latestGroundingMetadata,
+                    getMessageInfo()
                   );
                 } else if (
                   parsed.event_type === "agent_response" &&
                   parsed.agent_response
                 ) {
-                  flushCurrentThoughtSegment();
                   const subagent = parsed.agent_response;
                   const agentName = subagent.agent || "subagent";
                   const displayName =
                     subagent.displayName || formatAgentDisplayName(agentName);
-                  const responseStr =
+                  const responseChunk =
                     typeof subagent.response === "string"
                       ? subagent.response
                       : JSON.stringify(subagent.response || {}, null, 2);
 
-                  finalizedThoughtPrefix = appendAgentResponseToReasoning(
-                    finalizedThoughtPrefix,
-                    agentName,
-                    responseStr,
-                    displayName
-                  );
-                  accumulatedReasoning = finalizedThoughtPrefix;
+                  if (activeSubagentName && activeSubagentName !== agentName) {
+                    const prev = subagentsMap.get(activeSubagentName);
+                    if (prev) prev.status = "complete";
+                  }
+                  activeSubagentName = agentName;
 
+                  const existing = subagentsMap.get(agentName);
+                  if (existing) {
+                    existing.response += responseChunk;
+                  } else {
+                    subagentsMap.set(agentName, {
+                      agentName,
+                      displayName,
+                      response: responseChunk,
+                      status: "running",
+                    });
+                    reasoningEntries.push({
+                      type: "subagent",
+                      agentName,
+                    });
+                  }
+
+                  accumulatedReasoning = buildReasoningMarkdown();
                   yield createYieldContent(
                     accumulatedReasoning,
                     accumulatedText,
                     Array.from(toolCallsMap.values()),
                     latestEventId,
                     retrievedMemoriesList,
-                    latestGroundingMetadata
+                    latestGroundingMetadata,
+                    getMessageInfo()
                   );
                 } else if (parsed.event_type === "tool_call" && parsed.tool_call) {
-                  flushCurrentThoughtSegment();
+                  if (activeSubagentName) {
+                    const prev = subagentsMap.get(activeSubagentName);
+                    if (prev) prev.status = "complete";
+                    activeSubagentName = null;
+                  }
                   const tc = parsed.tool_call;
                   const toolName = tc.name || "tool";
                   const isReqAction =
@@ -883,17 +1080,14 @@ export function createGeminiChatAdapter(
                   if (isNewCall) {
                     const argsStr = JSON.stringify(tc.args || {}, null, 2);
                     const statusTag = isReqAction ? "requires-action" : "running";
-                    const runningRegex = new RegExp(
-                      `:::tool\\[${escapeRegex(toolName)}\\]\\{[^}]*status="(?:running|requires-action)"`,
-                      "i"
-                    );
-
-                    if (!runningRegex.test(finalizedThoughtPrefix)) {
-                      const toolBlock = `\n\n:::tool[${toolName}]{status="${statusTag}"}\n**Arguments:**\n\`\`\`json\n${argsStr}\n\`\`\`\n:::`;
-                      finalizedThoughtPrefix += toolBlock;
-                    }
+                    const toolBlock = `:::tool[${toolName}]{status="${statusTag}"}\n**Arguments:**\n\`\`\`json\n${argsStr}\n\`\`\`\n:::`;
+                    reasoningEntries.push({
+                      type: "tool",
+                      toolName,
+                      block: toolBlock,
+                    });
                   }
-                  accumulatedReasoning = finalizedThoughtPrefix;
+                  accumulatedReasoning = buildReasoningMarkdown();
 
                   yield createYieldContent(
                     accumulatedReasoning,
@@ -901,10 +1095,15 @@ export function createGeminiChatAdapter(
                     Array.from(toolCallsMap.values()),
                     latestEventId,
                     retrievedMemoriesList,
-                    latestGroundingMetadata
+                    latestGroundingMetadata,
+                    getMessageInfo()
                   );
                 } else if (parsed.event_type === "tool_result" && parsed.tool_result) {
-                  flushCurrentThoughtSegment();
+                  if (activeSubagentName) {
+                    const prev = subagentsMap.get(activeSubagentName);
+                    if (prev) prev.status = "complete";
+                    activeSubagentName = null;
+                  }
                   const toolName = parsed.tool_result.name || "tool";
                   const result = parsed.tool_result.result;
                   const resStr = JSON.stringify(result ?? {}, null, 2);
@@ -952,12 +1151,24 @@ export function createGeminiChatAdapter(
                     }
                   }
 
-                  finalizedThoughtPrefix = appendToolResultToReasoning(
-                    finalizedThoughtPrefix,
-                    toolName,
-                    resStr
-                  );
-                  accumulatedReasoning = finalizedThoughtPrefix;
+                  const existingToolEntry = [...reasoningEntries]
+                    .reverse()
+                    .find((e) => e.type === "tool" && e.toolName === toolName);
+
+                  if (existingToolEntry && existingToolEntry.type === "tool") {
+                    existingToolEntry.block = appendToolResultToReasoning(
+                      existingToolEntry.block,
+                      toolName,
+                      resStr
+                    );
+                  } else {
+                    reasoningEntries.push({
+                      type: "tool",
+                      toolName,
+                      block: `:::tool[${toolName}]{status="complete"}\n**Result:**\n\`\`\`json\n${resStr}\n\`\`\`\n:::`,
+                    });
+                  }
+                  accumulatedReasoning = buildReasoningMarkdown();
 
                   yield createYieldContent(
                     accumulatedReasoning,
@@ -965,7 +1176,8 @@ export function createGeminiChatAdapter(
                     Array.from(toolCallsMap.values()),
                     latestEventId,
                     retrievedMemoriesList,
-                    latestGroundingMetadata
+                    latestGroundingMetadata,
+                    getMessageInfo()
                   );
                 } else if (extractedMeta) {
                   yield createYieldContent(
@@ -974,10 +1186,11 @@ export function createGeminiChatAdapter(
                     Array.from(toolCallsMap.values()),
                     latestEventId,
                     retrievedMemoriesList,
-                    latestGroundingMetadata
+                    latestGroundingMetadata,
+                    getMessageInfo()
                   );
                 } else if (parsed.event_type === "error" && parsed.error) {
-                  flushCurrentThoughtSegment();
+                  finalizeAllSubagents();
                   flushCurrentTextSegment();
                   accumulatedText +=
                     (accumulatedText ? "\n\n" : "") +
@@ -988,22 +1201,27 @@ export function createGeminiChatAdapter(
                     Array.from(toolCallsMap.values()),
                     latestEventId,
                     retrievedMemoriesList,
-                    latestGroundingMetadata
+                    latestGroundingMetadata,
+                    getMessageInfo()
                   );
                   return;
                 } else if (parsed.event_type === "done") {
-                  flushCurrentThoughtSegment();
+                  finalizeAllSubagents();
                   flushCurrentTextSegment();
                   for (const tc of toolCallsMap.values()) {
                     if (tc.status?.type === "running") {
                       tc.status = { type: "complete" };
                     }
                   }
-                  finalizedThoughtPrefix = finalizedThoughtPrefix.replaceAll(
-                    'status="running"',
-                    'status="complete"'
-                  );
-                  accumulatedReasoning = finalizedThoughtPrefix;
+                  for (const entry of reasoningEntries) {
+                    if (entry.type === "tool") {
+                      entry.block = entry.block.replaceAll(
+                        'status="running"',
+                        'status="complete"'
+                      );
+                    }
+                  }
+                  accumulatedReasoning = buildReasoningMarkdown();
                   accumulatedText = finalizedTextPrefix;
 
                   yield createYieldContent(
@@ -1012,17 +1230,33 @@ export function createGeminiChatAdapter(
                     Array.from(toolCallsMap.values()),
                     latestEventId,
                     retrievedMemoriesList,
-                    latestGroundingMetadata
+                    latestGroundingMetadata,
+                    getMessageInfo()
                   );
                   return;
                 }
               } catch (e: unknown) {
-                if (e instanceof Error && e.message !== "Unexpected end of JSON input") {
-                  throw e;
-                }
+                console.warn(
+                  "[createGeminiChatAdapter] Malformed or non-JSON SSE payload ignored:",
+                  jsonStr,
+                  e
+                );
               }
             }
           }
+
+          flushCurrentTextSegment();
+          accumulatedReasoning = buildReasoningMarkdown();
+          accumulatedText = finalizedTextPrefix;
+          yield createYieldContent(
+            accumulatedReasoning,
+            accumulatedText,
+            Array.from(toolCallsMap.values()),
+            latestEventId,
+            retrievedMemoriesList,
+            latestGroundingMetadata,
+            getMessageInfo()
+          );
         } finally {
           if (typeof reader?.releaseLock === "function") {
             try {

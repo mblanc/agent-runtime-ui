@@ -655,11 +655,50 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
         ? `Vertex AI Agent Runtime provides managed auto-scaling and native session persistence [1]. It supports sub-second cold starts [2] and private VPC connectivity via Private Service Connect [3].\n\n### Architecture Highlights\n1. **Stateless BFF Layer**: Next.js App Router with Web Crypto JWT tokens.\n2. **Reasoning Engine Backend**: Fully managed agent runtime on Google Cloud.\n3. **Enterprise Grounding**: Direct verification against official Google documentation and private corporate knowledge base [1, 3].`
         : `Based on your request regarding **${lastPrompt}**, here is the recommended architecture:\n\n1. **Stateless BFF Layer**: Built using Next.js App Router and Edge/Serverless runtimes with Web Crypto JWT tokens.\n2. **Vertex AI Reasoning Engines**: Managed agent execution environment providing automatic session persistence.\n3. **Google Identity Auth**: Seamless OAuth 2.0 PKCE flow guaranteeing secure enterprise user scoping.\n\n\`\`\`typescript\n// Example: Initializing Vertex AI Agent Runtime Provider\nconst provider = createAgentRuntimeProvider();\nconst response = await provider.streamQuery({ messages }, userId);\n\`\`\``;
 
+    const invocationId = `e-mock-${Math.random().toString(36).substring(2, 9)}`;
+    const modelVersion = "gemini-2.5-flash";
+    const usageMetadata = {
+      prompt_token_count: 1250,
+      candidates_token_count: 380,
+      thoughts_token_count: 95,
+      total_token_count: 1725,
+      traffic_type: "ON_DEMAND",
+      promptTokenCount: 1250,
+      candidatesTokenCount: 380,
+      thoughtsTokenCount: 95,
+      totalTokenCount: 1725,
+      trafficType: "ON_DEMAND",
+    };
+    const avgLogprobs = -0.182;
+    const nodeInfo = { path: "root_agent@1" };
+    const thoughtSignature = "mock_sig_gemini_2_5_verified_crypto";
+
     const chunks = responseText.split(" ");
-    for (const chunk of chunks) {
+    for (let idx = 0; idx < chunks.length; idx++) {
+      const chunk = chunks[idx];
+      const isLast = idx === chunks.length - 1;
       yield {
         event_type: "content",
         content: chunk + " ",
+        invocation_id: invocationId,
+        invocationId,
+        model_version: modelVersion,
+        modelVersion,
+        node_info: nodeInfo,
+        nodePath: "root_agent@1",
+        ...(isLast
+          ? {
+              usage_metadata: usageMetadata,
+              usageMetadata,
+              avg_logprobs: avgLogprobs,
+              avgLogprobs,
+              thought_signature: thoughtSignature,
+              thoughtSignature,
+              actions: { state_delta: { current_step: 1 } },
+              finish_reason: "STOP",
+              finishReason: "STOP",
+            }
+          : {}),
       };
       await new Promise((r) => setTimeout(r, 15));
     }
@@ -684,8 +723,25 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
           thought: hasAttachments
             ? `Inspecting uploaded multimodal GCS attachments (${fileUris})...`
             : `Decomposing query "${lastPrompt}"...`,
+          thoughtSignature,
+          thought_signature: thoughtSignature,
           groundingMetadata: simulatedGroundingMetadata,
           grounding_metadata: simulatedGroundingMetadata,
+          invocationId,
+          invocation_id: invocationId,
+          modelVersion,
+          model_version: modelVersion,
+          usageMetadata,
+          usage_metadata: usageMetadata,
+          avgLogprobs,
+          avg_logprobs: avgLogprobs,
+          nodeInfo,
+          node_info: nodeInfo,
+          nodePath: "root_agent@1",
+          node_path: "root_agent@1",
+          actions: { state_delta: { current_step: 1 } },
+          finishReason: "STOP",
+          finish_reason: "STOP",
           createTime: new Date(Date.now() + 1000).toISOString(),
         }
       );
@@ -697,6 +753,16 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
       }
     }
 
-    yield { event_type: "done" };
+    yield {
+      event_type: "done",
+      invocation_id: invocationId,
+      invocationId,
+      model_version: modelVersion,
+      modelVersion,
+      usage_metadata: usageMetadata,
+      usageMetadata,
+      avg_logprobs: avgLogprobs,
+      avgLogprobs,
+    };
   }
 }
