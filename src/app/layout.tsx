@@ -16,9 +16,9 @@ export const metadata: Metadata = {
   title: "Agent Runtime UI — Gemini Interface for Google Cloud Agent Runtime",
   description:
     "Production Gemini-styled web interface connected to Google Cloud Agent Runtime (Vertex AI Reasoning Engines) with Google OAuth.",
-  icons: {
-    icon: "/favicon.ico",
-  },
+  // The icon is declared by `src/app/favicon.ico` (file-based metadata). An
+  // explicit `icons` entry here would take priority over it, so leaving it out
+  // keeps one source of truth for the link tag.
 };
 
 export default function RootLayout({
