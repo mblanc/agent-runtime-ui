@@ -1183,16 +1183,6 @@ export function createGeminiChatAdapter(
                     latestGroundingMetadata,
                     getMessageInfo()
                   );
-                } else if (extractedMeta) {
-                  yield createYieldContent(
-                    accumulatedReasoning,
-                    accumulatedText,
-                    Array.from(toolCallsMap.values()),
-                    latestEventId,
-                    retrievedMemoriesList,
-                    latestGroundingMetadata,
-                    getMessageInfo()
-                  );
                 } else if (parsed.event_type === "error" && parsed.error) {
                   finalizeAllSubagents();
                   flushCurrentTextSegment();
@@ -1238,6 +1228,26 @@ export function createGeminiChatAdapter(
                     getMessageInfo()
                   );
                   return;
+                } else if (extractedMeta) {
+                  // Metadata-only event: nothing else to handle, so force a yield
+                  // so the citations surface immediately.
+                  //
+                  // This must stay BELOW the terminal cases. It is keyed on the
+                  // metadata rather than on event_type, so while it sat above
+                  // `error` and `done` it captured any terminal event that also
+                  // carried groundingMetadata — which is exactly what a grounded
+                  // final event carries. That skipped the `done` branch's tool
+                  // and subagent finalisation, leaving spinners running forever,
+                  // and swallowed backend errors entirely.
+                  yield createYieldContent(
+                    accumulatedReasoning,
+                    accumulatedText,
+                    Array.from(toolCallsMap.values()),
+                    latestEventId,
+                    retrievedMemoriesList,
+                    latestGroundingMetadata,
+                    getMessageInfo()
+                  );
                 }
               } catch (e: unknown) {
                 console.warn(
