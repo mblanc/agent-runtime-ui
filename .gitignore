@@ -51,3 +51,6 @@ coverage/
 next-env.d.ts
 
 .agents
+
+# Single source of truth is bun.lock
+package-lock.json

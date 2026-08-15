@@ -12,6 +12,12 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
+    env: {
+      // The provider factory mocks on intent rather than on NODE_ENV, so the
+      // suite has to declare it. Individual tests still override this to
+      // exercise the live-config path.
+      MOCK_AGENT_RUNTIME: "true",
+    },
     // Import time dominates this suite (~60s of module loading across 39 files),
     // so the 5s default is spent on parallel loading rather than the test body.
     testTimeout: 15000,

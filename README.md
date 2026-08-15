@@ -27,7 +27,7 @@ A modern, production-grade web application styled after Google Gemini that conne
 ### 1. Install Dependencies
 
 ```bash
-npm install
+bun install
 ```
 
 ### 2. Configure Environment Variables
@@ -61,7 +61,7 @@ MOCK_AGENT_RUNTIME=false
 ### 3. Run Development Server
 
 ```bash
-npm run dev
+bun run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.

@@ -3,6 +3,7 @@ import {
   verifySessionToken,
   generateRandomString,
   createPkceChallenge,
+  SESSION_TTL_SECONDS,
 } from "./jwt";
 
 export const SESSION_COOKIE_NAME = "llm_session";
@@ -123,7 +124,7 @@ export const auth = {
         session: {
           expiresAt: payload.exp
             ? new Date(payload.exp * 1000).toISOString()
-            : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+            : new Date(Date.now() + SESSION_TTL_SECONDS * 1000).toISOString(),
         },
       };
     },

@@ -7,7 +7,7 @@ import {
   sanitizeCallbackUrl,
   SESSION_COOKIE_NAME,
 } from "@/lib/auth";
-import { signSessionToken, verifySessionToken } from "@/lib/jwt";
+import { signSessionToken, verifySessionToken, SESSION_TTL_SECONDS } from "@/lib/jwt";
 
 export const runtime = "nodejs";
 
@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
       secure: isProduction,
       sameSite: "lax",
       path: "/",
-      maxAge: 30 * 24 * 60 * 60, // 30 days
+      maxAge: SESSION_TTL_SECONDS,
     });
 
     // Clear temporary OAuth state cookie

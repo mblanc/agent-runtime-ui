@@ -17,21 +17,29 @@ export function createAgentRuntimeProvider(
     (projectId || isFullResource) && effectiveAgentId && !isMockAgent
   );
 
-  // Fail-fast assertion in production mode with granular diagnostics
-  if (!isExplicitMock && !isConfigured && process.env.NODE_ENV === "production") {
+  // Mock on intent, not on environment.
+  //
+  // This assertion used to be gated on NODE_ENV === "production", so a staging
+  // deploy, a preview environment or a local run with a typo'd variable came up
+  // looking healthy and answered with fabricated mock responses. The failure
+  // then surfaced as "the agent gave a weird answer" rather than "the agent is
+  // not configured", which is the opposite of fail-fast.
+  if (isExplicitMock) {
+    return new MockAgentRuntimeProvider(effectiveAgentId, location);
+  }
+
+  if (!isConfigured) {
     const missingVars: string[] = [];
     if (!projectId && !isFullResource) missingVars.push("GOOGLE_CLOUD_PROJECT");
     if (!effectiveAgentId) missingVars.push("GOOGLE_REASONING_ENGINE_ID");
+    if (isMockAgent) missingVars.push(`a real agent id (got "${effectiveAgentId}")`);
 
     throw new Error(
-      `Configuration Error: Required Google Cloud environment variables missing in production: ${missingVars.join(
+      `Configuration Error: agent runtime is not configured. Missing: ${missingVars.join(
         ", "
-      )}.`
+      )}. ` +
+        `Set these in .env.local, or set MOCK_AGENT_RUNTIME=true to run against the in-memory mock.`
     );
-  }
-
-  if (isExplicitMock || !isConfigured) {
-    return new MockAgentRuntimeProvider(effectiveAgentId, location);
   }
 
   return new VertexAiReasoningEngineProvider(effectiveAgentId, location, tokenGetter);

@@ -48,12 +48,24 @@ async function getCryptoKey(secret: string): Promise<CryptoKey> {
 }
 
 /**
+ * Session lifetime, in seconds.
+ *
+ * Sessions are stateless: no rotation, no `jti`, no server-side revocation. This
+ * window is therefore the only bound on a leaked cookie, which is why it is 7
+ * days rather than the 30 it used to be.
+ *
+ * The session cookie's `maxAge` must use this same value — a cookie outliving
+ * its token leaves the browser presenting credentials that can never succeed.
+ */
+export const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
+
+/**
  * Signs a payload into a secure HMAC-SHA256 JWT string.
  */
 export async function signSessionToken(
   payload: Record<string, unknown>,
   secret?: string,
-  expiresInSeconds: number = 30 * 24 * 60 * 60 // 30 days
+  expiresInSeconds: number = SESSION_TTL_SECONDS
 ): Promise<string> {
   const effectiveSecret = getJwtSecret(secret);
   const header = { alg: "HS256", typ: "JWT" };
