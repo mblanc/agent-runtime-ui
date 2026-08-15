@@ -1,5 +1,51 @@
 import { GoogleAuth } from "google-auth-library";
 
+/**
+ * `location` and the engine id arrive from client-controlled query params, JSON
+ * bodies and headers, and are interpolated into the *hostname* of the upstream
+ * URL (`https://${loc}-aiplatform.googleapis.com/...`). An unvalidated value
+ * such as `attacker.example.com/x#` therefore redirects the request to an
+ * arbitrary host — and `fetchWithAuth` would attach a cloud-platform-scoped
+ * access token to it. Both are validated here, at the single boundary they
+ * share, and `fetchWithAuth` asserts the resolved host independently.
+ */
+const LOCATION_RE = /^[a-z]+(-[a-z]+\d+)?$/;
+
+/**
+ * A bare id/display name, or a full resource path. Display names are permitted
+ * because `resolveEngineId` legitimately accepts them, so this constrains the
+ * character set rather than the shape: no `/` traversal, no `?#%:@` that could
+ * escape the path segment, and the `locations/` segment of a full path is held
+ * to LOCATION_RE because `getSessionEndpoint` re-derives the host from it.
+ */
+const ENGINE_RE =
+  /^([A-Za-z0-9_-]+|projects\/[a-z0-9][a-z0-9-]*\/locations\/[a-z]+(-[a-z]+\d+)?\/reasoningEngines\/[A-Za-z0-9_-]+)$/;
+
+const ALLOWED_HOST_SUFFIX = ".googleapis.com";
+
+export class InvalidRoutingParameterError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidRoutingParameterError";
+  }
+}
+
+/** Accepts `global`, `us-central1`, `northamerica-northeast1`. */
+export function assertValidLocation(location: string): string {
+  if (!LOCATION_RE.test(location)) {
+    throw new InvalidRoutingParameterError(`Invalid location: ${location}`);
+  }
+  return location;
+}
+
+/** Accepts a bare numeric id or a full `projects/.../reasoningEngines/<id>` path. */
+export function assertValidEngineResource(engine: string): string {
+  if (!ENGINE_RE.test(engine)) {
+    throw new InvalidRoutingParameterError(`Invalid reasoning engine id: ${engine}`);
+  }
+  return engine;
+}
+
 export class VertexAiContext {
   public auth: GoogleAuth;
   public projectId: string;
@@ -15,8 +61,10 @@ export class VertexAiContext {
   ) {
     this.tokenGetter = tokenGetter;
     this.projectId = process.env.GOOGLE_CLOUD_PROJECT || "";
-    this.location =
-      overrideLocation || process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
+    // Only the override is client-controlled; env values are trusted config.
+    this.location = overrideLocation
+      ? assertValidLocation(overrideLocation)
+      : process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
     this.reasoningEngineId =
       overrideEngineId || process.env.GOOGLE_REASONING_ENGINE_ID || "";
 
@@ -48,6 +96,18 @@ export class VertexAiContext {
   }
 
   async fetchWithAuth(url: string, init?: RequestInit): Promise<Response> {
+    // Defence in depth: never attach the access token to a host we don't own,
+    // regardless of how the caller built the URL.
+    let host: string;
+    try {
+      host = new URL(url).hostname;
+    } catch {
+      throw new InvalidRoutingParameterError(`Invalid upstream URL: ${url}`);
+    }
+    if (host !== "googleapis.com" && !host.endsWith(ALLOWED_HOST_SUFFIX)) {
+      throw new InvalidRoutingParameterError(`Refusing to send credentials to ${host}`);
+    }
+
     const token = await this.getAccessToken();
     return fetch(url, {
       ...init,
@@ -71,12 +131,22 @@ export class VertexAiContext {
     return mapped || id;
   }
 
+  /**
+   * The single place a client-supplied location becomes part of an upstream
+   * hostname. Every URL builder must route its `customLocation` through here.
+   */
+  resolveLocation(customLocation?: string): string {
+    if (!customLocation) return this.location;
+    return assertValidLocation(customLocation);
+  }
+
   getNormalizedEngineResource(customEngineId?: string, customLocation?: string): string {
     const targetEngine = this.resolveEngineId(customEngineId) || this.reasoningEngineId;
+    if (targetEngine) assertValidEngineResource(targetEngine);
     if (targetEngine.startsWith("projects/")) {
       return targetEngine;
     }
-    const loc = customLocation || this.location;
+    const loc = this.resolveLocation(customLocation);
     return `projects/${this.projectId}/locations/${loc}/reasoningEngines/${targetEngine}`;
   }
 }

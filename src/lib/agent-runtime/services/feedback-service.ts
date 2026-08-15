@@ -19,16 +19,18 @@ export class VertexAiFeedbackService {
         /^projects\/([^/]+)\/locations\/([^/]+)\/reasoningEngines\/([^/]+)/
       );
       if (match) {
-        const [, proj, loc, engine] = match;
+        const [, proj, rawLoc, engine] = match;
+        // `sessionId` is client-supplied, so its location segment reaches the host.
+        const loc = this.context.resolveLocation(rawLoc);
         return `https://${loc}-aiplatform.googleapis.com/v1beta1/projects/${proj}/locations/${loc}/reasoningEngines/${engine}/feedbackEntries`;
       }
     }
 
     const targetEngine = customEngineId || this.context.reasoningEngineId;
-    let loc = customLocation || this.context.location;
+    let loc = this.context.resolveLocation(customLocation);
     if (targetEngine.startsWith("projects/")) {
       const match = targetEngine.match(/^projects\/[^/]+\/locations\/([^/]+)\//);
-      if (match && match[1]) loc = match[1];
+      if (match && match[1]) loc = this.context.resolveLocation(match[1]);
     }
     return `https://${loc}-aiplatform.googleapis.com/v1beta1/${this.context.getNormalizedEngineResource(targetEngine, loc)}/feedbackEntries`;
   }

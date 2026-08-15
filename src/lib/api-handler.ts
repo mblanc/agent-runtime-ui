@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth, AuthSession } from "@/lib/auth";
+import { InvalidRoutingParameterError } from "@/lib/agent-runtime/services/context";
 
 export interface AuthenticatedContext<TParams = Record<string, string>> {
   session: AuthSession;
@@ -33,6 +34,13 @@ async function authenticateRequest(
 
 function handleApiError(req: NextRequest, err: unknown): NextResponse {
   const errorMessage = err instanceof Error ? err.message : "Internal server error";
+
+  // Client-supplied routing parameters that fail validation are a bad request,
+  // not a server fault, and the message is safe to return verbatim.
+  if (err instanceof InvalidRoutingParameterError) {
+    return NextResponse.json({ error: errorMessage }, { status: 400 });
+  }
+
   console.error(`[API Error] ${req.nextUrl?.pathname || "route"}:`, err);
   const clientMessage =
     process.env.NODE_ENV === "production"

@@ -19,7 +19,7 @@ export class VertexAiSessionService {
     let loc = this.context.location;
     if (targetEngine.startsWith("projects/")) {
       const match = targetEngine.match(/^projects\/[^/]+\/locations\/([^/]+)\//);
-      if (match && match[1]) loc = match[1];
+      if (match && match[1]) loc = this.context.resolveLocation(match[1]);
     }
     return `https://${loc}-aiplatform.googleapis.com/v1beta1/${this.context.getNormalizedEngineResource(targetEngine, loc)}/sessions`;
   }
@@ -35,7 +35,9 @@ export class VertexAiSessionService {
         /^projects\/([^/]+)\/locations\/([^/]+)\/reasoningEngines\/([^/]+)\/sessions\/([^/]+)/
       );
       if (match) {
-        const [, proj, loc, engine, sId] = match;
+        const [, proj, rawLoc, engine, sId] = match;
+        // `sessionId` is client-supplied, so its location segment reaches the host.
+        const loc = this.context.resolveLocation(rawLoc);
         const base = `https://${loc}-aiplatform.googleapis.com/v1beta1/projects/${proj}/locations/${loc}/reasoningEngines/${engine}/sessions/${encodeURIComponent(sId)}`;
         return subPath ? `${base}/${subPath}` : base;
       }
@@ -44,10 +46,10 @@ export class VertexAiSessionService {
     const cleanId = extractSessionIdFromResourceName(sessionId);
     const resolved = await this.agentService.resolveEngineIdAsync(customEngineId);
     const targetEngine = resolved || this.context.reasoningEngineId;
-    let loc = customLocation || this.context.location;
+    let loc = this.context.resolveLocation(customLocation);
     if (targetEngine.startsWith("projects/")) {
       const match = targetEngine.match(/^projects\/[^/]+\/locations\/([^/]+)\//);
-      if (match && match[1]) loc = match[1];
+      if (match && match[1]) loc = this.context.resolveLocation(match[1]);
     }
     const base = `https://${loc}-aiplatform.googleapis.com/v1beta1/${this.context.getNormalizedEngineResource(targetEngine, loc)}/sessions/${encodeURIComponent(cleanId)}`;
     return subPath ? `${base}/${subPath}` : base;
