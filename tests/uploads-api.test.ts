@@ -321,6 +321,29 @@ describe("Uploads API Routes", () => {
       const data = await res.json();
       expect(data.readUrl).toBe("https://storage.googleapis.com/signed-url-test");
     });
+
+    it("refuses to sign a read for a bucket other than the configured one", async () => {
+      // The object path guard passes here — the attacker's own user prefix —
+      // so only the bucket check stands between the caller and a signed URL
+      // for any bucket the service account can read.
+      process.env.MOCK_AGENT_RUNTIME = "false";
+      process.env.GCS_BUCKET_NAME = "my-prod-bucket";
+
+      vi.spyOn(auth.api, "getSession").mockResolvedValueOnce({
+        user: { id: "user-prod", name: "Prod User", email: "prod@example.com" },
+        session: { expiresAt: new Date(Date.now() + 86400000).toISOString() },
+      });
+
+      const gcsUri = "gs://some-other-bucket/users/user-prod/stolen.pdf";
+      const req = new NextRequest(
+        `http://localhost:3000/api/uploads/signed-read?gcsUri=${encodeURIComponent(gcsUri)}`
+      );
+      const res = await signedRead(req);
+
+      expect(res.status).toBe(403);
+      const data = await res.json();
+      expect(data.error).toContain("Forbidden");
+    });
   });
 
   describe("Mock Upload Handler", () => {

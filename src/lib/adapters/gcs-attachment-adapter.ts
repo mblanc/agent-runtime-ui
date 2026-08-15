@@ -14,6 +14,7 @@ import {
   SUPPORTED_ACCEPT_STRING,
   inferMimeType,
   getAttachmentCategory,
+  GCS_CONTENT_LENGTH_RANGE,
 } from "../attachments/mime-types";
 
 export function createGcsAttachmentAdapter(
@@ -91,6 +92,9 @@ export function createGcsAttachmentAdapter(
           method: "PUT",
           headers: {
             "Content-Type": resolvedMime,
+            // Bound into the signed URL by the presign route. It must be sent
+            // verbatim or GCS rejects the PUT with a signature mismatch.
+            "x-goog-content-length-range": GCS_CONTENT_LENGTH_RANGE,
           },
           body: file,
         });

@@ -38,13 +38,29 @@ function parseCookie(cookieHeader: string | null, name: string): string | null {
   return decodeURIComponent(match.substring(name.length + 1));
 }
 
-export function sanitizeCallbackUrl(url?: string | null): string {
+/**
+ * Reduces a caller-supplied callback to a same-origin path.
+ *
+ * Resolve-and-compare rather than pattern-match: the previous check rejected
+ * `//` and `://` but not a backslash, and the WHATWG parser normalises `\` to
+ * `/` for special schemes. `/\evil.com` therefore survived sanitising and
+ * `new URL(target, origin)` in the OAuth callback resolved it to
+ * https://evil.com/ — an off-origin redirect at the moment of highest trust,
+ * immediately after a successful sign-in.
+ */
+export function sanitizeCallbackUrl(
+  url?: string | null,
+  origin = "http://localhost"
+): string {
   if (!url || typeof url !== "string") return "/";
-  const trimmed = url.trim();
-  if (trimmed.startsWith("/") && !trimmed.startsWith("//") && !trimmed.includes("://")) {
-    return trimmed;
+  try {
+    const base = new URL(origin);
+    const resolved = new URL(url.trim(), base);
+    if (resolved.origin !== base.origin) return "/";
+    return `${resolved.pathname}${resolved.search}${resolved.hash}`;
+  } catch {
+    return "/";
   }
-  return "/";
 }
 
 export function getBaseUrl(requestUrl?: string): string {
@@ -134,7 +150,7 @@ export async function createGoogleOAuthUrl(options: {
   const codeChallenge = await createPkceChallenge(codeVerifier);
 
   const redirectUri = `${options.origin}/api/auth/callback/google`;
-  const callbackURL = sanitizeCallbackUrl(options.callbackURL);
+  const callbackURL = sanitizeCallbackUrl(options.callbackURL, options.origin);
 
   const statePayload: OAuthStatePayload = {
     state,

@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
     });
 
     const isProduction = process.env.NODE_ENV === "production";
-    const redirectTarget = sanitizeCallbackUrl(statePayload.callbackURL);
+    const redirectTarget = sanitizeCallbackUrl(statePayload.callbackURL, origin);
     const response = NextResponse.redirect(new URL(redirectTarget, origin));
 
     // Set persistent session cookie

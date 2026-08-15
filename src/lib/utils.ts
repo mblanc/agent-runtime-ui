@@ -18,7 +18,18 @@ export function formatAgentDisplayName(authorOrPath?: string): string {
 export function sanitizeUrl(url?: string | null): string {
   if (!url) return "#";
   const trimmed = url.trim();
-  if (trimmed.startsWith("#") || trimmed.startsWith("/")) return trimmed;
+  if (trimmed.startsWith("#")) return trimmed;
+  // A leading "/" is not enough to make a link same-origin: the WHATWG parser
+  // folds "\" into "/", so "/\evil.com" resolves off-origin. Relative paths
+  // must resolve back to the base to be returned as-is.
+  if (trimmed.startsWith("/")) {
+    try {
+      const parsed = new URL(trimmed, "http://localhost");
+      return parsed.origin === "http://localhost" ? trimmed : "#";
+    } catch {
+      return "#";
+    }
+  }
   try {
     const parsed = new URL(trimmed, "http://localhost");
     if (["http:", "https:", "mailto:", "tel:"].includes(parsed.protocol)) {

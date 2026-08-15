@@ -47,6 +47,18 @@ export const GET = withAuth(async (req, { userId }) => {
     });
   }
 
+  // The bucket comes from the caller's gcsUri too. Without this, any bucket the
+  // service account can read is reachable through this endpoint, as long as the
+  // object happens to sit under a users/<id>/ prefix. Only the bucket presign
+  // writes to is ever legitimate. Checked after the mock branch, which signs
+  // nothing and uses a placeholder bucket name.
+  if (bucketName !== process.env.GCS_BUCKET_NAME) {
+    return NextResponse.json(
+      { error: "Forbidden. You do not have access to this resource." },
+      { status: 403 }
+    );
+  }
+
   const storage = new Storage({
     projectId: process.env.GOOGLE_CLOUD_PROJECT,
   });

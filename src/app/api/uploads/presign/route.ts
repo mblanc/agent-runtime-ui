@@ -2,11 +2,14 @@ import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-handler";
 import { Storage } from "@google-cloud/storage";
 import { PresignBatchRequest, PresignedUploadItem } from "@/types/agent";
-import { isSupportedMimeType, inferMimeType } from "@/lib/attachments/mime-types";
+import {
+  isSupportedMimeType,
+  inferMimeType,
+  MAX_UPLOAD_SIZE_BYTES,
+  GCS_CONTENT_LENGTH_RANGE,
+} from "@/lib/attachments/mime-types";
 
 export const runtime = "nodejs";
-
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 
 let storageClient: Storage | null = null;
 function getStorageClient(): Storage {
@@ -45,7 +48,7 @@ export const POST = withAuth(async (req, { userId }) => {
     if (
       typeof file.sizeBytes !== "number" ||
       file.sizeBytes <= 0 ||
-      file.sizeBytes > MAX_FILE_SIZE
+      file.sizeBytes > MAX_UPLOAD_SIZE_BYTES
     ) {
       return NextResponse.json(
         {
@@ -116,6 +119,13 @@ export const POST = withAuth(async (req, { userId }) => {
             action: "write",
             expires: Date.now() + 5 * 60 * 1000, // 5 minutes
             contentType,
+            // file.sizeBytes is a number the client puts in the request body,
+            // so validating it alone is advisory: a client could declare 1 KB
+            // and PUT 5 GB straight to GCS. Binding the range into the
+            // signature makes GCS itself reject an oversized body.
+            extensionHeaders: {
+              "x-goog-content-length-range": GCS_CONTENT_LENGTH_RANGE,
+            },
           }),
           gcsFile.getSignedUrl({
             version: "v4",

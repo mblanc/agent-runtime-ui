@@ -8,6 +8,18 @@
  * - Audio: audio/x-aac, audio/flac, audio/mp3, audio/m4a, audio/mpeg, audio/mpga, audio/mp4, audio/ogg, audio/pcm, audio/wav, audio/webm
  */
 
+/**
+ * Maximum upload size, in bytes.
+ *
+ * Shared by the presign route and the browser upload so the value that gets
+ * baked into the signed URL's `x-goog-content-length-range` is the same one the
+ * client sends back. The two must agree exactly or GCS rejects the PUT.
+ */
+export const MAX_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
+
+/** Value for the `x-goog-content-length-range` header bound into the write URL. */
+export const GCS_CONTENT_LENGTH_RANGE = `0,${MAX_UPLOAD_SIZE_BYTES}`;
+
 export const SUPPORTED_IMAGE_MIME_TYPES = [
   "image/png",
   "image/jpeg",
