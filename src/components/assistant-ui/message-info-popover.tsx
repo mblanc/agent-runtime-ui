@@ -30,6 +30,17 @@ export function MessageInfoPopover({
     }) => ("message" in s ? s.message?.metadata?.custom : undefined)
   );
 
+  const messageText = useAuiState(
+    (s: { message?: { content?: ReadonlyArray<{ type?: string; text?: string }> } }) => {
+      if (!("message" in s)) return "";
+      const content = s.message?.content || [];
+      return content
+        .filter((p) => p.type === "text" && p.text)
+        .map((p) => p.text)
+        .join(" ");
+    }
+  );
+
   const meta = (propMetadata ||
     (customState as unknown as AgentMessageInfoMetadata | undefined)) as
     AgentMessageInfoMetadata | undefined;
@@ -92,14 +103,24 @@ export function MessageInfoPopover({
     }
   };
 
-  if (!hasAnyTelemetry) {
+  if (!hasAnyTelemetry && !customState) {
     return null;
   }
 
   // Token breakdown calculations
   const promptTokens = usage?.prompt_token_count ?? usage?.promptTokenCount ?? 0;
+  const cachedTokens =
+    usage?.cached_content_token_count ??
+    usage?.cachedContentTokenCount ??
+    usage?.cached_token_count ??
+    usage?.cachedTokenCount ??
+    0;
   const candidatesTokens =
-    usage?.candidates_token_count ?? usage?.candidatesTokenCount ?? 0;
+    usage?.candidates_token_count ??
+    usage?.candidatesTokenCount ??
+    (promptTokens === 0 && messageText
+      ? Math.max(1, Math.round(messageText.length / 4))
+      : 0);
   const thoughtsTokens = usage?.thoughts_token_count ?? usage?.thoughtsTokenCount ?? 0;
   const totalTokens =
     usage?.total_token_count ?? usage?.totalTokenCount ?? promptTokens + candidatesTokens;
@@ -107,7 +128,9 @@ export function MessageInfoPopover({
 
   // Percentage calculations
   const effectiveTotal = Math.max(totalTokens, promptTokens + candidatesTokens, 1);
-  const promptPct = Math.round((promptTokens / effectiveTotal) * 100);
+  const freshPromptTokens = Math.max(0, promptTokens - cachedTokens);
+  const cachedPct = Math.round((cachedTokens / effectiveTotal) * 100);
+  const promptPct = Math.round((freshPromptTokens / effectiveTotal) * 100);
   const candidatesPct = Math.round((candidatesTokens / effectiveTotal) * 100);
   const thoughtsPct = Math.round((thoughtsTokens / effectiveTotal) * 100);
 
@@ -187,10 +210,10 @@ export function MessageInfoPopover({
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-xl bg-muted/40 p-2.5">
                 <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider block mb-1">
-                  Model Version
+                  Model / Agent
                 </span>
                 <span className="font-mono text-xs font-semibold text-foreground truncate block">
-                  {modelVersion || "gemini-flash-latest"}
+                  {modelVersion || "Generic Agent"}
                 </span>
               </div>
 
@@ -199,7 +222,7 @@ export function MessageInfoPopover({
                   Execution Node
                 </span>
                 <span className="font-mono text-xs font-semibold text-foreground truncate block">
-                  {nodePath || "root_agent@1"}
+                  {nodePath || "default"}
                 </span>
               </div>
             </div>
@@ -246,10 +269,17 @@ export function MessageInfoPopover({
 
                 {/* Progress bar visual */}
                 <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted">
+                  {cachedPct > 0 && (
+                    <div
+                      style={{ width: `${cachedPct}%` }}
+                      className="bg-teal-500 dark:bg-teal-400"
+                      title={`Cached: ${cachedTokens.toLocaleString()} (${cachedPct}%)`}
+                    />
+                  )}
                   <div
                     style={{ width: `${promptPct}%` }}
                     className="bg-[#1a73e8] dark:bg-[#8ab4f8]"
-                    title={`Prompt: ${promptTokens.toLocaleString()} (${promptPct}%)`}
+                    title={`Fresh Prompt: ${freshPromptTokens.toLocaleString()} (${promptPct}%)`}
                   />
                   <div
                     style={{ width: `${candidatesPct}%` }}
@@ -265,13 +295,34 @@ export function MessageInfoPopover({
                   )}
                 </div>
 
-                {/* 3 or 4 metric pills */}
-                <div className="grid grid-cols-3 gap-1.5 pt-1 text-[11px] font-mono text-center">
+                {/* Metric pills */}
+                <div
+                  className={cn(
+                    "grid gap-1.5 pt-1 text-[11px] font-mono text-center",
+                    cachedTokens > 0 ? "grid-cols-4" : "grid-cols-3"
+                  )}
+                >
+                  {cachedTokens > 0 && (
+                    <div className="rounded-lg bg-background/80 p-1.5 border border-teal-500/30">
+                      <span className="text-[9px] text-teal-600 dark:text-teal-400 block">
+                        Cached
+                      </span>
+                      <span className="font-semibold">
+                        {cachedTokens.toLocaleString()}
+                      </span>
+                    </div>
+                  )}
+
                   <div className="rounded-lg bg-background/80 p-1.5 border border-border/30">
                     <span className="text-[9px] text-[#1a73e8] dark:text-[#8ab4f8] block">
-                      Prompt
+                      {cachedTokens > 0 ? "Fresh" : "Prompt"}
                     </span>
-                    <span className="font-semibold">{promptTokens.toLocaleString()}</span>
+                    <span className="font-semibold">
+                      {(cachedTokens > 0
+                        ? freshPromptTokens
+                        : promptTokens
+                      ).toLocaleString()}
+                    </span>
                   </div>
 
                   <div className="rounded-lg bg-background/80 p-1.5 border border-border/30">

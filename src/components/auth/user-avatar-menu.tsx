@@ -10,10 +10,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Brain, LogOut } from "lucide-react";
+import { Brain, LogOut, SlidersHorizontal } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { useOptionalMemory } from "@/lib/memory-context";
+import { useOptionalSessionState } from "@/lib/session-state/state-context";
 
 interface UserAvatarMenuProps {
   showName?: boolean;
@@ -30,6 +31,7 @@ export function UserAvatarMenu({
 }: UserAvatarMenuProps) {
   const { data: session, isPending } = useSession();
   const memoryContext = useOptionalMemory();
+  const sessionStateContext = useOptionalSessionState();
 
   if (isPending) {
     return (
@@ -111,6 +113,15 @@ export function UserAvatarMenu({
           >
             <Brain className="h-4 w-4 text-[#1a73e8] dark:text-[#8ab4f8]" />
             <span>Memory Bank Profile</span>
+          </DropdownMenuItem>
+        )}
+        {sessionStateContext && (
+          <DropdownMenuItem
+            className="cursor-pointer gap-2"
+            onClick={() => sessionStateContext.setIsDrawerOpen(true)}
+          >
+            <SlidersHorizontal className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+            <span>Session State Inspector</span>
           </DropdownMenuItem>
         )}
         <DropdownMenuItem

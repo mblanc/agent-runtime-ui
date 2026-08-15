@@ -82,6 +82,7 @@ Use this index to quickly locate specific subsystems and implementations across 
 - [`src/app/api/chat/route.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/api/chat/route.ts): SSE streaming endpoint connecting to Vertex AI Reasoning Engine `:streamQuery`.
 - [`src/app/api/sessions/route.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/api/sessions/route.ts): List user sessions (`GET`) and create new session (`POST`).
 - [`src/app/api/sessions/[sessionId]/route.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/api/sessions/[sessionId]/route.ts): Fetch session event history (`GET`) and delete session (`DELETE`).
+- [`src/app/api/sessions/[sessionId]/state/route.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/api/sessions/[sessionId]/state/route.ts): Fetch and mutate ADK session state map (`GET`, `PATCH`).
 - [`src/app/api/auth/sign-in/google/route.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/api/auth/sign-in/google/route.ts): Initiates Google OAuth 2.0 PKCE flow.
 - [`src/app/api/auth/callback/google/route.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/api/auth/callback/google/route.ts): Handles OAuth redirect, issues signed JWT session cookie.
 - [`src/app/api/auth/session/route.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/api/auth/session/route.ts): Validates JWT session cookie and returns user profile.
@@ -91,8 +92,8 @@ Use this index to quickly locate specific subsystems and implementations across 
 
 - [`src/components/assistant-ui/gemini-thread.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/gemini-thread.tsx): Active conversation view, empty state greeting, and viewport footer.
 - [`src/components/assistant-ui/gemini-composer.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/gemini-composer.tsx): Single-row pill composer with model selector (Flash/Pro) and controls.
-- [`src/components/assistant-ui/gemini-message.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/gemini-message.tsx): Message part rendering (user bubbles, markdown text, thinking indicators).
-- [`src/components/assistant-ui/gemini-message-timing.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/gemini-message-timing.tsx): Generation duration, token throughput, and execution telemetry badge integration.
+- [`src/components/assistant-ui/gemini-message.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/gemini-message.tsx): Message part rendering (user bubbles, markdown text, thinking indicators, state chips).
+- [`src/components/assistant-ui/gemini-message-timing.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/gemini-message-timing.tsx): Generation duration, token throughput, context cache savings badge, and execution telemetry badge integration.
 - [`src/components/assistant-ui/message-info-popover.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/message-info-popover.tsx): Detailed floating popover displaying model version, invocation/trace ID, token breakdown progress bar, and model confidence rating.
 - [`src/components/assistant-ui/thought-signature-badge.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/thought-signature-badge.tsx): Cryptographic reasoning trace verification badge and signature inspection popover.
 - [`src/components/assistant-ui/gemini-reasoning.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/gemini-reasoning.tsx): Collapsible reasoning/thought accordion block.
@@ -101,6 +102,15 @@ Use this index to quickly locate specific subsystems and implementations across 
 - [`src/components/assistant-ui/thread-sidebar.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/thread-sidebar.tsx): Multi-thread sidebar list with delete and new chat actions.
 - [`src/components/assistant-ui/markdown-text.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/markdown-text.tsx): Markdown text primitive integration with syntax highlighting.
 - [`src/components/assistant-ui/shiki-highlighter.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/shiki-highlighter.tsx): Code block syntax highlighting component.
+
+### Context Caching & Session State Components
+
+- [`src/components/context-caching/context-cache-popover.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/context-caching/context-cache-popover.tsx): Floating popover and timing badge displaying cache hit ratio, token savings, and cost reduction.
+- [`src/components/session-state/session-state-drawer.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/session-state/session-state-drawer.tsx): Slide-over inspector drawer for viewing, filtering, and mutating ADK session state variables.
+- [`src/components/session-state/state-variable-card.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/session-state/state-variable-card.tsx): Individual state variable card with type badges, copy actions, and inline JSON editing.
+- [`src/components/session-state/add-state-variable-modal.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/session-state/add-state-variable-modal.tsx): Modal form for creating typed state variables.
+- [`src/components/session-state/state-delta-chip.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/session-state/state-delta-chip.tsx): In-chat pill chip showing state variable mutations and opening the inspector.
+- [`src/components/session-state/session-state-header-button.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/session-state/session-state-header-button.tsx): Header navigation button with live variable count badge.
 
 ### Grounding & Citations Components
 
@@ -113,7 +123,7 @@ Use this index to quickly locate specific subsystems and implementations across 
 
 ### Auth & UI Primitives
 
-- [`src/components/auth/user-avatar-menu.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/auth/user-avatar-menu.tsx): User profile dropdown with logout button.
+- [`src/components/auth/user-avatar-menu.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/auth/user-avatar-menu.tsx): User profile dropdown with logout button and drawer triggers.
 - [`src/components/auth/login-button.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/auth/login-button.tsx): Google SSO sign-in button.
 - [`src/components/ui/`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/ui): Radix/shadcn UI primitives ([`button.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/ui/button.tsx), [`dropdown-menu.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/ui/dropdown-menu.tsx), [`avatar.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/ui/avatar.tsx), [`tooltip.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/ui/tooltip.tsx)).
 
@@ -121,6 +131,9 @@ Use this index to quickly locate specific subsystems and implementations across 
 
 - [`src/lib/agent-runtime-client.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/agent-runtime-client.ts): Vertex AI Reasoning Engine REST API client, SSE stream handler, and mock store.
 - [`src/lib/gemini-runtime-adapter.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/gemini-runtime-adapter.ts): `ChatModelAdapter` translating `/api/chat` SSE stream to assistant-ui runtime.
+- [`src/lib/context-caching/cache-metrics.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/context-caching/cache-metrics.ts): Context caching hit ratio and cost reduction calculations.
+- [`src/lib/session-state/state-context.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/session-state/state-context.tsx): Session state React Context and hooks (`useSessionState`).
+- [`src/lib/session-state/state-diff.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/session-state/state-diff.ts): Structural state delta diffing and type inference.
 - [`src/lib/grounding/citation-parser.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/grounding/citation-parser.ts): Citation parsing, domain/GCS extraction, metadata normalization, and markdown citation transformation.
 - [`src/lib/session-adapter.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/session-adapter.tsx): `RemoteThreadListAdapter` connecting assistant-ui thread list to `/api/sessions`.
 - [`src/lib/auth.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/auth.ts): Server-side authentication and session extraction.
@@ -129,13 +142,20 @@ Use this index to quickly locate specific subsystems and implementations across 
 
 ### Types & Specs
 
-- [`src/types/agent.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/types/agent.ts): Data contracts for streams, sessions, subagents, grounding metadata, and requests.
+- [`src/types/agent.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/types/agent.ts): Data contracts for streams, sessions, subagents, grounding metadata, context caching, and session state.
 - [`docs/spec.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/spec.md): Overall application specification and architecture diagram.
+- [`docs/spec-context-caching-and-session-state.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/spec-context-caching-and-session-state.md): Specification for Vertex AI Context Caching & ADK Session State Inspector.
 - [`docs/spec-grounding-citations.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/spec-grounding-citations.md): Specification for Google Search and Enterprise RAG Grounding, citations, and inspection drawer.
 - [`docs/spec-session-service-thread-list.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/spec-session-service-thread-list.md): Detailed specification for session service and sidebar thread list integration.
 
 ### Test Suite
 
+- [`tests/context-caching.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/context-caching.test.ts): Pure calculation unit tests for context cache hit ratio and metrics.
+- [`tests/context-caching-ui.test.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/tests/context-caching-ui.test.tsx): UI component tests for context caching badge and savings popover.
+- [`tests/session-state-api.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/session-state-api.test.ts): REST API integration tests for `/api/sessions/[sessionId]/state`.
+- [`tests/session-state-adapter.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/session-state-adapter.test.ts): Stream parsing and event normalization tests for state deltas and cached tokens.
+- [`tests/session-state-context.test.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/tests/session-state-context.test.tsx): Session state diffing, type parsing, and context provider tests.
+- [`tests/session-state-ui.test.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/tests/session-state-ui.test.tsx): UI component tests for StateDeltaChip, StateVariableCard, AddStateVariableModal, and SessionStateDrawer.
 - [`tests/grounding-parser.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/grounding-parser.test.ts): Unit tests for citation regex parsing, 1-based index resolution, and grounding normalization.
 - [`tests/grounding-stream.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/grounding-stream.test.ts): Integration tests for grounding stream SSE interception, chat adapter metadata, and multi-turn persistence.
 - [`tests/grounding-ui.test.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/tests/grounding-ui.test.tsx): Component tests for citation badges, popovers, Google Search widget, and RAG drawer.

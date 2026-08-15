@@ -9,6 +9,7 @@ import {
   GroundingMetadata,
   ListAgentsResponse,
   MemoryRetrievalItem,
+  SessionStateMap,
 } from "@/types/agent";
 import { IAgentRuntimeProvider } from "../types";
 import {
@@ -16,6 +17,7 @@ import {
   mockSessionsStore,
   mockSessionEventsStore,
   mockMemoriesStore,
+  mockSessionStateStore,
 } from "./mock-store";
 import {
   extractReasoningEngineIdFromResourceName,
@@ -137,6 +139,48 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
     return mockSessionsStore.get(cleanId) || null;
   }
 
+  async getSessionState(
+    sessionId: string,
+    _agentId?: string,
+    _location?: string
+  ): Promise<SessionStateMap> {
+    if (isLocalSessionId(sessionId)) {
+      return {};
+    }
+    const cleanId = extractSessionIdFromResourceName(sessionId);
+    const state = mockSessionStateStore.get(cleanId);
+    return state ? { ...state } : {};
+  }
+
+  async updateSessionState(
+    sessionId: string,
+    state: SessionStateMap,
+    mode: "merge" | "replace" = "merge",
+    _agentId?: string,
+    _location?: string
+  ): Promise<SessionStateMap> {
+    if (isLocalSessionId(sessionId)) {
+      return state;
+    }
+    const cleanId = extractSessionIdFromResourceName(sessionId);
+    let finalState: SessionStateMap;
+    if (mode === "replace") {
+      finalState = { ...state };
+    } else {
+      const existing = mockSessionStateStore.get(cleanId) || {};
+      finalState = { ...existing, ...state };
+    }
+
+    mockSessionStateStore.set(cleanId, finalState);
+
+    const sess = mockSessionsStore.get(cleanId);
+    if (sess) {
+      sess.updateTime = new Date().toISOString();
+    }
+
+    return finalState;
+  }
+
   async updateSessionTitle(
     sessionId: string,
     title: string,
@@ -169,6 +213,7 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
     const cleanId = extractSessionIdFromResourceName(sessionId);
     mockSessionsStore.delete(cleanId);
     mockSessionEventsStore.delete(cleanId);
+    mockSessionStateStore.delete(cleanId);
   }
 
   async listSessionEvents(
@@ -657,21 +702,77 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
 
     const invocationId = `e-mock-${Math.random().toString(36).substring(2, 9)}`;
     const modelVersion = "gemini-2.5-flash";
+
+    // Simulate Context Caching metrics
+    const isCachePrompt =
+      lowerPrompt.includes("cache") ||
+      lowerPrompt.includes("cached") ||
+      lowerPrompt.includes("arch") ||
+      lowerPrompt.includes("review") ||
+      lowerPrompt.includes("ground") ||
+      lowerPrompt.includes("spec") ||
+      lowerPrompt.length > 20;
+
+    const cachedTokenCount = isCachePrompt ? 3420 : 0;
+    const promptTokenCount = isCachePrompt ? 4200 : 1250;
+    const candidatesTokenCount = 380;
+    const thoughtsTokenCount = 95;
+    const totalTokenCount = promptTokenCount + candidatesTokenCount + thoughtsTokenCount;
+
     const usageMetadata = {
-      prompt_token_count: 1250,
-      candidates_token_count: 380,
-      thoughts_token_count: 95,
-      total_token_count: 1725,
+      prompt_token_count: promptTokenCount,
+      candidates_token_count: candidatesTokenCount,
+      thoughts_token_count: thoughtsTokenCount,
+      cached_content_token_count: cachedTokenCount,
+      total_token_count: totalTokenCount,
       traffic_type: "ON_DEMAND",
-      promptTokenCount: 1250,
-      candidatesTokenCount: 380,
-      thoughtsTokenCount: 95,
-      totalTokenCount: 1725,
+      promptTokenCount,
+      candidatesTokenCount,
+      thoughtsTokenCount,
+      cachedTokenCount,
+      cachedContentTokenCount: cachedTokenCount,
+      totalTokenCount,
       trafficType: "ON_DEMAND",
     };
     const avgLogprobs = -0.182;
     const nodeInfo = { path: "root_agent@1" };
     const thoughtSignature = "mock_sig_gemini_2_5_verified_crypto";
+
+    // Simulate ADK Session State Delta mutations
+    let simulatedStateDelta: SessionStateMap | undefined;
+    const isStateMutationTrigger =
+      lowerPrompt.includes("state") ||
+      lowerPrompt.includes("staging") ||
+      lowerPrompt.includes("cluster") ||
+      lowerPrompt.includes("environment") ||
+      lowerPrompt.includes("tier") ||
+      lowerPrompt.includes("config");
+
+    if (isStateMutationTrigger) {
+      if (lowerPrompt.includes("staging")) {
+        simulatedStateDelta = {
+          environment: "staging",
+          target_cluster: "staging-europe-west1",
+          deployment_status: "pending_approval",
+        };
+      } else if (lowerPrompt.includes("prod")) {
+        simulatedStateDelta = {
+          environment: "production",
+          target_cluster: "prod-europe-west1",
+          deployment_status: "active",
+        };
+      } else {
+        simulatedStateDelta = {
+          active_tier: "enterprise",
+          last_action: "session_state_inspection",
+          sync_enabled: true,
+        };
+      }
+    }
+
+    const actionsPayload = simulatedStateDelta
+      ? { state_delta: simulatedStateDelta }
+      : { state_delta: { current_step: 1 } };
 
     const chunks = responseText.split(" ");
     for (let idx = 0; idx < chunks.length; idx++) {
@@ -694,7 +795,7 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
               avgLogprobs,
               thought_signature: thoughtSignature,
               thoughtSignature,
-              actions: { state_delta: { current_step: 1 } },
+              actions: actionsPayload,
               finish_reason: "STOP",
               finishReason: "STOP",
             }
@@ -706,6 +807,13 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
     // Persist to in-memory mock history if sessionId provided
     if (body.sessionId && !isLocalSessionId(body.sessionId)) {
       const cleanId = extractSessionIdFromResourceName(body.sessionId);
+      if (simulatedStateDelta) {
+        const currState = mockSessionStateStore.get(cleanId) || {};
+        mockSessionStateStore.set(cleanId, {
+          ...currState,
+          ...simulatedStateDelta,
+        });
+      }
       const events = mockSessionEventsStore.get(cleanId) || [];
       events.push(
         {
@@ -739,7 +847,7 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
           node_info: nodeInfo,
           nodePath: "root_agent@1",
           node_path: "root_agent@1",
-          actions: { state_delta: { current_step: 1 } },
+          actions: actionsPayload,
           finishReason: "STOP",
           finish_reason: "STOP",
           createTime: new Date(Date.now() + 1000).toISOString(),

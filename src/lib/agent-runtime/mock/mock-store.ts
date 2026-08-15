@@ -3,7 +3,44 @@ import {
   AgentSession,
   AgentSessionEvent,
   DeployedAgent,
+  SessionStateMap,
 } from "@/types/agent";
+
+export const mockSessionStateStore = new Map<string, SessionStateMap>([
+  [
+    "1",
+    {
+      target_cluster: "prod-europe-west1",
+      deployment_status: "active",
+      active_services: ["frontend", "worker", "auth-proxy"],
+      run_config: { min_instances: 2, memory: "4GiB", cpu: 2 },
+    },
+  ],
+  [
+    "2",
+    {
+      compliance_checked: true,
+      security_tier: "enterprise_high",
+      reviewed_commits: 14,
+    },
+  ],
+  [
+    "3",
+    {
+      pr_number: 42,
+      audit_status: "passed_with_suggestions",
+      scanned_files_count: 8,
+    },
+  ],
+  [
+    "4",
+    {
+      cluster_name: "gke-europe-west4-prod",
+      alert_status: "mitigated",
+      oom_kill_count: 0,
+    },
+  ],
+]);
 
 export const mockAgentsStore: DeployedAgent[] = [
   {

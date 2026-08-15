@@ -18,8 +18,13 @@ import { ThreadSidebar } from "@/components/assistant-ui/thread-sidebar";
 import { GeminiThread } from "@/components/assistant-ui/gemini-thread";
 import { AgentHeaderSelector } from "@/components/agent-switcher/agent-header-selector";
 import { MemoryHeaderButton } from "@/components/memory/memory-header-button";
+import { SessionStateHeaderButton } from "@/components/session-state/session-state-header-button";
 import { AgentProvider, useActiveAgent } from "@/lib/agent-context";
 import { MemoryProvider } from "@/lib/memory-context";
+import {
+  SessionStateProvider,
+  useOptionalSessionState,
+} from "@/lib/session-state/state-context";
 import { useSession } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
@@ -27,6 +32,14 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 
 const MemoryDrawer = dynamic(
   () => import("@/components/memory/memory-drawer").then((m) => m.MemoryDrawer),
+  { ssr: false }
+);
+
+const SessionStateDrawer = dynamic(
+  () =>
+    import("@/components/session-state/session-state-drawer").then(
+      (m) => m.SessionStateDrawer
+    ),
   { ssr: false }
 );
 
@@ -90,9 +103,15 @@ function ChatContent() {
   const dictationAdapter = useMemo(() => createWebSpeechDictationAdapter(), []);
   const speechAdapter = useMemo(() => createWebSpeechSynthesisAdapter(), []);
 
-  const handleThreadIdChange = useCallback((newId: string | undefined) => {
-    activeThreadIdRef.current = newId;
-  }, []);
+  const sessionState = useOptionalSessionState();
+
+  const handleThreadIdChange = useCallback(
+    (newId: string | undefined) => {
+      activeThreadIdRef.current = newId;
+      sessionState?.setActiveSessionId(newId);
+    },
+    [sessionState]
+  );
 
   const runtime = useRemoteThreadListRuntime({
     runtimeHook: function useRuntimeHook() {
@@ -123,11 +142,12 @@ function ChatContent() {
 
         {/* Main Gemini Thread Area with Top Header */}
         <main className="flex flex-1 flex-col overflow-hidden">
-          {/* Top Header with Agent Switcher and Memory Bank Button */}
+          {/* Top Header with Agent Switcher, Memory Bank & Session State Button */}
           <header className="flex h-14 shrink-0 items-center justify-between border-b border-border/40 px-4 bg-background/50 backdrop-blur-xs">
             <div className="flex items-center gap-2">
               <AgentHeaderSelector onAgentChange={handleAgentChange} />
               <MemoryHeaderButton />
+              <SessionStateHeaderButton />
             </div>
           </header>
 
@@ -138,6 +158,9 @@ function ChatContent() {
 
         {/* Slide-Over Memory Profile Drawer */}
         <MemoryDrawer />
+
+        {/* Slide-Over Session State Inspector Drawer */}
+        <SessionStateDrawer />
       </div>
     </AssistantRuntimeProvider>
   );
@@ -147,7 +170,9 @@ export default function ChatPage() {
   return (
     <AgentProvider>
       <MemoryProvider>
-        <ChatContent />
+        <SessionStateProvider>
+          <ChatContent />
+        </SessionStateProvider>
       </MemoryProvider>
     </AgentProvider>
   );

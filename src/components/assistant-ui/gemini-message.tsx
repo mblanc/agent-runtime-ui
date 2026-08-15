@@ -36,6 +36,7 @@ import { GeminiMessageTiming } from "./gemini-message-timing";
 import { MemoryRetrievalBadge } from "@/components/memory/memory-retrieval-badge";
 import { GroundingFooter } from "@/components/grounding/grounding-footer";
 import { GroundingProvider } from "@/components/grounding/grounding-context";
+import { StateDeltaChip } from "@/components/session-state/state-delta-chip";
 
 const MESSAGE_GROUP_BY = groupPartByType({
   reasoning: ["group-reasoning"],
@@ -289,6 +290,9 @@ function ChatMessageImpl() {
 
             {/* Grounding & Source Citations Footer */}
             <AssistantMessageGrounding />
+
+            {/* ADK Session State Delta Chip */}
+            <StateDeltaChip />
 
             {/* Footer: Timing stats + Action Bar */}
             <div className="flex items-center justify-between pt-1">

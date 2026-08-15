@@ -846,7 +846,11 @@ export function createGeminiChatAdapter(
                   parsed.thoughtSignature ||
                   parsed.thought_signature ||
                   latestThoughtSignature;
-                latestActions = parsed.actions || latestActions;
+                latestActions =
+                  parsed.actions ||
+                  (parsed.state_delta || parsed.stateDelta
+                    ? { state_delta: parsed.state_delta || parsed.stateDelta }
+                    : latestActions);
                 latestFinishReason =
                   parsed.finishReason || parsed.finish_reason || latestFinishReason;
                 if (parsed.timestamp !== undefined) {

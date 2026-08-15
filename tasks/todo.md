@@ -1,64 +1,37 @@
-# Task List: Agent Stream Metadata & Message Info (Inspection, Trace & Verified Reasoning)
+# Todo: Vertex AI Context Caching & ADK Session State Inspector
 
-- [x] **Phase 1: Data Contracts, Types & Metadata Parser Engine**
-  - [x] **Task 1: Define Message Info & Stream Metadata Type Contracts**
-    - [x] Add `AgentUsageMetadata`, `UsageMetadataTokenDetail`, `AgentNodeInfo`, `AgentActionsDelta`, and `AgentMessageInfoMetadata` to [`src/types/agent.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/types/agent.ts).
-    - [x] Extend `AgentStreamEvent`, `AgentSessionEvent`, and `AgentMessagePart` with message info metadata fields.
-    - [x] Verify `bun run check`.
-  - [x] **Task 2: Implement Stream Parser Telemetry Extraction**
-    - [x] Update [`src/lib/agent-runtime/sse-parser.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/agent-runtime/sse-parser.ts) to extract `usage_metadata`, `model_version`, `invocation_id`, `avg_logprobs`, `node_info`, `thought_signature`, `actions`, `finish_reason`, and `timestamp`.
-    - [x] Add unit test assertions in [`tests/sse-parser.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/sse-parser.test.ts).
-    - [x] Verify `bun test tests/sse-parser.test.ts`.
-  - [x] **Task 3: Implement Session Event Normalizer Telemetry Preservation**
-    - [x] Update `parseRawSessionEvent`, `groupTurnSessionEvents`, and `formatSessionEventsToThreadMessages` in [`src/lib/agent-runtime/event-normalizer.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/agent-runtime/event-normalizer.ts) to parse and preserve metadata.
-    - [x] Add test cases in [`tests/event-normalizer.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/event-normalizer.test.ts).
-    - [x] Verify `bun test tests/event-normalizer.test.ts`.
-  - [x] **Checkpoint 1: Foundation & Parser Quality Gate**
-    - [x] Verify `bun run check` and parser/normalizer tests pass.
+## Phase 1: Data Contracts, Types & Cache Calculation Engine
 
-- [x] **Phase 2: Chat Adapter Stream Pipeline & Mock Parity**
-  - [x] **Task 4: Wire Message Info Telemetry into Chat Adapter Stream Loop**
-    - [x] Update `createYieldContent` and stream processing in [`src/lib/adapters/chat-adapter.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/adapters/chat-adapter.ts) to populate `metadata.custom`.
-    - [x] Ensure [`src/lib/session-adapter.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/session-adapter.tsx) passes `metadata.custom` into `ThreadMessageLike`.
-    - [x] Verify `bun run check`.
-  - [x] **Task 5: Implement Mock Provider Stream Metadata & Multi-Turn Persistence**
-    - [x] Update `MockAgentRuntimeProvider.streamQuery` in [`src/lib/agent-runtime/mock/mock-provider.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/agent-runtime/mock/mock-provider.ts) to emit realistic telemetry chunks.
-    - [x] Store telemetry payload in `mockSessionEventsStore` in [`src/lib/agent-runtime/mock/mock-store.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/agent-runtime/mock/mock-store.ts).
-    - [x] Verify `bun test tests/agent-client.test.ts`.
-  - [x] **Checkpoint 2: Stream Pipeline & Adapter Quality Gate**
-    - [x] Verify `bun run check` and adapter streaming tests pass.
+- [x] Task 1: Define Context Caching & Session State Type Contracts (`src/types/agent.ts`)
+- [x] Task 2: Implement Pure Cache Calculation Engine & Unit Tests (`src/lib/context-caching/cache-metrics.ts`, `tests/context-caching.test.ts`)
+- [x] **Checkpoint 1: Foundation & Pure Calculations**
 
-- [x] **Phase 3: Visual Telemetry Primitives & Info Popovers**
-  - [x] **Task 6: Build Model Version Badge and Token Usage Popover**
-    - [x] Create [`src/components/assistant-ui/model-badge.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/model-badge.tsx) with model icon, version text, and model tier pills.
-    - [x] Create [`src/components/assistant-ui/token-usage-popover.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/token-usage-popover.tsx) with prompt/candidate/thinking token breakdown and billing tier.
-    - [x] Verify `bun run check`.
-  - [x] **Task 7: Build Cloud Trace Deep Link & Message Info Inspection Modal**
-    - [x] Create [`src/components/assistant-ui/cloud-trace-link.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/cloud-trace-link.tsx) with Turn ID copy button and Google Cloud Trace console URL.
-    - [x] Create [`src/components/assistant-ui/message-info-dialog.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/message-info-dialog.tsx) with full turn metadata inspection, confidence rating, and DAG node path.
-    - [x] Verify `bun run check`.
-  - [x] **Task 8: Build Verified Reasoning & Thought Signature Indicator**
-    - [x] Update [`src/components/assistant-ui/reasoning.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/reasoning.tsx) and [`src/components/assistant-ui/thought-collapsible.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/thought-collapsible.tsx) to render Verified Reasoning badge.
-    - [x] Verify `bun run check`.
-  - [x] **Checkpoint 3: Visual Telemetry Primitives Gate**
-    - [x] Verify `bun run check` and component rendering.
+## Phase 2: Backend Services, Mock Store & BFF REST Endpoints
 
-- [x] **Phase 4: Gemini Message Integration & UX Polish**
-  - [x] **Task 9: Integrate Message Info Subsystems into Gemini Message Footer**
-    - [x] Wire `ModelBadge`, `TokenUsagePopover`, `CloudTraceLink`, and `MessageInfoDialog` into [`src/components/assistant-ui/gemini-message.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/gemini-message.tsx) and [`src/components/assistant-ui/gemini-message-timing.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/assistant-ui/gemini-message-timing.tsx).
-    - [x] Verify `bun test tests/components.test.tsx`.
-  - [x] **Task 10: Build Message Info Test Suite**
-    - [x] Create [`tests/message-info-parser.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/message-info-parser.test.ts) for SSE parsing verification.
-    - [x] Create [`tests/message-info-stream.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/message-info-stream.test.ts) for chat adapter integration.
-    - [x] Create [`tests/message-info-ui.test.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/tests/message-info-ui.test.tsx) for component interactions.
-    - [x] Verify `bun test tests/message-info-*.test.ts*`.
-  - [x] **Checkpoint 4: UI Integration & Verification Gate**
-    - [x] Verify full test suite passes: `bun run test`.
+- [x] Task 3: Implement Session Service State Methods & Mock Store Parity (`src/lib/agent-runtime/services/session-service.ts`, `src/lib/agent-runtime/types.ts`, `src/lib/agent-runtime/mock/mock-store.ts`, `src/lib/agent-runtime/mock/mock-provider.ts`, `src/lib/agent-runtime-client.ts`)
+- [x] Task 4: Implement Session State BFF REST API Route & API Tests (`src/app/api/sessions/[sessionId]/state/route.ts`, `tests/session-state-api.test.ts`)
+- [x] **Checkpoint 2: Backend Services & API Quality Gate**
 
-- [x] **Phase 5: Verification, Quality Preflight & Documentation**
-  - [x] **Task 11: Execute Full Preflight & Update Documentation**
-    - [x] Run `bun run check`, `bun run lint`, and `bun run test`.
-    - [x] Update [`AGENTS.md`](file:///Users/mblanc/projects/agent-runtime-ui/AGENTS.md) with message info components, utilities, and telemetry architecture index.
-    - [x] Ensure `bun run preflight` exits with status 0.
-  - [x] **Checkpoint 5: Complete & Ready for Review**
-    - [x] All acceptance criteria verified and quality gates clear.
+## Phase 3: Stream Pipeline & Client Session State Context
+
+- [x] Task 5: Wire State Deltas & Cache Telemetry into Chat Adapter Stream (`src/lib/adapters/chat-adapter.ts`, `src/lib/agent-runtime/event-normalizer.ts`, `tests/session-state-adapter.test.ts`)
+- [x] Task 6: Implement Client Session State Context & Delta Diff Helper (`src/lib/session-state/state-diff.ts`, `src/lib/session-state/state-context.tsx`, `tests/session-state-context.test.tsx`)
+- [x] **Checkpoint 3: Client State Store & Stream Pipeline Gate**
+
+## Phase 4: UI Components — Cache Savings Badge & In-Chat State Chips
+
+- [x] Task 7: Build Context Cache Savings Badge & Popover in Message Timing (`src/components/context-caching/context-cache-popover.tsx`, `src/components/assistant-ui/gemini-message-timing.tsx`, `src/components/assistant-ui/message-info-popover.tsx`)
+- [x] Task 8: Build In-Chat State Delta Chip Component (`src/components/session-state/state-delta-chip.tsx`, `src/components/assistant-ui/gemini-message.tsx`)
+- [x] **Checkpoint 4: Inline Message Telemetry & State Chips Gate**
+
+## Phase 5: UI Components — Session State Inspector Drawer & Navigation
+
+- [x] Task 9: Build Session State Inspector Drawer, Variable Cards & Edit Modal (`src/components/session-state/session-state-drawer.tsx`, `src/components/session-state/state-variable-card.tsx`, `src/components/session-state/add-state-variable-modal.tsx`)
+- [x] Task 10: Wire Session State Header Button, Avatar Menu & Page Integration (`src/components/session-state/session-state-header-button.tsx`, `src/components/auth/user-avatar-menu.tsx`, `src/app/page.tsx`)
+- [x] **Checkpoint 5: Full UI & Drawer Integration Gate**
+
+## Phase 6: End-to-End Verification, UI Tests & Quality Preflight
+
+- [x] Task 11: Implement Dedicated Context Caching & Session State UI Tests (`tests/context-caching-ui.test.tsx`, `tests/session-state-ui.test.tsx`)
+- [x] Task 12: Execute Quality Gates Preflight & Update Documentation (`AGENTS.md`, `tasks/todo.md`)
+- [x] **Checkpoint 6: Complete & Ready for Review**

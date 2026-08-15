@@ -72,7 +72,7 @@ function extractModelVersion(parsed: Record<string, unknown>): string | undefine
   );
 }
 
-function extractUsageMetadata(
+export function extractUsageMetadata(
   parsed: Record<string, unknown>
 ): AgentUsageMetadata | undefined {
   const config = parsed.config as Record<string, unknown> | undefined;
@@ -81,10 +81,13 @@ function extractUsageMetadata(
 
   const raw = (parsed.usage_metadata ||
     parsed.usageMetadata ||
+    parsed.usage ||
     config?.usage_metadata ||
     config?.usageMetadata ||
+    config?.usage ||
     rawEvent?.usage_metadata ||
-    rawEvent?.usageMetadata) as Record<string, unknown> | undefined;
+    rawEvent?.usageMetadata ||
+    rawEvent?.usage) as Record<string, unknown> | undefined;
 
   if (!raw || typeof raw !== "object") return undefined;
 
@@ -109,6 +112,17 @@ function extractUsageMetadata(
         ? raw.thoughtsTokenCount
         : undefined;
 
+  let cachedCount =
+    typeof raw.cached_content_token_count === "number"
+      ? raw.cached_content_token_count
+      : typeof raw.cachedContentTokenCount === "number"
+        ? raw.cachedContentTokenCount
+        : typeof raw.cached_token_count === "number"
+          ? raw.cached_token_count
+          : typeof raw.cachedTokenCount === "number"
+            ? raw.cachedTokenCount
+            : undefined;
+
   const totalCount =
     typeof raw.total_token_count === "number"
       ? raw.total_token_count
@@ -125,6 +139,28 @@ function extractUsageMetadata(
 
   const promptDetails = raw.prompt_tokens_details || raw.promptTokensDetails;
   const candidateDetails = raw.candidates_tokens_details || raw.candidatesTokensDetails;
+  const cachedDetails = raw.cached_tokens_details || raw.cachedTokensDetails;
+
+  // Fallback: Check prompt_tokens_details for cached tokens if not present top-level
+  if (cachedCount === undefined && Array.isArray(promptDetails)) {
+    const cachedDetail = (promptDetails as Array<Record<string, unknown>>).find(
+      (d) =>
+        String(d.modality || "")
+          .toUpperCase()
+          .includes("CACHE") ||
+        String(d.tokenType || "")
+          .toUpperCase()
+          .includes("CACHE")
+    );
+    if (cachedDetail) {
+      cachedCount =
+        typeof cachedDetail.token_count === "number"
+          ? cachedDetail.token_count
+          : typeof cachedDetail.tokenCount === "number"
+            ? cachedDetail.tokenCount
+            : undefined;
+    }
+  }
 
   return {
     ...(promptCount !== undefined
@@ -135,6 +171,14 @@ function extractUsageMetadata(
       : {}),
     ...(thoughtsCount !== undefined
       ? { thoughts_token_count: thoughtsCount, thoughtsTokenCount: thoughtsCount }
+      : {}),
+    ...(cachedCount !== undefined
+      ? {
+          cached_content_token_count: cachedCount,
+          cachedContentTokenCount: cachedCount,
+          cached_token_count: cachedCount,
+          cachedTokenCount: cachedCount,
+        }
       : {}),
     ...(totalCount !== undefined
       ? { total_token_count: totalCount, totalTokenCount: totalCount }
@@ -154,6 +198,14 @@ function extractUsageMetadata(
             candidateDetails as AgentUsageMetadata["candidates_tokens_details"],
           candidatesTokensDetails:
             candidateDetails as AgentUsageMetadata["candidates_tokens_details"],
+        }
+      : {}),
+    ...(Array.isArray(cachedDetails)
+      ? {
+          cached_tokens_details:
+            cachedDetails as AgentUsageMetadata["cached_tokens_details"],
+          cachedTokensDetails:
+            cachedDetails as AgentUsageMetadata["cached_tokens_details"],
         }
       : {}),
   };

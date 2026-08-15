@@ -1298,4 +1298,51 @@ describe("AgentRuntimeClient", () => {
       expect(custom.finishReason).toBe("STOP");
     });
   });
+
+  describe("AgentRuntimeClient.getSessionState & updateSessionState", () => {
+    it("retrieves session state in mock mode", async () => {
+      const client = new AgentRuntimeClient();
+      const state = await client.getSessionState("1");
+
+      expect(state).toBeDefined();
+      expect(state.target_cluster).toBe("prod-europe-west1");
+      expect(state.deployment_status).toBe("active");
+      expect(Array.isArray(state.active_services)).toBe(true);
+    });
+
+    it("updates session state in mock mode with merge and replace options", async () => {
+      const client = new AgentRuntimeClient();
+      const session = await client.createSession("test-user", "State Test Session");
+
+      // Seed initial state
+      await client.updateSessionState(
+        session.id,
+        { target_cluster: "prod-europe-west1", deployment_status: "active" },
+        "replace"
+      );
+
+      // Test merge
+      const merged = await client.updateSessionState(
+        session.id,
+        { environment: "staging", temp_flag: true },
+        "merge"
+      );
+      expect(merged.environment).toBe("staging");
+      expect(merged.target_cluster).toBe("prod-europe-west1");
+      expect(merged.temp_flag).toBe(true);
+
+      // Verify persistence in getSessionState
+      const fetched = await client.getSessionState(session.id);
+      expect(fetched.environment).toBe("staging");
+
+      // Test replace
+      const replaced = await client.updateSessionState(
+        session.id,
+        { fresh_key: "single_val" },
+        "replace"
+      );
+      expect(replaced).toEqual({ fresh_key: "single_val" });
+      expect(replaced.target_cluster).toBeUndefined();
+    });
+  });
 });

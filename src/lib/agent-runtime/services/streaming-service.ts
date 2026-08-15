@@ -1,11 +1,12 @@
-import { AgentStreamEvent, ChatRequestBody } from "@/types/agent";
+import { AgentActionsDelta, AgentStreamEvent, ChatRequestBody } from "@/types/agent";
 import { VertexAiContext } from "./context";
 import {
   extractSessionIdFromResourceName,
   extractTextFromQueryOutput,
   isLocalSessionId,
 } from "../event-normalizer";
-import { parseSseStream } from "../sse-parser";
+import { extractUsageMetadata, parseSseStream } from "../sse-parser";
+import { extractGroundingMetadata } from "@/lib/grounding/citation-parser";
 
 export function buildStreamQueryInput(
   body: ChatRequestBody,
@@ -147,6 +148,10 @@ export class VertexAiStreamingService {
       });
 
       if (!response.ok) {
+        const streamErrText = await response.text().catch(() => "");
+        console.warn(
+          `[VertexAiStreamingService] :streamQuery returned ${response.status} (${response.statusText}): ${streamErrText}. Falling back to :query.`
+        );
         const queryEndpoint = `https://${this.context.location}-aiplatform.googleapis.com/v1/${this.context.getNormalizedEngineResource()}:query`;
         const queryResponse = await this.context.fetchWithAuth(queryEndpoint, {
           method: "POST",
@@ -160,10 +165,64 @@ export class VertexAiStreamingService {
           const result = await queryResponse.json();
           const parsed = extractTextFromQueryOutput(result);
 
+          const rawObj = (result && typeof result === "object" ? result : {}) as Record<
+            string,
+            unknown
+          >;
+          const outputObj = (
+            rawObj.output && typeof rawObj.output === "object" ? rawObj.output : {}
+          ) as Record<string, unknown>;
+          const respObj = (
+            rawObj.response && typeof rawObj.response === "object" ? rawObj.response : {}
+          ) as Record<string, unknown>;
+
+          const usageMeta =
+            extractUsageMetadata(rawObj) ||
+            extractUsageMetadata(outputObj) ||
+            extractUsageMetadata(respObj);
+
+          console.log("[VertexAiStreamingService :query]", {
+            resultKeys: Object.keys(rawObj),
+            outputKeys: Object.keys(outputObj),
+            usageMetadata: usageMeta,
+          });
+
+          const groundingMeta =
+            extractGroundingMetadata(rawObj) ||
+            extractGroundingMetadata(outputObj) ||
+            extractGroundingMetadata(respObj);
+
+          const actions =
+            (rawObj.actions as AgentActionsDelta) ||
+            (rawObj.actions_delta as AgentActionsDelta) ||
+            (outputObj.actions as AgentActionsDelta) ||
+            (respObj.actions as AgentActionsDelta) ||
+            (rawObj.state_delta
+              ? { state_delta: rawObj.state_delta as Record<string, unknown> }
+              : undefined) ||
+            (outputObj.state_delta
+              ? { state_delta: outputObj.state_delta as Record<string, unknown> }
+              : undefined);
+
+          const modelVersion =
+            (rawObj.model_version as string) ||
+            (rawObj.modelVersion as string) ||
+            (rawObj.model as string) ||
+            (outputObj.model_version as string) ||
+            (outputObj.modelVersion as string);
+
+          const invocationId =
+            (rawObj.invocation_id as string) ||
+            (rawObj.invocationId as string) ||
+            (outputObj.invocation_id as string) ||
+            (outputObj.invocationId as string);
+
           if (parsed.thoughts.length > 0) {
             yield {
               event_type: "thought",
               thought: parsed.thoughts.join("\n\n"),
+              ...(modelVersion ? { model_version: modelVersion, modelVersion } : {}),
+              ...(invocationId ? { invocation_id: invocationId, invocationId } : {}),
             };
           }
 
@@ -171,10 +230,32 @@ export class VertexAiStreamingService {
             yield {
               event_type: "content",
               content: parsed.text,
+              ...(usageMeta
+                ? { usage_metadata: usageMeta, usageMetadata: usageMeta }
+                : {}),
+              ...(groundingMeta
+                ? {
+                    grounding_metadata: groundingMeta,
+                    groundingMetadata: groundingMeta,
+                  }
+                : {}),
+              ...(actions ? { actions } : {}),
+              ...(modelVersion ? { model_version: modelVersion, modelVersion } : {}),
+              ...(invocationId ? { invocation_id: invocationId, invocationId } : {}),
             };
           }
 
-          yield { event_type: "done" };
+          yield {
+            event_type: "done",
+            ...(usageMeta ? { usage_metadata: usageMeta, usageMetadata: usageMeta } : {}),
+            ...(groundingMeta
+              ? {
+                  grounding_metadata: groundingMeta,
+                  groundingMetadata: groundingMeta,
+                }
+              : {}),
+            ...(actions ? { actions } : {}),
+          };
           return;
         } else {
           const streamErrText = await response.text().catch(() => "");

@@ -8,6 +8,7 @@ import {
   ChatRequestBody,
   ListAgentsResponse,
   MemoryRetrievalItem,
+  SessionStateMap,
 } from "@/types/agent";
 import { IAgentRuntimeProvider } from "./types";
 import {
@@ -126,6 +127,30 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
     customLocation?: string
   ): Promise<AgentSession | null> {
     return this.sessions.getSession(sessionId, customEngineId, customLocation);
+  }
+
+  async getSessionState(
+    sessionId: string,
+    customEngineId?: string,
+    customLocation?: string
+  ): Promise<SessionStateMap> {
+    return this.sessions.getSessionState(sessionId, customEngineId, customLocation);
+  }
+
+  async updateSessionState(
+    sessionId: string,
+    state: SessionStateMap,
+    mode: "merge" | "replace" = "merge",
+    customEngineId?: string,
+    customLocation?: string
+  ): Promise<SessionStateMap> {
+    return this.sessions.updateSessionState(
+      sessionId,
+      state,
+      mode,
+      customEngineId,
+      customLocation
+    );
   }
 
   async updateSessionTitle(

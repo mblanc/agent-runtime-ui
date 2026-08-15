@@ -304,6 +304,45 @@ export interface UsageMetadataTokenDetail {
   tokenCount?: number;
 }
 
+export type TokenModalityDetail = UsageMetadataTokenDetail;
+
+export interface ContextCacheSavingsMetrics {
+  cachedTokens: number;
+  promptTokens: number;
+  totalTokens: number;
+  cacheHitRatio: number; // e.g. 0.75 for 75%
+  estimatedCostReductionPercent: number; // e.g. 75% for Gemini Flash cache discount
+  isCached: boolean;
+}
+
+export type SessionStateValue =
+  | string
+  | number
+  | boolean
+  | null
+  | SessionStateValue[]
+  | { [key: string]: SessionStateValue };
+
+export type SessionStateMap = Record<string, SessionStateValue>;
+
+export interface SessionStateDeltaItem {
+  key: string;
+  previousValue?: SessionStateValue;
+  newValue: SessionStateValue;
+  action: "added" | "updated" | "deleted";
+}
+
+export interface SessionStateResponse {
+  sessionId: string;
+  state: SessionStateMap;
+  updateTime?: string;
+}
+
+export interface UpdateSessionStateRequest {
+  state: SessionStateMap;
+  mode?: "merge" | "replace";
+}
+
 export interface AgentUsageMetadata {
   prompt_token_count?: number;
   promptTokenCount?: number;
@@ -311,6 +350,10 @@ export interface AgentUsageMetadata {
   candidatesTokenCount?: number;
   thoughts_token_count?: number;
   thoughtsTokenCount?: number;
+  cached_content_token_count?: number;
+  cachedContentTokenCount?: number;
+  cached_token_count?: number;
+  cachedTokenCount?: number;
   total_token_count?: number;
   totalTokenCount?: number;
   traffic_type?: "ON_DEMAND" | "PROVISIONED" | string;
@@ -319,7 +362,11 @@ export interface AgentUsageMetadata {
   promptTokensDetails?: UsageMetadataTokenDetail[];
   candidates_tokens_details?: UsageMetadataTokenDetail[];
   candidatesTokensDetails?: UsageMetadataTokenDetail[];
+  cached_tokens_details?: UsageMetadataTokenDetail[];
+  cachedTokensDetails?: UsageMetadataTokenDetail[];
 }
+
+export type UsageMetadata = AgentUsageMetadata;
 
 export interface AgentNodeInfo {
   path?: string;
@@ -329,8 +376,8 @@ export interface AgentNodeInfo {
 }
 
 export interface AgentActionsDelta {
-  state_delta?: Record<string, unknown>;
-  stateDelta?: Record<string, unknown>;
+  state_delta?: SessionStateMap;
+  stateDelta?: SessionStateMap;
   artifact_delta?: Record<string, unknown>;
   artifactDelta?: Record<string, unknown>;
   requested_auth_configs?: Record<string, unknown>;

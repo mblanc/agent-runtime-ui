@@ -8,6 +8,7 @@ import type {
   ChatRequestBody,
   ListAgentsResponse,
   MemoryRetrievalItem,
+  SessionStateMap,
 } from "@/types/agent";
 
 export interface IAgentRuntimeProvider {
@@ -23,6 +24,18 @@ export interface IAgentRuntimeProvider {
     agentId?: string,
     location?: string
   ): Promise<AgentSession | null>;
+  getSessionState(
+    sessionId: string,
+    agentId?: string,
+    location?: string
+  ): Promise<SessionStateMap>;
+  updateSessionState(
+    sessionId: string,
+    state: SessionStateMap,
+    mode?: "merge" | "replace",
+    agentId?: string,
+    location?: string
+  ): Promise<SessionStateMap>;
   updateSessionTitle(
     sessionId: string,
     title: string,

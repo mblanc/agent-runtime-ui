@@ -5,6 +5,7 @@ import { Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { MessageInfoPopover } from "./message-info-popover";
+import { ContextCachePopover } from "@/components/context-caching/context-cache-popover";
 
 interface GeminiMessageTimingProps {
   durationSeconds?: number;
@@ -123,6 +124,7 @@ export function GeminiMessageTiming({
         <span className="truncate max-w-[180px]">{engine}</span>
       </div>
       <MessageInfoPopover />
+      <ContextCachePopover />
     </div>
   );
 }

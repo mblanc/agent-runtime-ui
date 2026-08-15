@@ -1,4 +1,4 @@
-import { AgentSession, AgentSessionEvent } from "@/types/agent";
+import { AgentSession, AgentSessionEvent, SessionStateMap } from "@/types/agent";
 import { VertexAiContext } from "./context";
 import { VertexAiAgentService } from "./agent-service";
 import {
@@ -268,6 +268,100 @@ export class VertexAiSessionService {
       };
     } catch (err: unknown) {
       console.error("Error getting session from Agent Runtime:", err);
+      throw err;
+    }
+  }
+
+  async getSessionState(
+    sessionId: string,
+    customEngineId?: string,
+    customLocation?: string
+  ): Promise<SessionStateMap> {
+    if (isLocalSessionId(sessionId)) return {};
+
+    try {
+      const endpoint = await this.getSessionEndpoint(
+        sessionId,
+        undefined,
+        customEngineId,
+        customLocation
+      );
+      const response = await this.context.fetchWithAuth(endpoint);
+
+      if (!response.ok) {
+        if (response.status === 404) return {};
+        const errText = await response.text();
+        throw new Error(`Failed to get session state (${response.status}): ${errText}`);
+      }
+
+      const raw = (await response.json()) as Record<string, unknown>;
+      const sessionObj = ((raw.response as Record<string, unknown>) || raw) as Record<
+        string,
+        unknown
+      >;
+      const rawState =
+        sessionObj.state ||
+        sessionObj.sessionState ||
+        sessionObj.session_state ||
+        raw.state ||
+        raw.sessionState ||
+        raw.session_state ||
+        {};
+
+      return (
+        typeof rawState === "object" && rawState !== null ? rawState : {}
+      ) as SessionStateMap;
+    } catch (err: unknown) {
+      console.error("Error getting session state from Agent Runtime:", err);
+      throw err;
+    }
+  }
+
+  async updateSessionState(
+    sessionId: string,
+    state: SessionStateMap,
+    mode: "merge" | "replace" = "merge",
+    customEngineId?: string,
+    customLocation?: string
+  ): Promise<SessionStateMap> {
+    if (isLocalSessionId(sessionId)) return state;
+
+    try {
+      let finalState = state;
+      if (mode === "merge") {
+        const currentState = await this.getSessionState(
+          sessionId,
+          customEngineId,
+          customLocation
+        );
+        finalState = { ...currentState, ...state };
+      }
+
+      const endpoint = `${await this.getSessionEndpoint(
+        sessionId,
+        undefined,
+        customEngineId,
+        customLocation
+      )}?updateMask=sessionState`;
+
+      const response = await this.context.fetchWithAuth(endpoint, {
+        method: "PATCH",
+        body: JSON.stringify({
+          sessionState: finalState,
+          state: finalState,
+        }),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(
+          `Failed to update session state (${response.status}): ${errText}`
+        );
+      }
+
+      return finalState;
+    } catch (err: unknown) {
+      console.error("Error updating session state on Agent Runtime:", err);
       throw err;
     }
   }

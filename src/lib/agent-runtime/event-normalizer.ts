@@ -1052,10 +1052,20 @@ export function parseRawSessionEvent(
 
   const usageMeta = (root.usageMetadata ||
     root.usage_metadata ||
+    root.usage ||
     config.usageMetadata ||
     config.usage_metadata ||
+    config.usage ||
     rawEvent.usageMetadata ||
-    rawEvent.usage_metadata) as Record<string, unknown> | undefined;
+    rawEvent.usage_metadata ||
+    rawEvent.usage ||
+    (rawEvent.response as Record<string, unknown>)?.usageMetadata ||
+    (rawEvent.response as Record<string, unknown>)?.usage_metadata ||
+    (rawEvent.output as Record<string, unknown>)?.usageMetadata ||
+    (rawEvent.output as Record<string, unknown>)?.usage_metadata ||
+    (root.metadata as Record<string, unknown>)?.usageMetadata ||
+    (root.metadata as Record<string, unknown>)?.usage_metadata) as
+    Record<string, unknown> | undefined;
 
   let parsedUsageMetadata: AgentUsageMetadata | undefined;
   if (usageMeta && typeof usageMeta === "object") {
@@ -1083,6 +1093,39 @@ export function parseRawSessionEvent(
         : typeof usageMeta.totalTokenCount === "number"
           ? usageMeta.totalTokenCount
           : undefined;
+    let cachedCount =
+      typeof usageMeta.cached_content_token_count === "number"
+        ? usageMeta.cached_content_token_count
+        : typeof usageMeta.cachedContentTokenCount === "number"
+          ? usageMeta.cachedContentTokenCount
+          : typeof usageMeta.cached_token_count === "number"
+            ? usageMeta.cached_token_count
+            : typeof usageMeta.cachedTokenCount === "number"
+              ? usageMeta.cachedTokenCount
+              : undefined;
+
+    const promptDetails =
+      usageMeta.prompt_tokens_details || usageMeta.promptTokensDetails;
+    if (cachedCount === undefined && Array.isArray(promptDetails)) {
+      const cachedDetail = (promptDetails as Array<Record<string, unknown>>).find(
+        (d) =>
+          String(d.modality || "")
+            .toUpperCase()
+            .includes("CACHE") ||
+          String(d.tokenType || "")
+            .toUpperCase()
+            .includes("CACHE")
+      );
+      if (cachedDetail) {
+        cachedCount =
+          typeof cachedDetail.token_count === "number"
+            ? cachedDetail.token_count
+            : typeof cachedDetail.tokenCount === "number"
+              ? cachedDetail.tokenCount
+              : undefined;
+      }
+    }
+
     const trafficType =
       typeof usageMeta.traffic_type === "string"
         ? usageMeta.traffic_type
@@ -1102,6 +1145,14 @@ export function parseRawSessionEvent(
         : {}),
       ...(thoughtsCount !== undefined
         ? { thoughts_token_count: thoughtsCount, thoughtsTokenCount: thoughtsCount }
+        : {}),
+      ...(cachedCount !== undefined
+        ? {
+            cached_content_token_count: cachedCount,
+            cachedContentTokenCount: cachedCount,
+            cached_token_count: cachedCount,
+            cachedTokenCount: cachedCount,
+          }
         : {}),
       ...(totalCount !== undefined
         ? { total_token_count: totalCount, totalTokenCount: totalCount }
@@ -1123,6 +1174,14 @@ export function parseRawSessionEvent(
               usageMeta.candidatesTokensDetails) as AgentUsageMetadata["candidates_tokens_details"],
             candidatesTokensDetails: (usageMeta.candidates_tokens_details ||
               usageMeta.candidatesTokensDetails) as AgentUsageMetadata["candidates_tokens_details"],
+          }
+        : {}),
+      ...(Array.isArray(usageMeta.cached_tokens_details || usageMeta.cachedTokensDetails)
+        ? {
+            cached_tokens_details: (usageMeta.cached_tokens_details ||
+              usageMeta.cachedTokensDetails) as AgentUsageMetadata["cached_tokens_details"],
+            cachedTokensDetails: (usageMeta.cached_tokens_details ||
+              usageMeta.cachedTokensDetails) as AgentUsageMetadata["cached_tokens_details"],
           }
         : {}),
     };
