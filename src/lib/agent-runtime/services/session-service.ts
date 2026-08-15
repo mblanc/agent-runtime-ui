@@ -7,6 +7,52 @@ import {
   isLocalSessionId,
 } from "../event-normalizer";
 
+/**
+ * Maps a raw Vertex session payload to AgentSession.
+ *
+ * Two normalisations that `getSession` previously skipped, though its siblings
+ * did not: `createSession` and `listSessions` both unwrap the `response`
+ * envelope before reading fields, and `listSessions` reads both the camelCase
+ * and snake_case spellings of the owner. Reading only `raw.userId` yielded
+ * undefined whenever Vertex used either shape, which the old `|| ""` default
+ * then turned into a silently unowned session.
+ *
+ * The owner is null when genuinely absent — never the empty string, and never
+ * the caller's own id.
+ */
+function mapRawSession(
+  rawPayload: Record<string, unknown>,
+  fallbackSessionId: string
+): AgentSession {
+  const raw = ((rawPayload.response as Record<string, unknown>) || rawPayload) as Record<
+    string,
+    unknown
+  >;
+
+  const nameStr = (raw.name as string) || (rawPayload.name as string) || "";
+  const parts = nameStr.split("/");
+  const id = parts[parts.length - 1] || fallbackSessionId;
+
+  const owner =
+    (raw.userId as string) ||
+    (raw.user_id as string) ||
+    (rawPayload.userId as string) ||
+    (rawPayload.user_id as string) ||
+    null;
+
+  return {
+    id,
+    name: nameStr,
+    userId: owner,
+    title:
+      (raw.displayName as string) ||
+      (raw.title as string) ||
+      `Chat ${id.substring(0, 8)}`,
+    createTime: (raw.createTime as string) || new Date().toISOString(),
+    updateTime: (raw.updateTime as string) || new Date().toISOString(),
+  };
+}
+
 export class VertexAiSessionService {
   constructor(
     private context: VertexAiContext,
@@ -224,20 +270,7 @@ export class VertexAiSessionService {
             const fallbackRes = await this.context.fetchWithAuth(fallbackEndpoint);
             if (fallbackRes.ok) {
               const raw = (await fallbackRes.json()) as Record<string, unknown>;
-              const nameStr = (raw.name as string) || "";
-              const parts = nameStr.split("/");
-              const id = parts[parts.length - 1] || sessionId;
-              return {
-                id,
-                name: nameStr,
-                userId: (raw.userId as string) || "",
-                title:
-                  (raw.displayName as string) ||
-                  (raw.title as string) ||
-                  `Chat ${id.substring(0, 8)}`,
-                createTime: (raw.createTime as string) || new Date().toISOString(),
-                updateTime: (raw.updateTime as string) || new Date().toISOString(),
-              };
+              return mapRawSession(raw, sessionId);
             }
           } catch {
             // try next
@@ -253,21 +286,7 @@ export class VertexAiSessionService {
       }
 
       const raw = (await response.json()) as Record<string, unknown>;
-      const nameStr = (raw.name as string) || "";
-      const parts = nameStr.split("/");
-      const id = parts[parts.length - 1] || sessionId;
-
-      return {
-        id,
-        name: nameStr,
-        userId: (raw.userId as string) || "",
-        title:
-          (raw.displayName as string) ||
-          (raw.title as string) ||
-          `Chat ${id.substring(0, 8)}`,
-        createTime: (raw.createTime as string) || new Date().toISOString(),
-        updateTime: (raw.updateTime as string) || new Date().toISOString(),
-      };
+      return mapRawSession(raw, sessionId);
     } catch (err: unknown) {
       console.error("Error getting session from Agent Runtime:", err);
       throw err;

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-handler";
 import { AgentRuntimeClient } from "@/lib/agent-runtime-client";
+import { isSessionOwnedBy } from "@/lib/session-ownership";
 import { ChatRequestBody } from "@/types/agent";
 
 export const runtime = "nodejs";
@@ -28,25 +29,20 @@ export const POST = withAuth(async (req, { userId, userEmail }) => {
     !body.sessionId.startsWith("__LOCALID_") &&
     !body.sessionId.startsWith("local-")
   ) {
-    try {
-      const sessionDetails = await agentClient.getSession(
-        body.sessionId,
-        customEngineId,
-        customLocation
+    // A null result means the session does not exist upstream yet, which is the
+    // legitimate new-session case and proceeds to streamQuery. A *thrown* error
+    // is not: swallowing it let a transient failure of the ownership lookup
+    // wave the request through unchecked, so it propagates to a 500 instead.
+    const sessionDetails = await agentClient.getSession(
+      body.sessionId,
+      customEngineId,
+      customLocation
+    );
+    if (sessionDetails && !isSessionOwnedBy(sessionDetails, userId, userEmail)) {
+      return NextResponse.json(
+        { error: "Forbidden. You do not own this session." },
+        { status: 403 }
       );
-      if (
-        sessionDetails &&
-        sessionDetails.userId &&
-        sessionDetails.userId !== userId &&
-        sessionDetails.userId !== userEmail
-      ) {
-        return NextResponse.json(
-          { error: "Forbidden. You do not own this session." },
-          { status: 403 }
-        );
-      }
-    } catch {
-      // Allow new sessions or un-persisted session creation to proceed to streamQuery
     }
   }
 

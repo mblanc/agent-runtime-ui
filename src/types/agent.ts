@@ -479,7 +479,11 @@ export interface AgentStreamEvent {
 export interface AgentSession {
   id: string;
   name: string;
-  userId: string;
+  /**
+   * The owner, or null when the backend did not report one. Null must never be
+   * read as "owned by the caller" — see `isSessionOwnedBy`, which denies it.
+   */
+  userId: string | null;
   title: string;
   createTime: string;
   updateTime: string;

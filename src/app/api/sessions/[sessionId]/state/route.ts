@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { withAuthDynamic } from "@/lib/api-handler";
 import { AgentRuntimeClient } from "@/lib/agent-runtime-client";
+import { isSessionOwnedBy } from "@/lib/session-ownership";
 import type { SessionStateMap } from "@/types/agent";
 
 export const runtime = "nodejs";
@@ -41,11 +42,7 @@ export const GET = withAuthDynamic<SessionParams>(
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    if (
-      sessionDetails.userId &&
-      sessionDetails.userId !== userId &&
-      sessionDetails.userId !== userEmail
-    ) {
+    if (!isSessionOwnedBy(sessionDetails, userId, userEmail)) {
       return NextResponse.json(
         { error: "Forbidden. You do not own this session." },
         { status: 403 }
@@ -98,11 +95,7 @@ export const PATCH = withAuthDynamic<SessionParams>(
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    if (
-      sessionDetails.userId &&
-      sessionDetails.userId !== userId &&
-      sessionDetails.userId !== userEmail
-    ) {
+    if (!isSessionOwnedBy(sessionDetails, userId, userEmail)) {
       return NextResponse.json(
         { error: "Forbidden. You do not own this session." },
         { status: 403 }
