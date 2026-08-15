@@ -431,34 +431,49 @@ export function groupTurnSessionEvents(
 
         let matchedResultStr: string | undefined;
 
-        // 1. Check if the result is in the same event
-        const sameEventResIdx = results.findIndex(
-          (r, idx) => r.name === toolName && !usedResultKeys.has(`${i}-${idx}`)
-        );
-        if (sameEventResIdx !== -1) {
-          usedResultKeys.add(`${i}-${sameEventResIdx}`);
-          matchedResultStr = JSON.stringify(
-            results[sameEventResIdx].result || {},
-            null,
-            2
+        /**
+         * Pair on id when both sides carry one. Matching purely by name — "the
+         * next unused result with this tool's name" — attached results in
+         * arrival order rather than call order, so two parallel calls to the
+         * same tool exchanged results. The streaming path in chat-adapter.ts
+         * applies the same rule, so a conversation renders identically live and
+         * on reload; previously the two heuristics could disagree.
+         *
+         * The name fallback stays for payloads where ids are absent, which is
+         * why the id path is only taken when the result actually has one.
+         */
+        const matchAt = (
+          candidates: ReturnType<typeof getEventToolResults>,
+          eventIdx: number,
+          predicate: (r: (typeof candidates)[number]) => boolean
+        ): string | undefined => {
+          const idx = candidates.findIndex(
+            (r, k) => predicate(r) && !usedResultKeys.has(`${eventIdx}-${k}`)
           );
-        } else {
-          // 2. Look ahead in subsequent intermediate events
+          if (idx === -1) return undefined;
+          usedResultKeys.add(`${eventIdx}-${idx}`);
+          return JSON.stringify(candidates[idx].result || {}, null, 2);
+        };
+
+        const byId = (r: { id?: string }) => Boolean(call.id) && r.id === call.id;
+        const byName = (r: { name?: string; id?: string }) =>
+          r.name === toolName && !(call.id && r.id);
+
+        for (const predicate of [byId, byName]) {
+          if (predicate === byId && !call.id) continue;
+
+          matchedResultStr = matchAt(results, i, predicate);
+          if (matchedResultStr !== undefined) break;
+
           for (let j = i + 1; j < intermediateEvents.length; j++) {
-            const nextResults = getEventToolResults(intermediateEvents[j]);
-            const resIdx = nextResults.findIndex(
-              (r, idx) => r.name === toolName && !usedResultKeys.has(`${j}-${idx}`)
+            matchedResultStr = matchAt(
+              getEventToolResults(intermediateEvents[j]),
+              j,
+              predicate
             );
-            if (resIdx !== -1) {
-              usedResultKeys.add(`${j}-${resIdx}`);
-              matchedResultStr = JSON.stringify(
-                nextResults[resIdx].result || {},
-                null,
-                2
-              );
-              break;
-            }
+            if (matchedResultStr !== undefined) break;
           }
+          if (matchedResultStr !== undefined) break;
         }
 
         if (matchedResultStr !== undefined) {

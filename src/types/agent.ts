@@ -517,11 +517,16 @@ export interface AgentSessionEvent {
     name: string;
     result: Record<string, unknown>;
   }>;
+  // `id` mirrors the plural `tool_calls`/`tool_results` above. Omitting it here
+  // left the union returned by getEventToolCalls/getEventToolResults without an
+  // id, which is why replay could only pair calls to results by name.
   tool_call?: {
+    id?: string;
     name: string;
     args: Record<string, unknown>;
   };
   tool_result?: {
+    id?: string;
     name: string;
     result: Record<string, unknown>;
   };

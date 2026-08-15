@@ -153,6 +153,12 @@ export interface ToolCallYieldItem {
   toolName: string;
   args: Record<string, unknown>;
   result?: unknown;
+  /**
+   * True when the backend supplied the id, as opposed to one we synthesised.
+   * Name-based pairing is only permissible between id-less calls and results;
+   * a call with a real id must be paired on that id alone.
+   */
+  hasBackendId?: boolean;
   status?: {
     type: "running" | "complete" | "incomplete" | "requires-action";
     reason?: string;
@@ -1050,14 +1056,26 @@ export function createGeminiChatAdapter(
                     tc.requires_confirmation ||
                     toolName === "adk_request_confirmation";
 
+                  // Identity is the id when the backend supplies one. An id that
+                  // is present but unknown means a genuinely new call, so it must
+                  // NOT be folded into a same-named one in flight — that merged
+                  // two parallel calls to the same tool into a single entry and
+                  // destroyed one of them.
+                  //
+                  // The name-based merge survives only for id-less backends,
+                  // where a re-emitted call and a second parallel call are
+                  // indistinguishable and merging is the safer reading.
                   let existingCallId: string | undefined;
-                  if (tc.id && toolCallsMap.has(tc.id)) {
-                    existingCallId = tc.id;
+                  if (tc.id) {
+                    if (toolCallsMap.has(tc.id)) {
+                      existingCallId = tc.id;
+                    }
                   } else {
                     for (const [id, item] of toolCallsMap.entries()) {
                       if (
                         item.toolName === toolName &&
-                        item.status?.type !== "complete"
+                        item.status?.type !== "complete" &&
+                        !item.hasBackendId
                       ) {
                         existingCallId = id;
                         break;
@@ -1075,6 +1093,7 @@ export function createGeminiChatAdapter(
                     toolCallId,
                     toolName,
                     args: tc.args || {},
+                    hasBackendId: Boolean(tc.id),
                     status: {
                       type: isReqAction ? "requires-action" : "running",
                       ...(isReqAction ? { reason: "tool-calls" } : {}),
@@ -1112,20 +1131,38 @@ export function createGeminiChatAdapter(
                   const result = parsed.tool_result.result;
                   const resStr = JSON.stringify(result ?? {}, null, 2);
 
+                  // Pair on id whenever the result carries one. Falling back to
+                  // first-match-by-name for a result whose id is simply unknown
+                  // attached it to an unrelated invocation of the same tool.
                   let matched = false;
-                  if (parsed.tool_result.id && toolCallsMap.has(parsed.tool_result.id)) {
-                    const tc = toolCallsMap.get(parsed.tool_result.id)!;
-                    tc.result = result;
-                    tc.status = { type: "complete" };
-                    matched = true;
+                  if (parsed.tool_result.id) {
+                    const tc = toolCallsMap.get(parsed.tool_result.id);
+                    if (tc) {
+                      tc.result = result;
+                      tc.status = { type: "complete" };
+                      matched = true;
+                    }
                   } else {
+                    // Id-less result: pair by name, but only against calls that
+                    // are themselves id-less. A call with a real id can only be
+                    // resolved by that id.
                     for (const tc of toolCallsMap.values()) {
-                      if (tc.toolName === toolName && tc.status?.type !== "complete") {
+                      if (
+                        tc.toolName === toolName &&
+                        tc.status?.type !== "complete" &&
+                        !tc.hasBackendId
+                      ) {
                         tc.result = result;
                         tc.status = { type: "complete" };
                         matched = true;
                         break;
                       }
+                    }
+                    if (!matched) {
+                      console.warn(
+                        `[createGeminiChatAdapter] Unpaired id-less tool_result for "${toolName}" — ` +
+                          `no id-less call in flight to attach it to.`
+                      );
                     }
                   }
                   if (!matched) {
