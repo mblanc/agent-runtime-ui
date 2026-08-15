@@ -152,6 +152,49 @@ export class VertexAiMemoryService {
     return `${this.getMemoriesBaseUrl(customEngineId, customLocation)}/${encodeURIComponent(memoryId)}`;
   }
 
+  /**
+   * Fetches a single memory record, or null if it does not exist.
+   * Returns the raw payload: the ownership check below must read `scope.user_id`
+   * directly, because `normalizeMemoryRecord` substitutes the caller's own id
+   * when the record carries no scope, which would make the check pass always.
+   */
+  async getRawMemory(
+    memoryId: string,
+    agentId?: string,
+    location?: string
+  ): Promise<Record<string, unknown> | null> {
+    const endpoint = this.getMemoryEndpoint(memoryId, agentId, location);
+    const response = await this.context.fetchWithAuth(endpoint, { method: "GET" });
+
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Failed to read memory (${response.status}): ${errText}`);
+    }
+    return (await response.json()) as Record<string, unknown>;
+  }
+
+  /**
+   * Throws unless the record belongs to `userId`. Fails closed: a memory whose
+   * owner cannot be determined is treated as somebody else's.
+   */
+  private assertOwnedBy(raw: Record<string, unknown>, userId: string): void {
+    const scope = (raw.scope && typeof raw.scope === "object" ? raw.scope : {}) as Record<
+      string,
+      unknown
+    >;
+    const owner =
+      (scope.user_id as string) ||
+      (scope.userId as string) ||
+      (raw.userId as string) ||
+      (raw.user_id as string) ||
+      null;
+
+    if (owner !== userId) {
+      throw new Error("Unauthorized: memory belongs to another user");
+    }
+  }
+
   async listMemories(
     userId: string,
     topic?: string,
@@ -274,6 +317,12 @@ export class VertexAiMemoryService {
     location?: string
   ): Promise<AgentMemory> {
     try {
+      const existing = await this.getRawMemory(memoryId, agentId, location);
+      if (!existing) {
+        throw new Error(`Memory not found: ${memoryId}`);
+      }
+      this.assertOwnedBy(existing, userId);
+
       const endpointUrl = new URL(this.getMemoryEndpoint(memoryId, agentId, location));
       const topicsPayload = buildVertexTopicsPayload(topic);
       endpointUrl.searchParams.set("updateMask", topicsPayload ? "fact,topics" : "fact");
@@ -300,12 +349,18 @@ export class VertexAiMemoryService {
   }
 
   async deleteMemory(
-    _userId: string,
+    userId: string,
     memoryId: string,
     agentId?: string,
     location?: string
   ): Promise<void> {
     try {
+      // A memory that is already gone stays a success, as it was before the
+      // ownership check existed: deletion is idempotent.
+      const existing = await this.getRawMemory(memoryId, agentId, location);
+      if (!existing) return;
+      this.assertOwnedBy(existing, userId);
+
       const endpoint = this.getMemoryEndpoint(memoryId, agentId, location);
       const response = await this.context.fetchWithAuth(endpoint, {
         method: "DELETE",
