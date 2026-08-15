@@ -94,7 +94,8 @@ export interface IAgentRuntimeProvider {
   ): Promise<MemoryRetrievalItem[]>;
   streamQuery(
     request: ChatRequestBody,
-    userId: string
+    userId: string,
+    signal?: AbortSignal
   ): AsyncGenerator<AgentStreamEvent, void, unknown>;
 }
 

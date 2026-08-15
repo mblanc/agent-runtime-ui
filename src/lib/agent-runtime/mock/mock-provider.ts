@@ -26,6 +26,29 @@ import {
   isLocalSessionId,
 } from "../event-normalizer";
 
+/**
+ * Abort-aware sleep used between mock stream events. A plain setTimeout would
+ * make the mock ignore cancellation entirely, so a disconnected client would
+ * still see the whole canned generation play out — which would hide exactly the
+ * behaviour the real provider is meant to have.
+ */
+function mockDelay(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) {
+    return Promise.reject(new DOMException("Aborted", "AbortError"));
+  }
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
   private reasoningEngineId: string;
   private location: string;
@@ -462,7 +485,8 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
 
   async *streamQuery(
     body: ChatRequestBody,
-    _userId: string
+    _userId: string,
+    signal?: AbortSignal
   ): AsyncGenerator<AgentStreamEvent, void, unknown> {
     const lastUserMsg = [...body.messages].reverse().find((m) => m.role === "user");
     const lastPrompt = lastUserMsg?.content || "Hello";
@@ -481,7 +505,7 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
         event_type: "thought",
         thought: `Received human authorization decision: ${isConfirmed ? "APPROVED" : "DECLINED"}. Resuming workflow execution...`,
       };
-      await new Promise((r) => setTimeout(r, 80));
+      await mockDelay(80, signal);
 
       yield {
         event_type: "tool_result",
@@ -490,7 +514,7 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
           result: fnResp?.response || { confirmed: isConfirmed },
         },
       };
-      await new Promise((r) => setTimeout(r, 80));
+      await mockDelay(80, signal);
 
       const resolutionText = isConfirmed
         ? "Human authorization received: **Approved**. The requested operation was completed successfully on Google Cloud Agent Runtime."
@@ -502,7 +526,7 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
           event_type: "content",
           content: chunk + " ",
         };
-        await new Promise((r) => setTimeout(r, 15));
+        await mockDelay(15, signal);
       }
 
       yield { event_type: "done" };
@@ -523,7 +547,7 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
         event_type: "thought",
         thought: `Analyzing action "${lastPrompt}" requiring human authorization...`,
       };
-      await new Promise((r) => setTimeout(r, 80));
+      await mockDelay(80, signal);
 
       yield {
         event_type: "tool_call",
@@ -570,7 +594,7 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
         thought: `Retrieved ${retrievedMemories.length} relevant long-term memories from Memory Bank to personalize response.`,
         retrieved_memories: retrievedMemories,
       };
-      await new Promise((r) => setTimeout(r, 40));
+      await mockDelay(40, signal);
     }
 
     // 5. Google Search & Enterprise RAG Grounding: Simulate for search/specs/docs queries
@@ -658,7 +682,7 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
         grounding_metadata: simulatedGroundingMetadata,
         groundingMetadata: simulatedGroundingMetadata,
       };
-      await new Promise((r) => setTimeout(r, 60));
+      await mockDelay(60, signal);
     }
 
     yield {
@@ -667,7 +691,7 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
         ? `Inspecting uploaded multimodal GCS attachments (${fileUris}). Parsing document layout and extracting metadata...`
         : `Decomposing query "${lastPrompt}" and determining agent workflow steps...`,
     };
-    await new Promise((r) => setTimeout(r, 80));
+    await mockDelay(80, signal);
 
     // Simulated subagent trace for Architecture Advisor
     if (this.reasoningEngineId === "mock-arch-advisor" || !this.reasoningEngineId) {
@@ -679,7 +703,7 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
           input: { query: lastPrompt },
         },
       };
-      await new Promise((r) => setTimeout(r, 60));
+      await mockDelay(60, signal);
 
       yield {
         event_type: "agent_response",
@@ -690,7 +714,7 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
             "Verified against Google Cloud Architecture Framework. Security, reliability, and cost-efficiency dimensions evaluated.",
         },
       };
-      await new Promise((r) => setTimeout(r, 60));
+      await mockDelay(60, signal);
     }
 
     // Streaming content chunks
@@ -801,7 +825,7 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
             }
           : {}),
       };
-      await new Promise((r) => setTimeout(r, 15));
+      await mockDelay(15, signal);
     }
 
     // Persist to in-memory mock history if sessionId provided

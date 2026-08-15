@@ -257,8 +257,9 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
 
   async *streamQuery(
     body: ChatRequestBody,
-    userId: string
+    userId: string,
+    signal?: AbortSignal
   ): AsyncGenerator<AgentStreamEvent, void, unknown> {
-    yield* this.streaming.streamQuery(body, userId);
+    yield* this.streaming.streamQuery(body, userId, signal);
   }
 }

@@ -49,6 +49,11 @@ export const POST = withAuth(async (req, { userId, userEmail }) => {
   let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   let isCancelled = false;
 
+  // Aborting this is what actually stops the upstream Vertex stream. Setting
+  // `isCancelled` alone only ends our read loop: the generation kept running to
+  // completion, billed, holding a Cloud Run request slot until it finished.
+  const upstream = new AbortController();
+
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
@@ -69,7 +74,11 @@ export const POST = withAuth(async (req, { userId, userEmail }) => {
       }, 15000);
 
       try {
-        for await (const event of agentClient.streamQuery(body, userId)) {
+        for await (const event of agentClient.streamQuery(
+          body,
+          userId,
+          upstream.signal
+        )) {
           if (isCancelled) break;
           console.log("[/api/chat] Yielding event:", event.event_type);
           const chunk = `data: ${JSON.stringify(event)}\n\n`;
@@ -104,6 +113,7 @@ export const POST = withAuth(async (req, { userId, userEmail }) => {
     cancel(reason) {
       console.log("[/api/chat] Client cancelled stream:", reason);
       isCancelled = true;
+      upstream.abort();
       if (heartbeatInterval) clearInterval(heartbeatInterval);
     },
   });

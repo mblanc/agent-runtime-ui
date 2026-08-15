@@ -128,7 +128,8 @@ export class VertexAiStreamingService {
 
   async *streamQuery(
     body: ChatRequestBody,
-    userId: string
+    userId: string,
+    signal?: AbortSignal
   ): AsyncGenerator<AgentStreamEvent, void, unknown> {
     try {
       const endpoint = `https://${this.context.location}-aiplatform.googleapis.com/v1/${this.context.getNormalizedEngineResource()}:streamQuery`;
@@ -139,13 +140,20 @@ export class VertexAiStreamingService {
 
       const inputPayload = buildStreamQueryInput(body, userId, cleanSessionId);
 
-      const response = await this.context.fetchWithAuth(endpoint, {
-        method: "POST",
-        body: JSON.stringify({
-          class_method: "async_stream_query",
-          input: inputPayload,
-        }),
-      });
+      const response = await this.context.fetchWithAuth(
+        endpoint,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            class_method: "async_stream_query",
+            input: inputPayload,
+          }),
+          signal,
+        },
+        // No default timeout: a generation is long by design and is bounded by
+        // `signal`, which the route aborts when the client disconnects.
+        { streaming: true }
+      );
 
       if (!response.ok) {
         const streamErrText = await response.text().catch(() => "");
@@ -153,13 +161,20 @@ export class VertexAiStreamingService {
           `[VertexAiStreamingService] :streamQuery returned ${response.status} (${response.statusText}): ${streamErrText}. Falling back to :query.`
         );
         const queryEndpoint = `https://${this.context.location}-aiplatform.googleapis.com/v1/${this.context.getNormalizedEngineResource()}:query`;
-        const queryResponse = await this.context.fetchWithAuth(queryEndpoint, {
-          method: "POST",
-          body: JSON.stringify({
-            class_method: "query",
-            input: inputPayload,
-          }),
-        });
+        const queryResponse = await this.context.fetchWithAuth(
+          queryEndpoint,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              class_method: "query",
+              input: inputPayload,
+            }),
+            signal,
+          },
+          // The :query fallback also produces a whole generation, so it is
+          // bounded by the client signal rather than the default timeout.
+          { streaming: true }
+        );
 
         if (queryResponse.ok) {
           const result = await queryResponse.json();

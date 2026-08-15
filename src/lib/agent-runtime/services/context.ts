@@ -23,6 +23,29 @@ const ENGINE_RE =
 
 const ALLOWED_HOST_SUFFIX = ".googleapis.com";
 
+/**
+ * Upper bound on any non-streaming upstream call. Without it a hung Vertex
+ * request has no ceiling at all and holds a Cloud Run request slot until the
+ * platform kills it.
+ */
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * `AbortSignal.any` composes the caller's signal with our timeout so either can
+ * abort the request. It is available on Node 20+; fall back to whichever signal
+ * exists on older runtimes rather than dropping the caller's.
+ */
+function composeSignals(
+  caller: AbortSignal | null | undefined,
+  timeout: AbortSignal
+): AbortSignal {
+  if (!caller) return timeout;
+  if (typeof AbortSignal.any === "function") {
+    return AbortSignal.any([caller, timeout]);
+  }
+  return caller;
+}
+
 export class InvalidRoutingParameterError extends Error {
   constructor(message: string) {
     super(message);
@@ -95,7 +118,21 @@ export class VertexAiContext {
     return tokenResponse.token;
   }
 
-  async fetchWithAuth(url: string, init?: RequestInit): Promise<Response> {
+  /**
+   * @param init  Standard fetch init. An explicit `signal` is respected and
+   *              composed with the default timeout.
+   * @param opts.streaming
+   *   Opt out of the default request timeout. Streaming responses are long by
+   *   design, and `AbortSignal.timeout` covers the whole exchange including
+   *   body consumption, so applying it to `:streamQuery` would truncate a
+   *   legitimately long generation mid-answer. Streaming calls are bounded by
+   *   the caller's signal (client disconnect) instead.
+   */
+  async fetchWithAuth(
+    url: string,
+    init?: RequestInit,
+    opts?: { streaming?: boolean }
+  ): Promise<Response> {
     // Defence in depth: never attach the access token to a host we don't own,
     // regardless of how the caller built the URL.
     let host: string;
@@ -109,8 +146,13 @@ export class VertexAiContext {
     }
 
     const token = await this.getAccessToken();
+    const signal = opts?.streaming
+      ? init?.signal
+      : composeSignals(init?.signal, AbortSignal.timeout(DEFAULT_REQUEST_TIMEOUT_MS));
+
     return fetch(url, {
       ...init,
+      ...(signal ? { signal } : {}),
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",

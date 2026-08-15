@@ -283,8 +283,9 @@ export class AgentRuntimeClient {
 
   async *streamQuery(
     body: ChatRequestBody,
-    userId: string
+    userId: string,
+    signal?: AbortSignal
   ): AsyncGenerator<AgentStreamEvent, void, unknown> {
-    yield* this.provider.streamQuery(body, userId);
+    yield* this.provider.streamQuery(body, userId, signal);
   }
 }
