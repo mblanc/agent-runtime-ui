@@ -348,16 +348,27 @@ export class VertexAiSessionService {
     if (isLocalSessionId(sessionId)) return state;
 
     try {
-      let finalState = state;
       if (mode === "merge") {
-        const currentState = await this.getSessionState(
-          sessionId,
-          customEngineId,
-          customLocation
-        );
-        finalState = { ...currentState, ...state };
+        // Send only the changed keys and let the server apply them. The previous
+        // implementation read the whole state, merged locally and PATCHed the
+        // result back, which is a read-modify-write with no concurrency control:
+        // the Session resource has no etag (unlike Artifact in the same API), so
+        // two writers interleaving silently discarded the earlier write — and
+        // because updateMask=sessionState replaces the whole map, what was lost
+        // was the entire state object, not just the contested key.
+        //
+        // appendEvent is the documented mechanism for this. It applies the delta
+        // server-side and serialises concurrent updates to the same session.
+        await this.appendStateDelta(sessionId, state, customEngineId, customLocation);
+
+        // Read back so callers get the authoritative merged state rather than an
+        // optimistic guess. This is a read-after-write, not a read-modify-write,
+        // so a concurrent update cannot be lost by it.
+        return await this.getSessionState(sessionId, customEngineId, customLocation);
       }
 
+      // "replace" is last-writer-wins by definition, so a whole-map PATCH is the
+      // correct expression of it and there is nothing to lose.
       const endpoint = `${await this.getSessionEndpoint(
         sessionId,
         undefined,
@@ -368,8 +379,8 @@ export class VertexAiSessionService {
       const response = await this.context.fetchWithAuth(endpoint, {
         method: "PATCH",
         body: JSON.stringify({
-          sessionState: finalState,
-          state: finalState,
+          sessionState: state,
+          state,
         }),
       });
 
@@ -380,10 +391,49 @@ export class VertexAiSessionService {
         );
       }
 
-      return finalState;
+      return state;
     } catch (err: unknown) {
       console.error("Error updating session state on Agent Runtime:", err);
       throw err;
+    }
+  }
+
+  /**
+   * Appends a state-only event so the server applies `delta` to sessionState.
+   *
+   * Body is a SessionEvent: author, invocationId and timestamp are all required
+   * by the API even for an event that carries no content.
+   */
+  private async appendStateDelta(
+    sessionId: string,
+    delta: SessionStateMap,
+    customEngineId?: string,
+    customLocation?: string
+  ): Promise<void> {
+    const base = await this.getSessionEndpoint(
+      sessionId,
+      undefined,
+      customEngineId,
+      customLocation
+    );
+
+    const response = await this.context.fetchWithAuth(`${base}:appendEvent`, {
+      method: "POST",
+      body: JSON.stringify({
+        author: "user",
+        invocationId: `state-update-${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2, 8)}`,
+        timestamp: new Date().toISOString(),
+        actions: { stateDelta: delta },
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(
+        `Failed to append session state delta (${response.status}): ${errText}`
+      );
     }
   }
 
