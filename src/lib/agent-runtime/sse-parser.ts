@@ -3,6 +3,7 @@ import {
   AgentNodeInfo,
   AgentStreamEvent,
   AgentUsageMetadata,
+  GroundingMetadata,
 } from "@/types/agent";
 import {
   extractSubagentName,
@@ -12,7 +13,18 @@ import {
 } from "./event-normalizer";
 import { extractGroundingMetadata } from "@/lib/grounding/citation-parser";
 
-function extractEventId(parsed: Record<string, unknown>): string | undefined {
+/**
+ * An event exactly as it arrived from Vertex AI: any spelling, any nesting.
+ *
+ * The distinction from `AgentStreamEvent` is the point of this module. This is
+ * what the extractors below consume — untyped by necessity, because the same
+ * field arrives as `invocation_id`, `invocationId`, `config.invocation_id` or
+ * `raw_event.invocationId` depending on endpoint and API version.
+ * `AgentStreamEvent` is what they produce, and it has exactly one spelling.
+ */
+type RawUpstreamEvent = Record<string, unknown>;
+
+function extractEventId(parsed: RawUpstreamEvent): string | undefined {
   return (
     (typeof parsed.id === "string" ? parsed.id : undefined) ||
     (typeof parsed.event_id === "string" ? parsed.event_id : undefined) ||
@@ -23,7 +35,7 @@ function extractEventId(parsed: Record<string, unknown>): string | undefined {
   );
 }
 
-function extractInvocationId(parsed: Record<string, unknown>): string | undefined {
+function extractInvocationId(parsed: RawUpstreamEvent): string | undefined {
   const config = parsed.config as Record<string, unknown> | undefined;
   const rawEvent = (parsed.raw_event || parsed.rawEvent) as
     Record<string, unknown> | undefined;
@@ -47,7 +59,7 @@ function extractInvocationId(parsed: Record<string, unknown>): string | undefine
   );
 }
 
-function extractModelVersion(parsed: Record<string, unknown>): string | undefined {
+function extractModelVersion(parsed: RawUpstreamEvent): string | undefined {
   const config = parsed.config as Record<string, unknown> | undefined;
   const rawEvent = (parsed.raw_event || parsed.rawEvent) as
     Record<string, unknown> | undefined;
@@ -72,9 +84,7 @@ function extractModelVersion(parsed: Record<string, unknown>): string | undefine
   );
 }
 
-export function extractUsageMetadata(
-  parsed: Record<string, unknown>
-): AgentUsageMetadata | undefined {
+function extractUsageMetadata(parsed: RawUpstreamEvent): AgentUsageMetadata | undefined {
   const config = parsed.config as Record<string, unknown> | undefined;
   const rawEvent = (parsed.raw_event || parsed.rawEvent) as
     Record<string, unknown> | undefined;
@@ -211,7 +221,7 @@ export function extractUsageMetadata(
   };
 }
 
-function extractAvgLogprobs(parsed: Record<string, unknown>): number | undefined {
+function extractAvgLogprobs(parsed: RawUpstreamEvent): number | undefined {
   const config = parsed.config as Record<string, unknown> | undefined;
   const rawEvent = (parsed.raw_event || parsed.rawEvent) as
     Record<string, unknown> | undefined;
@@ -225,7 +235,7 @@ function extractAvgLogprobs(parsed: Record<string, unknown>): number | undefined
   return undefined;
 }
 
-function extractNodeInfo(parsed: Record<string, unknown>): AgentNodeInfo | undefined {
+function extractNodeInfo(parsed: RawUpstreamEvent): AgentNodeInfo | undefined {
   const config = parsed.config as Record<string, unknown> | undefined;
   const rawEvent = (parsed.raw_event || parsed.rawEvent) as
     Record<string, unknown> | undefined;
@@ -241,7 +251,7 @@ function extractNodeInfo(parsed: Record<string, unknown>): AgentNodeInfo | undef
 }
 
 function extractNodePath(
-  parsed: Record<string, unknown>,
+  parsed: RawUpstreamEvent,
   nodeInfo?: AgentNodeInfo
 ): string | undefined {
   if (nodeInfo && typeof nodeInfo.path === "string" && nodeInfo.path) {
@@ -265,8 +275,8 @@ function extractNodePath(
 }
 
 function extractThoughtSignature(
-  parsed: Record<string, unknown>,
-  part?: Record<string, unknown>
+  parsed: RawUpstreamEvent,
+  part?: RawUpstreamEvent
 ): string | undefined {
   if (part) {
     if (typeof part.thought_signature === "string" && part.thought_signature) {
@@ -302,18 +312,32 @@ function extractThoughtSignature(
   );
 }
 
-function extractActions(parsed: Record<string, unknown>): AgentActionsDelta | undefined {
+function extractActions(parsed: RawUpstreamEvent): AgentActionsDelta | undefined {
   const config = parsed.config as Record<string, unknown> | undefined;
   const rawEvent = (parsed.raw_event || parsed.rawEvent) as
     Record<string, unknown> | undefined;
 
-  const raw = (parsed.actions || config?.actions || rawEvent?.actions) as
-    AgentActionsDelta | undefined;
+  const raw = (parsed.actions ||
+    parsed.actions_delta ||
+    parsed.actionsDelta ||
+    config?.actions ||
+    rawEvent?.actions) as AgentActionsDelta | undefined;
 
-  return raw && typeof raw === "object" ? raw : undefined;
+  if (raw && typeof raw === "object") return raw;
+
+  // A bare state delta at the root, which the `:query` fallback returns and
+  // which some ADK versions emit on the stream. It used to be wrapped into an
+  // actions object independently by the chat adapter and by the streaming
+  // service; the wrapping belongs with the rest of the spelling knowledge.
+  const stateDelta = (parsed.state_delta || parsed.stateDelta) as
+    AgentActionsDelta["state_delta"] | undefined;
+
+  return stateDelta && typeof stateDelta === "object"
+    ? { state_delta: stateDelta }
+    : undefined;
 }
 
-function extractFinishReason(parsed: Record<string, unknown>): string | undefined {
+function extractFinishReason(parsed: RawUpstreamEvent): string | undefined {
   const config = parsed.config as Record<string, unknown> | undefined;
   const rawEvent = (parsed.raw_event || parsed.rawEvent) as
     Record<string, unknown> | undefined;
@@ -337,7 +361,7 @@ function extractFinishReason(parsed: Record<string, unknown>): string | undefine
   );
 }
 
-function extractTimestamp(parsed: Record<string, unknown>): number | string | undefined {
+function extractTimestamp(parsed: RawUpstreamEvent): number | string | undefined {
   const config = parsed.config as Record<string, unknown> | undefined;
   const rawEvent = (parsed.raw_event || parsed.rawEvent) as
     Record<string, unknown> | undefined;
@@ -356,8 +380,8 @@ function extractTimestamp(parsed: Record<string, unknown>): number | string | un
 }
 
 function extractPartial(
-  parsed: Record<string, unknown>,
-  part?: Record<string, unknown>
+  parsed: RawUpstreamEvent,
+  part?: RawUpstreamEvent
 ): boolean | undefined {
   if (part && typeof part.partial === "boolean") {
     return part.partial;
@@ -377,7 +401,7 @@ function extractPartial(
   return undefined;
 }
 
-function extractTurnComplete(parsed: Record<string, unknown>): boolean | undefined {
+function extractTurnComplete(parsed: RawUpstreamEvent): boolean | undefined {
   if (typeof parsed.turn_complete === "boolean") return parsed.turn_complete;
   if (typeof parsed.turnComplete === "boolean") return parsed.turnComplete;
   const config = parsed.config as Record<string, unknown> | undefined;
@@ -392,7 +416,7 @@ function extractTurnComplete(parsed: Record<string, unknown>): boolean | undefin
   return undefined;
 }
 
-function extractInterrupted(parsed: Record<string, unknown>): boolean | undefined {
+function extractInterrupted(parsed: RawUpstreamEvent): boolean | undefined {
   if (typeof parsed.interrupted === "boolean") return parsed.interrupted;
   const config = parsed.config as Record<string, unknown> | undefined;
   if (config && typeof config.interrupted === "boolean") return config.interrupted;
@@ -400,6 +424,101 @@ function extractInterrupted(parsed: Record<string, unknown>): boolean | undefine
     Record<string, unknown> | undefined;
   if (rawEvent && typeof rawEvent.interrupted === "boolean") return rawEvent.interrupted;
   return undefined;
+}
+
+/**
+ * Every metadata field an upstream event can carry, in the one spelling that
+ * exists downstream. A subset of `AgentStreamEvent`, deliberately: this is
+ * what gets attached to whichever payload event the raw chunk produces.
+ */
+export interface NormalizedEventMetadata {
+  eventId?: string;
+  invocationId?: string;
+  modelVersion?: string;
+  usageMetadata?: AgentUsageMetadata;
+  avgLogprobs?: number;
+  nodeInfo?: AgentNodeInfo;
+  nodePath?: string;
+  thoughtSignature?: string;
+  actions?: AgentActionsDelta;
+  finishReason?: string;
+  timestamp?: number | string;
+  partial?: boolean;
+  turnComplete?: boolean;
+  interrupted?: boolean;
+  groundingMetadata?: GroundingMetadata;
+}
+
+/**
+ * The single normalisation boundary: raw Vertex spellings in, one spelling out.
+ *
+ * Every producer of `AgentStreamEvent` goes through this — `parseSseStream`
+ * below for `:streamQuery`, and `services/streaming-service.ts` for the
+ * `:query` fallback, which used to re-derive `modelVersion`, `invocationId`,
+ * `usageMetadata`, `actions` and `state_delta` from its own response shape. A
+ * field taught to the extractors above is now understood on both paths at once,
+ * which is what stops the two from drifting.
+ *
+ * Keys whose value is undefined are omitted, so the result can be spread onto
+ * an event without introducing explicitly-undefined properties (they would
+ * survive `JSON.stringify` as absent, but would defeat `??` chains and show up
+ * in `toEqual` assertions).
+ */
+export function normalizeEventMetadata(
+  parsed: RawUpstreamEvent
+): NormalizedEventMetadata {
+  const nodeInfo = extractNodeInfo(parsed);
+  const eventId = extractEventId(parsed);
+  const invocationId = extractInvocationId(parsed);
+  const modelVersion = extractModelVersion(parsed);
+  const usageMetadata = extractUsageMetadata(parsed);
+  const avgLogprobs = extractAvgLogprobs(parsed);
+  const nodePath = extractNodePath(parsed, nodeInfo);
+  const thoughtSignature = extractThoughtSignature(parsed);
+  const actions = extractActions(parsed);
+  const finishReason = extractFinishReason(parsed);
+  const timestamp = extractTimestamp(parsed);
+  const partial = extractPartial(parsed);
+  const turnComplete = extractTurnComplete(parsed);
+  const interrupted = extractInterrupted(parsed);
+  const groundingMetadata = extractGroundingMetadata(parsed);
+
+  return {
+    ...(eventId ? { eventId } : {}),
+    ...(invocationId ? { invocationId } : {}),
+    ...(modelVersion ? { modelVersion } : {}),
+    ...(usageMetadata ? { usageMetadata } : {}),
+    ...(avgLogprobs !== undefined ? { avgLogprobs } : {}),
+    ...(nodeInfo ? { nodeInfo } : {}),
+    ...(nodePath ? { nodePath } : {}),
+    ...(thoughtSignature ? { thoughtSignature } : {}),
+    ...(actions ? { actions } : {}),
+    ...(finishReason ? { finishReason } : {}),
+    ...(timestamp !== undefined ? { timestamp } : {}),
+    ...(typeof partial === "boolean" ? { partial } : {}),
+    ...(typeof turnComplete === "boolean" ? { turnComplete } : {}),
+    ...(typeof interrupted === "boolean" ? { interrupted } : {}),
+    ...(groundingMetadata ? { groundingMetadata } : {}),
+  };
+}
+
+/**
+ * Field-wise first-wins merge, for a response that scatters its metadata over
+ * several sibling objects — the `:query` fallback returns some of it at the
+ * root, some under `output`, some under `response`.
+ */
+export function mergeEventMetadata(
+  ...sources: NormalizedEventMetadata[]
+): NormalizedEventMetadata {
+  const merged: Record<string, unknown> = {};
+  for (const source of sources) {
+    for (const [key, value] of Object.entries(source)) {
+      if (value !== undefined && merged[key] === undefined) {
+        merged[key] = value;
+      }
+    }
+  }
+  return merged as NormalizedEventMetadata;
 }
 
 function parseToolCall(fnCall: Record<string, unknown>) {
@@ -483,63 +602,30 @@ export async function* parseSseStream(
 
     try {
       const parsed = JSON.parse(dataStr);
-      const eventId = extractEventId(parsed);
-      const invocationId = extractInvocationId(parsed);
-      const modelVersion = extractModelVersion(parsed);
-      const usageMetadata = extractUsageMetadata(parsed);
-      const avgLogprobs = extractAvgLogprobs(parsed);
-      const nodeInfo = extractNodeInfo(parsed);
-      const nodePath = extractNodePath(parsed, nodeInfo);
-      const actions = extractActions(parsed);
-      const finishReason = extractFinishReason(parsed);
-      const timestamp = extractTimestamp(parsed);
-      const rootThoughtSig = extractThoughtSignature(parsed);
-      const rootPartial = extractPartial(parsed);
-      const turnComplete = extractTurnComplete(parsed);
-      const interrupted = extractInterrupted(parsed);
-      const groundingMetadata = extractGroundingMetadata(parsed);
+      const meta = normalizeEventMetadata(parsed);
+      const groundingMetadata = meta.groundingMetadata;
+      const turnComplete = meta.turnComplete;
 
       const withEventMeta = (
         evt: AgentStreamEvent,
         partPartial?: boolean,
         partThoughtSig?: string
       ): AgentStreamEvent => {
+        // Part-level values win over the chunk-level ones in `meta`: a single
+        // chunk carries several parts, and `partial` and the thought signature
+        // are properties of the part, not of the chunk.
         const resolvedPartial =
-          typeof partPartial === "boolean" ? partPartial : rootPartial;
-        const metaToAttach =
-          evt.groundingMetadata || evt.grounding_metadata || groundingMetadata;
+          typeof partPartial === "boolean" ? partPartial : meta.partial;
+        const groundingToAttach = evt.groundingMetadata || groundingMetadata;
         const sigToAttach =
-          partThoughtSig ||
-          evt.thoughtSignature ||
-          evt.thought_signature ||
-          rootThoughtSig;
+          partThoughtSig || evt.thoughtSignature || meta.thoughtSignature;
 
         return {
           ...evt,
-          ...(eventId ? { eventId } : {}),
-          ...(invocationId ? { invocationId, invocation_id: invocationId } : {}),
-          ...(modelVersion ? { modelVersion, model_version: modelVersion } : {}),
-          ...(usageMetadata ? { usageMetadata, usage_metadata: usageMetadata } : {}),
-          ...(avgLogprobs !== undefined
-            ? { avgLogprobs, avg_logprobs: avgLogprobs }
-            : {}),
-          ...(nodeInfo ? { nodeInfo, node_info: nodeInfo } : {}),
-          ...(nodePath ? { nodePath, node_path: nodePath } : {}),
-          ...(sigToAttach
-            ? { thoughtSignature: sigToAttach, thought_signature: sigToAttach }
-            : {}),
-          ...(actions ? { actions } : {}),
-          ...(finishReason ? { finishReason, finish_reason: finishReason } : {}),
-          ...(timestamp !== undefined ? { timestamp } : {}),
+          ...meta,
           ...(typeof resolvedPartial === "boolean" ? { partial: resolvedPartial } : {}),
-          ...(typeof turnComplete === "boolean" ? { turn_complete: turnComplete } : {}),
-          ...(typeof interrupted === "boolean" ? { interrupted } : {}),
-          ...(metaToAttach
-            ? {
-                groundingMetadata: metaToAttach,
-                grounding_metadata: metaToAttach,
-              }
-            : {}),
+          ...(sigToAttach ? { thoughtSignature: sigToAttach } : {}),
+          ...(groundingToAttach ? { groundingMetadata: groundingToAttach } : {}),
         };
       };
 
@@ -721,7 +807,6 @@ export async function* parseSseStream(
           event_type: "thought",
           thought: "Grounding metadata updated.",
           groundingMetadata,
-          grounding_metadata: groundingMetadata,
         });
       } else if (turnComplete) {
         yield withEventMeta({

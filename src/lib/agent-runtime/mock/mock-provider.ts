@@ -679,7 +679,6 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
       yield {
         event_type: "thought",
         thought: `Grounding response with Google Search ("${lastPrompt}") and Enterprise RAG Vector Search (corpus: enterprise-kb-us). Found 3 authoritative sources.`,
-        grounding_metadata: simulatedGroundingMetadata,
         groundingMetadata: simulatedGroundingMetadata,
       };
       await mockDelay(60, signal);
@@ -805,22 +804,21 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
       yield {
         event_type: "content",
         content: chunk + " ",
-        invocation_id: invocationId,
+        // The mock never goes through `parseSseStream`, so it is on its honour
+        // to emit what the parser would: normalised camelCase, and an `eventId`
+        // that falls back to the invocation id exactly as `extractEventId`
+        // does — that id is what the feedback control submits against.
+        eventId: invocationId,
         invocationId,
-        model_version: modelVersion,
         modelVersion,
-        node_info: nodeInfo,
+        nodeInfo,
         nodePath: "root_agent@1",
         ...(isLast
           ? {
-              usage_metadata: usageMetadata,
               usageMetadata,
-              avg_logprobs: avgLogprobs,
               avgLogprobs,
-              thought_signature: thoughtSignature,
               thoughtSignature,
               actions: actionsPayload,
-              finish_reason: "STOP",
               finishReason: "STOP",
             }
           : {}),
@@ -887,13 +885,10 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
 
     yield {
       event_type: "done",
-      invocation_id: invocationId,
+      eventId: invocationId,
       invocationId,
-      model_version: modelVersion,
       modelVersion,
-      usage_metadata: usageMetadata,
       usageMetadata,
-      avg_logprobs: avgLogprobs,
       avgLogprobs,
     };
   }

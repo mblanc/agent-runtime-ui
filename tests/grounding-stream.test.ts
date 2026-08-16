@@ -34,11 +34,13 @@ describe("End-to-End Grounding Stream & Adapter Integration", () => {
       events.push(evt);
     }
 
-    const groundingEvt = events.find((e) => e.grounding_metadata || e.groundingMetadata);
+    // One spelling: a provider yields normalised events, so a `groundingEvt`
+    // found only under the snake_case key would be a provider that skipped
+    // normalisation, not an event to accept.
+    const groundingEvt = events.find((e) => e.groundingMetadata);
     expect(groundingEvt).toBeDefined();
 
-    const meta = (groundingEvt?.grounding_metadata ||
-      groundingEvt?.groundingMetadata) as GroundingMetadata;
+    const meta = groundingEvt?.groundingMetadata as GroundingMetadata;
     expect(meta.groundingChunks).toHaveLength(3);
     expect(meta.groundingChunks?.[0].web?.domain).toBe("cloud.google.com");
     expect(meta.groundingChunks?.[2].retrievedContext?.ragCorpusId).toBe(

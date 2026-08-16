@@ -1,4 +1,4 @@
-import { AgentActionsDelta, AgentStreamEvent, ChatRequestBody } from "@/types/agent";
+import { AgentStreamEvent, ChatRequestBody } from "@/types/agent";
 import { log } from "@/lib/logger";
 import { VertexAiContext } from "./context";
 import {
@@ -6,8 +6,11 @@ import {
   extractTextFromQueryOutput,
   isLocalSessionId,
 } from "../event-normalizer";
-import { extractUsageMetadata, parseSseStream } from "../sse-parser";
-import { extractGroundingMetadata } from "@/lib/grounding/citation-parser";
+import {
+  mergeEventMetadata,
+  normalizeEventMetadata,
+  parseSseStream,
+} from "../sse-parser";
 
 export function buildStreamQueryInput(
   body: ChatRequestBody,
@@ -200,54 +203,46 @@ export class VertexAiStreamingService {
             rawObj.response && typeof rawObj.response === "object" ? rawObj.response : {}
           ) as Record<string, unknown>;
 
-          const usageMeta =
-            extractUsageMetadata(rawObj) ||
-            extractUsageMetadata(outputObj) ||
-            extractUsageMetadata(respObj);
+          // The same normalisation the streaming path gets, over the three
+          // places this response scatters metadata across. This block used to
+          // re-derive model version, invocation id, usage, actions and a bare
+          // `state_delta` from raw spellings itself — a third copy of knowledge
+          // that already existed in the SSE parser, and one that silently
+          // lacked whatever the parser had learned since.
+          const meta = mergeEventMetadata(
+            normalizeEventMetadata(rawObj),
+            normalizeEventMetadata(outputObj),
+            normalizeEventMetadata(respObj)
+          );
 
           log.debug({
             event: "vertex.query.fallback",
             resultKeys: Object.keys(rawObj),
             outputKeys: Object.keys(outputObj),
-            hasUsageMetadata: Boolean(usageMeta),
+            hasUsageMetadata: Boolean(meta.usageMetadata),
           });
 
-          const groundingMeta =
-            extractGroundingMetadata(rawObj) ||
-            extractGroundingMetadata(outputObj) ||
-            extractGroundingMetadata(respObj);
+          // Who produced the turn, on every event of it.
+          const identity = {
+            ...(meta.eventId ? { eventId: meta.eventId } : {}),
+            ...(meta.modelVersion ? { modelVersion: meta.modelVersion } : {}),
+            ...(meta.invocationId ? { invocationId: meta.invocationId } : {}),
+          };
 
-          const actions =
-            (rawObj.actions as AgentActionsDelta) ||
-            (rawObj.actions_delta as AgentActionsDelta) ||
-            (outputObj.actions as AgentActionsDelta) ||
-            (respObj.actions as AgentActionsDelta) ||
-            (rawObj.state_delta
-              ? { state_delta: rawObj.state_delta as Record<string, unknown> }
-              : undefined) ||
-            (outputObj.state_delta
-              ? { state_delta: outputObj.state_delta as Record<string, unknown> }
-              : undefined);
-
-          const modelVersion =
-            (rawObj.model_version as string) ||
-            (rawObj.modelVersion as string) ||
-            (rawObj.model as string) ||
-            (outputObj.model_version as string) ||
-            (outputObj.modelVersion as string);
-
-          const invocationId =
-            (rawObj.invocation_id as string) ||
-            (rawObj.invocationId as string) ||
-            (outputObj.invocation_id as string) ||
-            (outputObj.invocationId as string);
+          // What the turn cost and changed, on the events that conclude it.
+          const outcome = {
+            ...(meta.usageMetadata ? { usageMetadata: meta.usageMetadata } : {}),
+            ...(meta.groundingMetadata
+              ? { groundingMetadata: meta.groundingMetadata }
+              : {}),
+            ...(meta.actions ? { actions: meta.actions } : {}),
+          };
 
           if (parsed.thoughts.length > 0) {
             yield {
               event_type: "thought",
               thought: parsed.thoughts.join("\n\n"),
-              ...(modelVersion ? { model_version: modelVersion, modelVersion } : {}),
-              ...(invocationId ? { invocation_id: invocationId, invocationId } : {}),
+              ...identity,
             };
           }
 
@@ -260,8 +255,7 @@ export class VertexAiStreamingService {
             yield {
               event_type: "tool_call",
               tool_call: call,
-              ...(modelVersion ? { model_version: modelVersion, modelVersion } : {}),
-              ...(invocationId ? { invocation_id: invocationId, invocationId } : {}),
+              ...identity,
             };
           }
 
@@ -269,8 +263,7 @@ export class VertexAiStreamingService {
             yield {
               event_type: "tool_result",
               tool_result: toolResult,
-              ...(modelVersion ? { model_version: modelVersion, modelVersion } : {}),
-              ...(invocationId ? { invocation_id: invocationId, invocationId } : {}),
+              ...identity,
             };
           }
 
@@ -278,31 +271,14 @@ export class VertexAiStreamingService {
             yield {
               event_type: "content",
               content: parsed.text,
-              ...(usageMeta
-                ? { usage_metadata: usageMeta, usageMetadata: usageMeta }
-                : {}),
-              ...(groundingMeta
-                ? {
-                    grounding_metadata: groundingMeta,
-                    groundingMetadata: groundingMeta,
-                  }
-                : {}),
-              ...(actions ? { actions } : {}),
-              ...(modelVersion ? { model_version: modelVersion, modelVersion } : {}),
-              ...(invocationId ? { invocation_id: invocationId, invocationId } : {}),
+              ...identity,
+              ...outcome,
             };
           }
 
           yield {
             event_type: "done",
-            ...(usageMeta ? { usage_metadata: usageMeta, usageMetadata: usageMeta } : {}),
-            ...(groundingMeta
-              ? {
-                  grounding_metadata: groundingMeta,
-                  groundingMetadata: groundingMeta,
-                }
-              : {}),
-            ...(actions ? { actions } : {}),
+            ...outcome,
           };
           return;
         } else {

@@ -42,7 +42,12 @@ describe("Session State & Context Caching in Chat Adapter & Normalizer", () => {
   it("yields actions and cached token counts in metadata.custom during streaming", async () => {
     const ssePayload = [
       'data: {"event_type":"thought","thought":"Setting environment..."}',
-      'data: {"event_type":"content","content":"Configured.","actions":{"state_delta":{"cluster":"prod-1"}},"usage_metadata":{"prompt_token_count":4200,"cached_content_token_count":3420,"total_token_count":4800}}',
+      // The wire between the route and the adapter carries normalised events:
+      // `usageMetadata`, not the `usage_metadata` Vertex may have sent, which
+      // the SSE parser resolved server-side. The token counts inside it keep
+      // their upstream spelling — `AgentUsageMetadata` is shared with the
+      // Sessions API type and is normalised only at its container key.
+      'data: {"event_type":"content","content":"Configured.","actions":{"state_delta":{"cluster":"prod-1"}},"usageMetadata":{"prompt_token_count":4200,"cached_content_token_count":3420,"total_token_count":4800}}',
       "data: [DONE]",
     ].join("\n\n");
 

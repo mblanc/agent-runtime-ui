@@ -10,6 +10,7 @@ import type {
   AgentMessageInfoMetadata,
   AgentMessagePart,
   AgentNodeInfo,
+  AgentStreamEvent,
   AgentUsageMetadata,
   GroundingMetadata,
   MemoryRetrievalItem,
@@ -776,44 +777,45 @@ export function createGeminiChatAdapter(
               }
 
               try {
-                const parsed = JSON.parse(jsonStr);
+                // Typed, not `any`: the payload on this wire is whatever
+                // `api/chat/route.ts` stringified, and that is exactly what a
+                // provider yielded. Declaring it makes the normalised spelling
+                // the compiler's business — a snake_case read here is now a
+                // type error rather than a field that silently never arrives.
+                const parsed = JSON.parse(jsonStr) as AgentStreamEvent;
                 // Once per SSE event: hundreds of lines for a long generation.
                 debugStream("sse.event", parsed.event_type);
 
-                latestEventId =
-                  parsed.eventId ||
-                  parsed.event_id ||
-                  parsed.id ||
-                  parsed.invocation_id ||
-                  latestEventId;
-                latestInvocationId =
-                  parsed.invocationId || parsed.invocation_id || latestInvocationId;
-                latestModelVersion =
-                  parsed.modelVersion || parsed.model_version || latestModelVersion;
-                latestUsageMetadata =
-                  parsed.usageMetadata || parsed.usage_metadata || latestUsageMetadata;
-                latestAvgLogprobs =
-                  parsed.avgLogprobs ?? parsed.avg_logprobs ?? latestAvgLogprobs;
-                latestNodeInfo = parsed.nodeInfo || parsed.node_info || latestNodeInfo;
-                latestNodePath = parsed.nodePath || parsed.node_path || latestNodePath;
+                // Carry-forward, not extraction. Every alternative spelling
+                // Vertex uses — `invocation_id`, `config.invocationId`,
+                // `raw_event.model_version`, a bare `state_delta` — is resolved
+                // once at the SSE boundary, in `normalizeEventMetadata`. What
+                // arrives here is an `AgentStreamEvent` with one spelling; this
+                // only remembers the last value seen, because a field the
+                // backend sends on the final chunk has to survive onto the
+                // snapshots yielded before it.
+                //
+                // This block used to re-derive twelve of these fields from the
+                // raw JSON, duplicating the parser's knowledge client-side —
+                // which meant a field added to the parser was silently dropped
+                // on the live path until it was added here too.
+                latestEventId = parsed.eventId || latestEventId;
+                latestInvocationId = parsed.invocationId || latestInvocationId;
+                latestModelVersion = parsed.modelVersion || latestModelVersion;
+                latestUsageMetadata = parsed.usageMetadata || latestUsageMetadata;
+                latestAvgLogprobs = parsed.avgLogprobs ?? latestAvgLogprobs;
+                latestNodeInfo = parsed.nodeInfo || latestNodeInfo;
+                latestNodePath = parsed.nodePath || latestNodePath;
                 latestThoughtSignature =
-                  parsed.thoughtSignature ||
-                  parsed.thought_signature ||
-                  latestThoughtSignature;
-                latestActions =
-                  parsed.actions ||
-                  (parsed.state_delta || parsed.stateDelta
-                    ? { state_delta: parsed.state_delta || parsed.stateDelta }
-                    : latestActions);
-                latestFinishReason =
-                  parsed.finishReason || parsed.finish_reason || latestFinishReason;
+                  parsed.thoughtSignature || latestThoughtSignature;
+                latestActions = parsed.actions || latestActions;
+                latestFinishReason = parsed.finishReason || latestFinishReason;
                 if (parsed.timestamp !== undefined) {
                   latestTimestamp = parsed.timestamp;
                 }
 
-                if (parsed.retrieved_memories || parsed.retrievedMemories) {
-                  const memories = (parsed.retrieved_memories ||
-                    parsed.retrievedMemories) as MemoryRetrievalItem[];
+                if (parsed.retrieved_memories) {
+                  const memories = parsed.retrieved_memories as MemoryRetrievalItem[];
                   if (Array.isArray(memories)) {
                     for (const item of memories) {
                       if (
