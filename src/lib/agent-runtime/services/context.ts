@@ -1,4 +1,18 @@
 import { GoogleAuth } from "google-auth-library";
+import { TtlCache } from "./ttl-cache";
+
+/**
+ * Display-name to engine-id mapping, populated as a side effect of listAgents.
+ *
+ * Previously a `public static Map` on VertexAiContext that was written on every
+ * listAgents call and never cleared — cross-request mutable global state that
+ * grew without bound. A TTL cache expires entries and sweeps on write, and
+ * keeping it module-scoped rather than a class static makes it harder to reach
+ * for when caching something user-scoped, which is what would turn this from a
+ * tidiness issue into a real one.
+ */
+export const ENGINE_NAME_TTL_MS = 60_000;
+export const engineDisplayNameCache = new TtlCache<string>(ENGINE_NAME_TTL_MS);
 
 /**
  * `location` and the engine id arrive from client-controlled query params, JSON
@@ -75,7 +89,6 @@ export class VertexAiContext {
   public location: string;
   public reasoningEngineId: string;
   public tokenGetter?: () => Promise<string>;
-  public static engineDisplayNameMap = new Map<string, string>();
 
   constructor(
     overrideEngineId?: string,
@@ -168,8 +181,7 @@ export class VertexAiContext {
       return id;
     }
     const mapped =
-      VertexAiContext.engineDisplayNameMap.get(id.toLowerCase()) ||
-      VertexAiContext.engineDisplayNameMap.get(id);
+      engineDisplayNameCache.get(id.toLowerCase()) || engineDisplayNameCache.get(id);
     return mapped || id;
   }
 

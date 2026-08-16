@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createAgentRuntimeProvider } from "@/lib/agent-runtime/factory";
+import {
+  createAgentRuntimeProvider,
+  clearProviderCache,
+} from "@/lib/agent-runtime/factory";
 import { MockAgentRuntimeProvider } from "@/lib/agent-runtime/mock/mock-provider";
 import { VertexAiReasoningEngineProvider } from "@/lib/agent-runtime/client";
 
@@ -18,6 +21,8 @@ function setNodeEnv(value: string) {
 }
 
 beforeEach(() => {
+  // Providers are cached across calls now; a stale one would mask an env change.
+  clearProviderCache();
   delete process.env.MOCK_AGENT_RUNTIME;
   delete process.env.GOOGLE_CLOUD_PROJECT;
   delete process.env.GOOGLE_REASONING_ENGINE_ID;

@@ -1,9 +1,19 @@
 import { DeployedAgent, ListAgentsResponse } from "@/types/agent";
-import { VertexAiContext } from "./context";
+import { VertexAiContext, engineDisplayNameCache } from "./context";
+import { TtlCache, memoize } from "./ttl-cache";
 import {
   extractReasoningEngineIdFromResourceName,
   formatAgentDisplayName,
 } from "../event-normalizer";
+
+/** 60s matches the engine-name cache in context.ts; the two are populated together. */
+const listAgentsCache = new TtlCache<Promise<ListAgentsResponse>>(60_000);
+
+/** Exposed for tests, which need a cold cache between cases. */
+export function clearAgentCaches(): void {
+  listAgentsCache.clear();
+  engineDisplayNameCache.clear();
+}
 
 export class VertexAiAgentService {
   constructor(private context: VertexAiContext) {}
@@ -23,7 +33,22 @@ export class VertexAiAgentService {
     }
   }
 
+  /**
+   * Memoised for 60s. This was re-fetched from Vertex on every call — including
+   * from resolveEngineIdAsync, which runs for any request naming an agent by
+   * display name, and from the session 404 fallback. The cost is a full fan-out
+   * across every configured location.
+   *
+   * Keyed by the resolved location set so an explicit `locations` argument does
+   * not collide with the default. Trade-off: a newly deployed agent is invisible
+   * for up to a minute.
+   */
   async listAgents(locations?: string[]): Promise<ListAgentsResponse> {
+    const key = `${this.context.projectId}|${(locations || []).join(",")}`;
+    return memoize(listAgentsCache, key, () => this.fetchAgents(locations));
+  }
+
+  private async fetchAgents(locations?: string[]): Promise<ListAgentsResponse> {
     try {
       const envLocations = process.env.GOOGLE_CLOUD_LOCATIONS
         ? process.env.GOOGLE_CLOUD_LOCATIONS.split(",")
@@ -88,21 +113,12 @@ export class VertexAiAgentService {
             engines.push(agent);
             if (agent.displayName && agent.id) {
               const lower = agent.displayName.toLowerCase();
-              VertexAiContext.engineDisplayNameMap.set(lower, agent.id);
-              VertexAiContext.engineDisplayNameMap.set(agent.displayName, agent.id);
-              VertexAiContext.engineDisplayNameMap.set(
-                lower.replace(/[\s_]+/g, "-"),
-                agent.id
-              );
-              VertexAiContext.engineDisplayNameMap.set(
-                lower.replace(/[\s-]+/g, "_"),
-                agent.id
-              );
-              VertexAiContext.engineDisplayNameMap.set(
-                lower.replace(/[-_]/g, " "),
-                agent.id
-              );
-              VertexAiContext.engineDisplayNameMap.set(agent.id, agent.id);
+              engineDisplayNameCache.set(lower, agent.id);
+              engineDisplayNameCache.set(agent.displayName, agent.id);
+              engineDisplayNameCache.set(lower.replace(/[\s_]+/g, "-"), agent.id);
+              engineDisplayNameCache.set(lower.replace(/[\s-]+/g, "_"), agent.id);
+              engineDisplayNameCache.set(lower.replace(/[-_]/g, " "), agent.id);
+              engineDisplayNameCache.set(agent.id, agent.id);
             }
           }
         }

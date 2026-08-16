@@ -1,6 +1,30 @@
 import { IAgentRuntimeProvider } from "./types";
 import { VertexAiReasoningEngineProvider } from "./client";
 import { MockAgentRuntimeProvider } from "./mock/mock-provider";
+import { TtlCache } from "./services/ttl-cache";
+
+/**
+ * Providers are reused across requests rather than rebuilt per call.
+ *
+ * Every one of the 15 routes constructs an AgentRuntimeClient per request, and
+ * each build creates a GoogleAuth client. google-auth-library caches access
+ * tokens *per instance*, so a fresh instance per request defeated that cache and
+ * re-hit the metadata server on essentially every call.
+ *
+ * Safe to key on agentId and location only because both are validated at the
+ * boundary now (see assertValidLocation / assertValidEngineResource). Caching on
+ * an unvalidated key would let one user's poisoned `location` be served to
+ * another — which is why this had to wait for that fix to land.
+ *
+ * A caller-supplied tokenGetter bypasses the cache entirely: it is per-request
+ * identity and must never be shared.
+ */
+const providerCache = new TtlCache<IAgentRuntimeProvider>(5 * 60_000);
+
+/** Exposed for tests, which must not inherit a provider built under other env. */
+export function clearProviderCache(): void {
+  providerCache.clear();
+}
 
 export function createAgentRuntimeProvider(
   agentId?: string,
@@ -28,6 +52,10 @@ export function createAgentRuntimeProvider(
     return new MockAgentRuntimeProvider(effectiveAgentId, location);
   }
 
+  // Cache key is the validated routing pair. Env vars are part of it because
+  // they change the resolved project, and tests vary them between cases.
+  const cacheKey = `${projectId}|${effectiveAgentId}|${location || ""}`;
+
   if (!isConfigured) {
     const missingVars: string[] = [];
     if (!projectId && !isFullResource) missingVars.push("GOOGLE_CLOUD_PROJECT");
@@ -42,5 +70,16 @@ export function createAgentRuntimeProvider(
     );
   }
 
-  return new VertexAiReasoningEngineProvider(effectiveAgentId, location, tokenGetter);
+  // A per-request tokenGetter is caller identity, never shareable.
+  if (tokenGetter) {
+    return new VertexAiReasoningEngineProvider(effectiveAgentId, location, tokenGetter);
+  }
+
+  return (
+    providerCache.get(cacheKey) ??
+    providerCache.set(
+      cacheKey,
+      new VertexAiReasoningEngineProvider(effectiveAgentId, location)
+    )
+  );
 }

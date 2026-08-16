@@ -258,23 +258,28 @@ export class VertexAiSessionService {
           agents: [],
           activeAgentId: "",
         }));
-        for (const agent of agentsResult.agents) {
-          if (agent.id === this.context.reasoningEngineId) continue;
-          try {
-            const fallbackEndpoint = await this.getSessionEndpoint(
-              sessionId,
-              undefined,
-              agent.resourceName || agent.id,
-              agent.location
-            );
-            const fallbackRes = await this.context.fetchWithAuth(fallbackEndpoint);
-            if (fallbackRes.ok) {
+        // Probe every other agent concurrently. Awaiting these serially cost
+        // one round trip per deployed agent on a stale session id, and with no
+        // timeout on those calls a single slow agent stalled the whole chain.
+        const probes = await Promise.allSettled(
+          agentsResult.agents
+            .filter((agent) => agent.id !== this.context.reasoningEngineId)
+            .map(async (agent) => {
+              const fallbackEndpoint = await this.getSessionEndpoint(
+                sessionId,
+                undefined,
+                agent.resourceName || agent.id,
+                agent.location
+              );
+              const fallbackRes = await this.context.fetchWithAuth(fallbackEndpoint);
+              if (!fallbackRes.ok) return null;
               const raw = (await fallbackRes.json()) as Record<string, unknown>;
               return mapRawSession(raw, sessionId);
-            }
-          } catch {
-            // try next
-          }
+            })
+        );
+
+        for (const probe of probes) {
+          if (probe.status === "fulfilled" && probe.value) return probe.value;
         }
         return null;
       }
@@ -525,27 +530,31 @@ export class VertexAiSessionService {
           agents: [],
           activeAgentId: "",
         }));
-        for (const agent of agentsResult.agents) {
-          if (agent.id === this.context.reasoningEngineId) continue;
-          try {
-            const fallbackEndpoint = await this.getSessionEndpoint(
-              sessionId,
-              "events",
-              agent.resourceName || agent.id,
-              agent.location
-            );
-            const fallbackRes = await this.context.fetchWithAuth(fallbackEndpoint);
-            if (fallbackRes.ok) {
+        // Concurrent for the same reason as the getSession fallback above.
+        const probes = await Promise.allSettled(
+          agentsResult.agents
+            .filter((agent) => agent.id !== this.context.reasoningEngineId)
+            .map(async (agent) => {
+              const fallbackEndpoint = await this.getSessionEndpoint(
+                sessionId,
+                "events",
+                agent.resourceName || agent.id,
+                agent.location
+              );
+              const fallbackRes = await this.context.fetchWithAuth(fallbackEndpoint);
+              if (!fallbackRes.ok) return null;
               const data = await fallbackRes.json();
-              const rawEvents = (
+              return (
                 data.sessionEvents && data.sessionEvents.length > 0
                   ? data.sessionEvents
                   : data.events || []
               ) as Array<Record<string, unknown>>;
-              return groupTurnSessionEvents(rawEvents, sessionId);
-            }
-          } catch {
-            // try next
+            })
+        );
+
+        for (const probe of probes) {
+          if (probe.status === "fulfilled" && probe.value) {
+            return groupTurnSessionEvents(probe.value, sessionId);
           }
         }
         return [];
