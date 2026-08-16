@@ -183,3 +183,20 @@ describe("provider memoisation", () => {
     expect(() => createAgentRuntimeProvider("123456", "evil.com/x#")).toThrow();
   });
 });
+
+describe("the facade participates in the provider cache", () => {
+  it("reuses one provider across repeated AgentRuntimeClient constructions", async () => {
+    // The facade used to pass a tokenGetter, which the factory deliberately
+    // treats as caller identity and refuses to share — so every one of the 15
+    // routes built a fresh provider and a fresh GoogleAuth per request, and the
+    // provider cache never took effect in production at all.
+    const { AgentRuntimeClient } = await import("@/lib/agent-runtime-client");
+
+    const a = new AgentRuntimeClient("123456", "us-central1");
+    const b = new AgentRuntimeClient("123456", "us-central1");
+
+    const providerOf = (c: unknown) => (c as { provider: unknown }).provider;
+
+    expect(providerOf(a)).toBe(providerOf(b));
+  });
+});

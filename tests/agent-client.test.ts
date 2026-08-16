@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { VertexAiContext } from "@/lib/agent-runtime/services/context";
 import {
   AgentRuntimeClient,
   parseRawSessionEvent,
@@ -92,20 +93,18 @@ describe("AgentRuntimeClient", () => {
       process.env.GOOGLE_REASONING_ENGINE_ID =
         "projects/custom-project-123/locations/us-east1/reasoningEngines/custom-engine-456";
 
-      const client = new AgentRuntimeClient();
-      // Access normalized resource
-      const resource = (
-        client as unknown as { getNormalizedEngineResource: () => string }
-      ).getNormalizedEngineResource();
-      const sessionsUrl = (
-        client as unknown as { getSessionsBaseUrl: () => string }
-      ).getSessionsBaseUrl();
+      // Asserted against VertexAiContext, which is the implementation the
+      // services actually use. The facade carried its own copy of this logic
+      // that nothing called and that ignored customLocation, so the two
+      // disagreed for any cross-region call; it has been removed.
+      const ctx = new VertexAiContext(undefined, undefined, async () => "t");
+      const resource = ctx.getNormalizedEngineResource();
 
       expect(resource).toBe(
         "projects/custom-project-123/locations/us-east1/reasoningEngines/custom-engine-456"
       );
-      expect(sessionsUrl).toContain("https://us-east1-aiplatform.googleapis.com");
-      expect(sessionsUrl).toContain("/locations/us-east1/");
+      expect(ctx.projectId).toBe("custom-project-123");
+      expect(ctx.location).toBe("us-east1");
     } finally {
       process.env.GOOGLE_REASONING_ENGINE_ID = originalEngine;
       process.env.GOOGLE_CLOUD_LOCATION = originalLocation;
@@ -594,10 +593,9 @@ describe("AgentRuntimeClient", () => {
       );
 
       const client = new AgentRuntimeClient();
-      vi.spyOn(
-        client as unknown as { getAccessToken: () => Promise<string> },
-        "getAccessToken"
-      ).mockResolvedValue("mock-access-token");
+      vi.spyOn(VertexAiContext.prototype, "getAccessToken").mockResolvedValue(
+        "mock-access-token"
+      );
 
       const res = await client.submitFeedback(
         {
@@ -712,10 +710,9 @@ describe("AgentRuntimeClient", () => {
       );
 
       const client = new AgentRuntimeClient();
-      vi.spyOn(
-        client as unknown as { getAccessToken: () => Promise<string> },
-        "getAccessToken"
-      ).mockResolvedValue("mock-token");
+      vi.spyOn(VertexAiContext.prototype, "getAccessToken").mockResolvedValue(
+        "mock-token"
+      );
 
       const events = [];
       for await (const event of client.streamQuery(
@@ -793,10 +790,9 @@ describe("AgentRuntimeClient", () => {
       );
 
       const client = new AgentRuntimeClient();
-      vi.spyOn(
-        client as unknown as { getAccessToken: () => Promise<string> },
-        "getAccessToken"
-      ).mockResolvedValue("mock-token");
+      vi.spyOn(VertexAiContext.prototype, "getAccessToken").mockResolvedValue(
+        "mock-token"
+      );
 
       const events = [];
       for await (const event of client.streamQuery(

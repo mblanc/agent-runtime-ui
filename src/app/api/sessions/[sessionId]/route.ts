@@ -5,6 +5,7 @@ import {
   formatSessionEventsToThreadMessages,
 } from "@/lib/agent-runtime-client";
 import { isSessionOwnedBy } from "@/lib/session-ownership";
+import { PLACEHOLDER_SESSION_TITLE_RE } from "@/lib/agent-runtime/event-utils";
 
 export const runtime = "nodejs";
 
@@ -55,7 +56,7 @@ export const GET = withAuthDynamic<SessionParams>(
       !sessionDetails.title ||
       sessionDetails.title === "New conversation" ||
       sessionDetails.title === "Untitled chat" ||
-      /^Chat [a-zA-Z0-9_-]+$/i.test(sessionDetails.title)
+      PLACEHOLDER_SESSION_TITLE_RE.test(sessionDetails.title)
     ) {
       const firstUserEvent = events.find((e) => e.role === "user" && e.content.trim());
       if (firstUserEvent) {

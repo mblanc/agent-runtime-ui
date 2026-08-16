@@ -168,13 +168,10 @@ describe("Feedback API Route (POST /api/feedback)", () => {
         mockFetch as unknown as typeof fetch
       );
 
-      const { AgentRuntimeClient } = await import("@/lib/agent-runtime-client");
-      vi.spyOn(
-        AgentRuntimeClient.prototype as unknown as {
-          getAccessToken: () => Promise<string>;
-        },
-        "getAccessToken"
-      ).mockResolvedValue("mock-gcp-bearer-token");
+      const { VertexAiContext } = await import("@/lib/agent-runtime/services/context");
+      vi.spyOn(VertexAiContext.prototype, "getAccessToken").mockResolvedValue(
+        "mock-gcp-bearer-token"
+      );
 
       const req = new NextRequest("http://localhost:3000/api/feedback", {
         method: "POST",
@@ -224,13 +221,10 @@ describe("Feedback API Route (POST /api/feedback)", () => {
         mockFetch as unknown as typeof fetch
       );
 
-      const { AgentRuntimeClient } = await import("@/lib/agent-runtime-client");
-      vi.spyOn(
-        AgentRuntimeClient.prototype as unknown as {
-          getAccessToken: () => Promise<string>;
-        },
-        "getAccessToken"
-      ).mockResolvedValue("mock-gcp-bearer-token");
+      const { VertexAiContext } = await import("@/lib/agent-runtime/services/context");
+      vi.spyOn(VertexAiContext.prototype, "getAccessToken").mockResolvedValue(
+        "mock-gcp-bearer-token"
+      );
 
       const req = new NextRequest("http://localhost:3000/api/feedback", {
         method: "POST",

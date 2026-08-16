@@ -12,6 +12,13 @@ export { formatAgentDisplayName };
  * classification, and tool call/result accessors.
  */
 
+/**
+ * Matches the auto-generated placeholder titles the UI substitutes for a real
+ * session name, e.g. "Chat a1b2c3d4". Duplicated verbatim in the session
+ * service and the session route before this.
+ */
+export const PLACEHOLDER_SESSION_TITLE_RE = /^Chat [a-zA-Z0-9_-]+$/i;
+
 export function safeParseJson(val: unknown): unknown {
   if (typeof val !== "string") return val;
   const trimmed = val.trim();

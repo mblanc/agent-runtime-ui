@@ -2,6 +2,7 @@ import { AgentSession, AgentSessionEvent, SessionStateMap } from "@/types/agent"
 import { VertexAiContext } from "./context";
 import { VertexAiAgentService } from "./agent-service";
 import {
+  PLACEHOLDER_SESSION_TITLE_RE,
   extractSessionIdFromResourceName,
   groupTurnSessionEvents,
   isLocalSessionId,
@@ -149,7 +150,7 @@ export class VertexAiSessionService {
           rawTitle &&
           rawTitle !== "New conversation" &&
           rawTitle !== "Untitled chat" &&
-          !/^Chat [a-zA-Z0-9_-]+$/i.test(rawTitle)
+          !PLACEHOLDER_SESSION_TITLE_RE.test(rawTitle)
             ? rawTitle
             : `Chat ${id.substring(0, 8)}`;
 

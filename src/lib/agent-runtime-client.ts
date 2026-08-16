@@ -1,4 +1,3 @@
-import { GoogleAuth } from "google-auth-library";
 import {
   AgentFeedbackRequest,
   AgentFeedbackResponse,
@@ -25,13 +24,10 @@ export * from "./agent-runtime";
  */
 export class AgentRuntimeClient {
   private provider: IAgentRuntimeProvider;
-  private auth: GoogleAuth;
-  private projectId: string;
   private location: string;
   private reasoningEngineId: string;
 
   constructor(overrideEngineId?: string, overrideLocation?: string) {
-    this.projectId = process.env.GOOGLE_CLOUD_PROJECT || "";
     this.location =
       overrideLocation || process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
     this.reasoningEngineId =
@@ -42,7 +38,6 @@ export class AgentRuntimeClient {
         /^projects\/([^/]+)\/locations\/([^/]+)\/reasoningEngines\/([^/]+)$/
       );
       if (match) {
-        if (match[1]) this.projectId = match[1];
         if (match[2]) this.location = match[2];
       }
     }
@@ -54,50 +49,12 @@ export class AgentRuntimeClient {
       this.location = matchingMockAgent.location;
     }
 
-    this.auth = new GoogleAuth({
-      scopes: ["https://www.googleapis.com/auth/cloud-platform"],
-    });
-
-    this.provider = createAgentRuntimeProvider(overrideEngineId, overrideLocation, () =>
-      this.getAccessToken()
-    );
-  }
-
-  async getAccessToken(): Promise<string> {
-    const client = await this.auth.getClient();
-    const tokenResponse = await client.getAccessToken();
-    if (!tokenResponse.token) {
-      throw new Error("Failed to obtain Google Cloud IAM access token");
-    }
-    return tokenResponse.token;
-  }
-
-  getNormalizedEngineResource(customEngineId?: string): string {
-    const targetEngine = customEngineId || this.reasoningEngineId;
-    if (targetEngine.startsWith("projects/")) {
-      return targetEngine;
-    }
-    return `projects/${this.projectId}/locations/${this.location}/reasoningEngines/${targetEngine}`;
-  }
-
-  getSessionsBaseUrl(customEngineId?: string): string {
-    const targetEngine = customEngineId || this.reasoningEngineId;
-    let loc = this.location;
-    if (targetEngine.startsWith("projects/")) {
-      const match = targetEngine.match(/^projects\/[^/]+\/locations\/([^/]+)\//);
-      if (match && match[1]) loc = match[1];
-    }
-    return `https://${loc}-aiplatform.googleapis.com/v1beta1/${this.getNormalizedEngineResource(targetEngine)}/sessions`;
-  }
-
-  getFeedbackBaseUrl(customEngineId?: string, customLocation?: string): string {
-    const targetEngine = customEngineId || this.reasoningEngineId;
-    let loc = customLocation || this.location;
-    if (targetEngine.startsWith("projects/")) {
-      const match = targetEngine.match(/^projects\/[^/]+\/locations\/([^/]+)\//);
-      if (match && match[1]) loc = match[1];
-    }
-    return `https://${loc}-aiplatform.googleapis.com/v1beta1/${this.getNormalizedEngineResource(targetEngine)}/feedbackEntries`;
+    // No tokenGetter: the provider's VertexAiContext owns its own GoogleAuth,
+    // and google-auth-library caches access tokens per instance. Passing one
+    // from here also defeated the provider cache, which deliberately refuses to
+    // share a provider built with caller-supplied credentials — so every one of
+    // the 15 routes was getting an uncached provider and a fresh GoogleAuth.
+    this.provider = createAgentRuntimeProvider(overrideEngineId, overrideLocation);
   }
 
   async listReasoningEngines(locations?: string[]): Promise<ListAgentsResponse> {
