@@ -352,6 +352,262 @@ export function createYieldContent(
   };
 }
 
+/**
+ * Converts assistant-ui thread messages into the Agent Runtime wire format.
+ *
+ * Lifted verbatim out of `run()`, where it occupied the first ~240 lines of a
+ * ~970-line async generator. It touches no streaming state and closed over
+ * nothing but its input, so trapping it inside the generator meant it could
+ * only be exercised by running a whole streaming turn against a mocked fetch.
+ *
+ * Handles text, image and file parts, tool calls and results, message
+ * attachments, and the trailing user function-response case used by HITL.
+ */
+export function toAgentMessages(
+  sourceMessages: readonly ThreadMessage[]
+): AgentMessage[] {
+  const formattedMessages: AgentMessage[] = [];
+
+  for (let mIdx = 0; mIdx < sourceMessages.length; mIdx++) {
+    const m = sourceMessages[mIdx];
+    let text = "";
+    const parts: AgentMessagePart[] = [];
+    const userFunctionResponseParts: AgentMessagePart[] = [];
+
+    const customMeta = (m.metadata as Record<string, unknown>)?.custom as
+      Record<string, unknown> | undefined;
+    const toolApproval = customMeta?.toolApproval as
+      { id?: string; name?: string; confirmed?: boolean } | undefined;
+
+    for (const part of m.content) {
+      if (part.type === "text") {
+        const tokenMatch = part.text.match(
+          /^\[TOOL_CONFIRMATION_RESPONSE:(.*?):(.*?):(true|false)\]$/
+        );
+        if (tokenMatch) {
+          const [, callId, callName, boolStr] = tokenMatch;
+          const isConf = boolStr === "true";
+          const respData = {
+            id: callId,
+            name: callName,
+            response: { confirmed: isConf },
+          };
+          userFunctionResponseParts.push({
+            function_response: respData,
+            functionResponse: respData,
+          });
+        } else {
+          text += part.text;
+          parts.push({ text: part.text });
+        }
+      } else if (part.type === "image") {
+        const imgPart = part as { image?: string; filename?: string };
+        const imgUrl = imgPart.image || "";
+        const attMatch = m.attachments?.find(
+          (a) => a.type === "image" || (imgPart.filename && a.name === imgPart.filename)
+        );
+        const { uri: resolvedUri, mimeType: resolvedMimeType } = resolveGcsUri({
+          candidate: imgUrl,
+          filename: imgPart.filename,
+          mimeTypeHint: "image/jpeg",
+          attachmentIds: attMatch ? [attMatch.id] : [],
+          store: defaultAttachmentStore,
+        });
+
+        if (resolvedUri) {
+          parts.push({
+            file_data: {
+              file_uri: resolvedUri,
+              mime_type: resolvedMimeType,
+            },
+          });
+        } else {
+          parts.push({ image: imgUrl });
+        }
+      } else if (part.type === "file") {
+        const filePart = part as {
+          data?: string;
+          mimeType?: string;
+          filename?: string;
+        };
+        const rawData = filePart.data || "";
+        const fileAttMatch = m.attachments?.find(
+          (a) =>
+            a.type === "document" || (filePart.filename && a.name === filePart.filename)
+        );
+        const resolvedFile = resolveGcsUri({
+          candidate: rawData,
+          filename: filePart.filename,
+          mimeTypeHint: filePart.mimeType,
+          attachmentIds: fileAttMatch ? [fileAttMatch.id] : [],
+          store: defaultAttachmentStore,
+        });
+        // Nothing resolved: keep the original value so it can go out as an
+        // inline file part rather than being dropped.
+        const gcsUri = resolvedFile.uri || rawData;
+        const mimeType = resolvedFile.mimeType;
+
+        if (gcsUri.startsWith("gs://")) {
+          parts.push({
+            file_data: {
+              file_uri: gcsUri,
+              mime_type: mimeType,
+            },
+          });
+        } else {
+          parts.push({
+            file: {
+              data: gcsUri,
+              mime_type: mimeType,
+            },
+          });
+        }
+      } else if (part.type === "tool-call") {
+        const tcPart = part as {
+          toolName?: string;
+          toolCallId?: string;
+          args?: Record<string, unknown>;
+          result?: unknown;
+        };
+        const callData = {
+          id: tcPart.toolCallId,
+          name: tcPart.toolName || "tool",
+          args: tcPart.args || {},
+        };
+        parts.push({
+          function_call: callData,
+          functionCall: callData,
+        });
+
+        if (tcPart.result !== undefined) {
+          const respData = {
+            id: tcPart.toolCallId,
+            name: tcPart.toolName || "tool",
+            response:
+              typeof tcPart.result === "object" && tcPart.result !== null
+                ? (tcPart.result as Record<string, unknown>)
+                : { output: tcPart.result },
+          };
+          const item = {
+            function_response: respData,
+            functionResponse: respData,
+          };
+          if (tcPart.toolName === "adk_request_confirmation") {
+            userFunctionResponseParts.unshift(item);
+          } else {
+            userFunctionResponseParts.push(item);
+          }
+        }
+      }
+    }
+
+    // Process message attachments if present
+    if (m.attachments && Array.isArray(m.attachments)) {
+      for (const att of m.attachments) {
+        let attGcsUri = "";
+        let attMimeType = inferMimeType(att.name, att.contentType || att.file?.type);
+
+        // Prefer a candidate carried by the attachment's own content parts,
+        // then fall back to resolving from the attachment id alone.
+        let candidate = "";
+        if (att.content && Array.isArray(att.content)) {
+          for (const cp of att.content) {
+            if (cp.type === "image") {
+              candidate = (cp as { image?: string }).image || candidate;
+            } else if (cp.type === "file") {
+              const filePart = cp as { data?: string; mimeType?: string };
+              candidate = filePart.data || candidate;
+              if (filePart.mimeType)
+                attMimeType = inferMimeType(att.name, filePart.mimeType);
+            }
+          }
+        }
+
+        const resolvedAtt = resolveGcsUri({
+          candidate,
+          filename: att.name,
+          mimeTypeHint: attMimeType,
+          attachmentIds: [att.id],
+          store: defaultAttachmentStore,
+        });
+        attGcsUri = resolvedAtt.uri;
+        attMimeType = resolvedAtt.mimeType;
+
+        if (attGcsUri && attGcsUri.startsWith("gs://")) {
+          const alreadyExists = parts.some(
+            (p) =>
+              p.file_data?.file_uri === attGcsUri ||
+              p.fileData?.file_uri === attGcsUri ||
+              p.fileData?.fileUri === attGcsUri
+          );
+          if (!alreadyExists) {
+            parts.push({
+              file_data: {
+                file_uri: attGcsUri,
+                mime_type: attMimeType,
+              },
+            });
+          }
+        }
+      }
+    }
+
+    if (toolApproval) {
+      const respData = {
+        id: toolApproval.id,
+        name: toolApproval.name || "adk_request_confirmation",
+        response: { confirmed: Boolean(toolApproval.confirmed) },
+      };
+      userFunctionResponseParts.unshift({
+        function_response: respData,
+        functionResponse: respData,
+      });
+    }
+
+    if (m.role === "user") {
+      if (userFunctionResponseParts.length > 0) {
+        formattedMessages.push({
+          role: "user",
+          content: text,
+          parts: userFunctionResponseParts,
+        });
+      } else {
+        formattedMessages.push({
+          role: "user",
+          content: text,
+          parts: parts.length > 0 ? parts : undefined,
+        });
+      }
+    } else {
+      // Skip empty assistant message if it's the last message (placeholder for streaming response)
+      const isLastMessage = mIdx === sourceMessages.length - 1;
+      if (
+        !isLastMessage ||
+        text ||
+        parts.length > 0 ||
+        userFunctionResponseParts.length > 0
+      ) {
+        formattedMessages.push({
+          role: "assistant",
+          content: text,
+          parts: parts.length > 0 ? parts : undefined,
+        });
+      }
+
+      // Only append trailing userFunctionResponseParts if this assistant message is the last message in sourceMessages
+      if (isLastMessage && userFunctionResponseParts.length > 0) {
+        formattedMessages.push({
+          role: "user",
+          content: "",
+          parts: userFunctionResponseParts,
+        });
+      }
+    }
+  }
+
+  return formattedMessages;
+}
+
 export function createGeminiChatAdapter(
   getSessionId?: () => string | undefined,
   getAgentId?: () => string | undefined,
@@ -367,246 +623,7 @@ export function createGeminiChatAdapter(
       const sourceMessages =
         liveMessages && liveMessages.length > messages.length ? liveMessages : messages;
 
-      const formattedMessages: AgentMessage[] = [];
-
-      for (let mIdx = 0; mIdx < sourceMessages.length; mIdx++) {
-        const m = sourceMessages[mIdx];
-        let text = "";
-        const parts: AgentMessagePart[] = [];
-        const userFunctionResponseParts: AgentMessagePart[] = [];
-
-        const customMeta = (m.metadata as Record<string, unknown>)?.custom as
-          Record<string, unknown> | undefined;
-        const toolApproval = customMeta?.toolApproval as
-          { id?: string; name?: string; confirmed?: boolean } | undefined;
-
-        for (const part of m.content) {
-          if (part.type === "text") {
-            const tokenMatch = part.text.match(
-              /^\[TOOL_CONFIRMATION_RESPONSE:(.*?):(.*?):(true|false)\]$/
-            );
-            if (tokenMatch) {
-              const [, callId, callName, boolStr] = tokenMatch;
-              const isConf = boolStr === "true";
-              const respData = {
-                id: callId,
-                name: callName,
-                response: { confirmed: isConf },
-              };
-              userFunctionResponseParts.push({
-                function_response: respData,
-                functionResponse: respData,
-              });
-            } else {
-              text += part.text;
-              parts.push({ text: part.text });
-            }
-          } else if (part.type === "image") {
-            const imgPart = part as { image?: string; filename?: string };
-            const imgUrl = imgPart.image || "";
-            const attMatch = m.attachments?.find(
-              (a) =>
-                a.type === "image" || (imgPart.filename && a.name === imgPart.filename)
-            );
-            const { uri: resolvedUri, mimeType: resolvedMimeType } = resolveGcsUri({
-              candidate: imgUrl,
-              filename: imgPart.filename,
-              mimeTypeHint: "image/jpeg",
-              attachmentIds: attMatch ? [attMatch.id] : [],
-              store: defaultAttachmentStore,
-            });
-
-            if (resolvedUri) {
-              parts.push({
-                file_data: {
-                  file_uri: resolvedUri,
-                  mime_type: resolvedMimeType,
-                },
-              });
-            } else {
-              parts.push({ image: imgUrl });
-            }
-          } else if (part.type === "file") {
-            const filePart = part as {
-              data?: string;
-              mimeType?: string;
-              filename?: string;
-            };
-            const rawData = filePart.data || "";
-            const fileAttMatch = m.attachments?.find(
-              (a) =>
-                a.type === "document" ||
-                (filePart.filename && a.name === filePart.filename)
-            );
-            const resolvedFile = resolveGcsUri({
-              candidate: rawData,
-              filename: filePart.filename,
-              mimeTypeHint: filePart.mimeType,
-              attachmentIds: fileAttMatch ? [fileAttMatch.id] : [],
-              store: defaultAttachmentStore,
-            });
-            // Nothing resolved: keep the original value so it can go out as an
-            // inline file part rather than being dropped.
-            const gcsUri = resolvedFile.uri || rawData;
-            const mimeType = resolvedFile.mimeType;
-
-            if (gcsUri.startsWith("gs://")) {
-              parts.push({
-                file_data: {
-                  file_uri: gcsUri,
-                  mime_type: mimeType,
-                },
-              });
-            } else {
-              parts.push({
-                file: {
-                  data: gcsUri,
-                  mime_type: mimeType,
-                },
-              });
-            }
-          } else if (part.type === "tool-call") {
-            const tcPart = part as {
-              toolName?: string;
-              toolCallId?: string;
-              args?: Record<string, unknown>;
-              result?: unknown;
-            };
-            const callData = {
-              id: tcPart.toolCallId,
-              name: tcPart.toolName || "tool",
-              args: tcPart.args || {},
-            };
-            parts.push({
-              function_call: callData,
-              functionCall: callData,
-            });
-
-            if (tcPart.result !== undefined) {
-              const respData = {
-                id: tcPart.toolCallId,
-                name: tcPart.toolName || "tool",
-                response:
-                  typeof tcPart.result === "object" && tcPart.result !== null
-                    ? (tcPart.result as Record<string, unknown>)
-                    : { output: tcPart.result },
-              };
-              const item = {
-                function_response: respData,
-                functionResponse: respData,
-              };
-              if (tcPart.toolName === "adk_request_confirmation") {
-                userFunctionResponseParts.unshift(item);
-              } else {
-                userFunctionResponseParts.push(item);
-              }
-            }
-          }
-        }
-
-        // Process message attachments if present
-        if (m.attachments && Array.isArray(m.attachments)) {
-          for (const att of m.attachments) {
-            let attGcsUri = "";
-            let attMimeType = inferMimeType(att.name, att.contentType || att.file?.type);
-
-            // Prefer a candidate carried by the attachment's own content parts,
-            // then fall back to resolving from the attachment id alone.
-            let candidate = "";
-            if (att.content && Array.isArray(att.content)) {
-              for (const cp of att.content) {
-                if (cp.type === "image") {
-                  candidate = (cp as { image?: string }).image || candidate;
-                } else if (cp.type === "file") {
-                  const filePart = cp as { data?: string; mimeType?: string };
-                  candidate = filePart.data || candidate;
-                  if (filePart.mimeType)
-                    attMimeType = inferMimeType(att.name, filePart.mimeType);
-                }
-              }
-            }
-
-            const resolvedAtt = resolveGcsUri({
-              candidate,
-              filename: att.name,
-              mimeTypeHint: attMimeType,
-              attachmentIds: [att.id],
-              store: defaultAttachmentStore,
-            });
-            attGcsUri = resolvedAtt.uri;
-            attMimeType = resolvedAtt.mimeType;
-
-            if (attGcsUri && attGcsUri.startsWith("gs://")) {
-              const alreadyExists = parts.some(
-                (p) =>
-                  p.file_data?.file_uri === attGcsUri ||
-                  p.fileData?.file_uri === attGcsUri ||
-                  p.fileData?.fileUri === attGcsUri
-              );
-              if (!alreadyExists) {
-                parts.push({
-                  file_data: {
-                    file_uri: attGcsUri,
-                    mime_type: attMimeType,
-                  },
-                });
-              }
-            }
-          }
-        }
-
-        if (toolApproval) {
-          const respData = {
-            id: toolApproval.id,
-            name: toolApproval.name || "adk_request_confirmation",
-            response: { confirmed: Boolean(toolApproval.confirmed) },
-          };
-          userFunctionResponseParts.unshift({
-            function_response: respData,
-            functionResponse: respData,
-          });
-        }
-
-        if (m.role === "user") {
-          if (userFunctionResponseParts.length > 0) {
-            formattedMessages.push({
-              role: "user",
-              content: text,
-              parts: userFunctionResponseParts,
-            });
-          } else {
-            formattedMessages.push({
-              role: "user",
-              content: text,
-              parts: parts.length > 0 ? parts : undefined,
-            });
-          }
-        } else {
-          // Skip empty assistant message if it's the last message (placeholder for streaming response)
-          const isLastMessage = mIdx === sourceMessages.length - 1;
-          if (
-            !isLastMessage ||
-            text ||
-            parts.length > 0 ||
-            userFunctionResponseParts.length > 0
-          ) {
-            formattedMessages.push({
-              role: "assistant",
-              content: text,
-              parts: parts.length > 0 ? parts : undefined,
-            });
-          }
-
-          // Only append trailing userFunctionResponseParts if this assistant message is the last message in sourceMessages
-          if (isLastMessage && userFunctionResponseParts.length > 0) {
-            formattedMessages.push({
-              role: "user",
-              content: "",
-              parts: userFunctionResponseParts,
-            });
-          }
-        }
-      }
+      const formattedMessages = toAgentMessages(sourceMessages);
 
       const sessionId = getSessionId?.();
       const agentId = getAgentId?.();
