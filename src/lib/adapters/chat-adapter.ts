@@ -20,7 +20,10 @@ import {
 } from "@/lib/grounding/citation-parser";
 
 import { formatAgentDisplayName } from "@/lib/utils";
-import { defaultAttachmentStore } from "../attachments/attachment-store";
+import {
+  defaultAttachmentStore,
+  type IAttachmentMetadataStore,
+} from "../attachments/attachment-store";
 import { inferMimeType } from "../attachments/mime-types";
 
 /**
@@ -40,6 +43,87 @@ function debugStream(event: string, detail?: unknown): void {
   } else {
     console.debug(`[chat-adapter] ${event}`, detail);
   }
+}
+
+/**
+ * Resolves an attachment reference to a GCS URI and its MIME type.
+ *
+ * This was implemented three times — once for image parts, once for file parts,
+ * once for message attachments — each with its own strategy ladder, and the
+ * three had already drifted apart: only the image path honoured a `?gcsUri=`
+ * query parameter, only image and file parsed a storage.googleapis.com URL, and
+ * the file path fed its *unresolved* input into getByUrl where the image path
+ * fed the source URL. Any attachment fix landed in one or two of the three.
+ *
+ * Strategies are tried in order and the union of what the three used to do:
+ *
+ *   1. the candidate is already a gs:// URI
+ *   2. store lookup by the caller's candidate attachment ids
+ *   3. store lookup by URL, then filename, then a loose match
+ *   4. a `gcsUri` query parameter on an http(s) candidate
+ *   5. a storage.googleapis.com URL parsed into gs://bucket/object
+ *
+ * @returns `uri` is "" when nothing resolved; callers decide whether that means
+ *          an inline part or skipping the attachment entirely.
+ */
+export function resolveGcsUri(opts: {
+  candidate?: string;
+  filename?: string;
+  mimeTypeHint?: string;
+  attachmentIds?: string[];
+  store: IAttachmentMetadataStore;
+}): { uri: string; mimeType: string } {
+  const { candidate = "", filename, mimeTypeHint, attachmentIds = [], store } = opts;
+
+  let contentType: string | undefined;
+  let uri = "";
+
+  const take = (meta: { gcsUri?: string; contentType?: string } | undefined): boolean => {
+    if (!meta?.gcsUri) return false;
+    uri = meta.gcsUri;
+    if (meta.contentType) contentType = meta.contentType;
+    return true;
+  };
+
+  if (candidate.startsWith("gs://")) {
+    uri = candidate;
+  }
+
+  if (!uri) {
+    for (const id of attachmentIds) {
+      if (id && take(store.get(id))) break;
+    }
+  }
+
+  if (!uri) {
+    take(
+      (candidate ? store.getByUrl?.(candidate) : undefined) ||
+        (filename ? store.getByFilename?.(filename) : undefined) ||
+        (candidate ? store.findByAny?.(candidate) : undefined) ||
+        attachmentIds.reduce<ReturnType<NonNullable<typeof store.findByAny>>>(
+          (found, id) => found || (id ? store.findByAny?.(id) : undefined),
+          undefined
+        )
+    );
+  }
+
+  if (!uri && candidate.startsWith("http")) {
+    try {
+      const gcsQuery = new URL(candidate).searchParams.get("gcsUri");
+      if (gcsQuery?.startsWith("gs://")) uri = gcsQuery;
+    } catch {
+      // not a parseable URL; fall through
+    }
+  }
+
+  if (!uri) {
+    const gcsMatch = candidate.match(
+      /^https:\/\/storage\.googleapis\.com\/([^/?#]+)\/([^?#]+)/
+    );
+    if (gcsMatch) uri = `gs://${gcsMatch[1]}/${gcsMatch[2]}`;
+  }
+
+  return { uri, mimeType: inferMimeType(filename, contentType || mimeTypeHint) };
 }
 
 function escapeRegex(str: string): string {
@@ -320,66 +404,17 @@ export function createGeminiChatAdapter(
           } else if (part.type === "image") {
             const imgPart = part as { image?: string; filename?: string };
             const imgUrl = imgPart.image || "";
-            let resolvedUri = "";
-            let resolvedMimeType = inferMimeType(imgPart.filename, "image/jpeg");
-
-            if (imgUrl.startsWith("gs://")) {
-              resolvedUri = imgUrl;
-            } else {
-              // 1. Look in message attachments
-              const attMatch = m.attachments?.find(
-                (a) =>
-                  a.type === "image" || (imgPart.filename && a.name === imgPart.filename)
-              );
-              if (attMatch) {
-                const meta = defaultAttachmentStore.get(attMatch.id);
-                if (meta?.gcsUri) {
-                  resolvedUri = meta.gcsUri;
-                  if (meta.contentType)
-                    resolvedMimeType = inferMimeType(imgPart.filename, meta.contentType);
-                }
-              }
-
-              // 2. Look in attachment store by URL or filename
-              if (!resolvedUri) {
-                const meta =
-                  defaultAttachmentStore.getByUrl?.(imgUrl) ||
-                  (imgPart.filename
-                    ? defaultAttachmentStore.getByFilename?.(imgPart.filename)
-                    : undefined) ||
-                  defaultAttachmentStore.findByAny?.(imgUrl);
-                if (meta?.gcsUri) {
-                  resolvedUri = meta.gcsUri;
-                  if (meta.contentType)
-                    resolvedMimeType = inferMimeType(imgPart.filename, meta.contentType);
-                }
-              }
-
-              // 3. Extract gcsUri query param if present
-              if (!resolvedUri && imgUrl.startsWith("http")) {
-                try {
-                  const urlObj = new URL(imgUrl);
-                  const gcsQuery = urlObj.searchParams.get("gcsUri");
-                  if (gcsQuery && gcsQuery.startsWith("gs://")) {
-                    resolvedUri = gcsQuery;
-                  }
-                } catch {
-                  // ignore invalid URLs
-                }
-              }
-
-              // 4. Parse Google Cloud Storage signed / public URL
-              if (!resolvedUri) {
-                const gcsMatch = imgUrl.match(
-                  /^https:\/\/storage\.googleapis\.com\/([^/?#]+)\/([^?#]+)/
-                );
-                if (gcsMatch) {
-                  resolvedUri = `gs://${gcsMatch[1]}/${gcsMatch[2]}`;
-                }
-              }
-            }
-
-            resolvedMimeType = inferMimeType(imgPart.filename, resolvedMimeType);
+            const attMatch = m.attachments?.find(
+              (a) =>
+                a.type === "image" || (imgPart.filename && a.name === imgPart.filename)
+            );
+            const { uri: resolvedUri, mimeType: resolvedMimeType } = resolveGcsUri({
+              candidate: imgUrl,
+              filename: imgPart.filename,
+              mimeTypeHint: "image/jpeg",
+              attachmentIds: attMatch ? [attMatch.id] : [],
+              store: defaultAttachmentStore,
+            });
 
             if (resolvedUri) {
               parts.push({
@@ -397,52 +432,23 @@ export function createGeminiChatAdapter(
               mimeType?: string;
               filename?: string;
             };
-            let gcsUri = filePart.data || "";
-            let mimeType = inferMimeType(filePart.filename, filePart.mimeType);
-
-            if (!gcsUri.startsWith("gs://")) {
-              // 1. Look in message attachments
-              const attMatch = m.attachments?.find(
-                (a) =>
-                  a.type === "document" ||
-                  (filePart.filename && a.name === filePart.filename)
-              );
-              if (attMatch) {
-                const meta = defaultAttachmentStore.get(attMatch.id);
-                if (meta?.gcsUri) {
-                  gcsUri = meta.gcsUri;
-                  if (meta.contentType)
-                    mimeType = inferMimeType(filePart.filename, meta.contentType);
-                }
-              }
-
-              // 2. Look in attachment store by URL or filename
-              if (!gcsUri.startsWith("gs://")) {
-                const meta =
-                  defaultAttachmentStore.getByUrl?.(gcsUri) ||
-                  (filePart.filename
-                    ? defaultAttachmentStore.getByFilename?.(filePart.filename)
-                    : undefined) ||
-                  defaultAttachmentStore.findByAny?.(gcsUri);
-                if (meta?.gcsUri) {
-                  gcsUri = meta.gcsUri;
-                  if (meta.contentType)
-                    mimeType = inferMimeType(filePart.filename, meta.contentType);
-                }
-              }
-
-              // 3. Parse Google Cloud Storage signed URL
-              if (!gcsUri.startsWith("gs://")) {
-                const gcsMatch = gcsUri.match(
-                  /^https:\/\/storage\.googleapis\.com\/([^/?#]+)\/([^?#]+)/
-                );
-                if (gcsMatch) {
-                  gcsUri = `gs://${gcsMatch[1]}/${gcsMatch[2]}`;
-                }
-              }
-            }
-
-            mimeType = inferMimeType(filePart.filename, mimeType);
+            const rawData = filePart.data || "";
+            const fileAttMatch = m.attachments?.find(
+              (a) =>
+                a.type === "document" ||
+                (filePart.filename && a.name === filePart.filename)
+            );
+            const resolvedFile = resolveGcsUri({
+              candidate: rawData,
+              filename: filePart.filename,
+              mimeTypeHint: filePart.mimeType,
+              attachmentIds: fileAttMatch ? [fileAttMatch.id] : [],
+              store: defaultAttachmentStore,
+            });
+            // Nothing resolved: keep the original value so it can go out as an
+            // inline file part rather than being dropped.
+            const gcsUri = resolvedFile.uri || rawData;
+            const mimeType = resolvedFile.mimeType;
 
             if (gcsUri.startsWith("gs://")) {
               parts.push({
@@ -504,50 +510,31 @@ export function createGeminiChatAdapter(
             let attGcsUri = "";
             let attMimeType = inferMimeType(att.name, att.contentType || att.file?.type);
 
-            // 1. Check content parts inside attachment
+            // Prefer a candidate carried by the attachment's own content parts,
+            // then fall back to resolving from the attachment id alone.
+            let candidate = "";
             if (att.content && Array.isArray(att.content)) {
               for (const cp of att.content) {
                 if (cp.type === "image") {
-                  const imgPart = cp as { image?: string; filename?: string };
-                  const imgUrl = imgPart.image || "";
-                  if (imgUrl.startsWith("gs://")) {
-                    attGcsUri = imgUrl;
-                  } else {
-                    const meta =
-                      defaultAttachmentStore.get(att.id) ||
-                      defaultAttachmentStore.getByUrl?.(imgUrl) ||
-                      defaultAttachmentStore.findByAny?.(att.id);
-                    if (meta?.gcsUri) {
-                      attGcsUri = meta.gcsUri;
-                      if (meta.contentType)
-                        attMimeType = inferMimeType(att.name, meta.contentType);
-                    }
-                  }
+                  candidate = (cp as { image?: string }).image || candidate;
                 } else if (cp.type === "file") {
                   const filePart = cp as { data?: string; mimeType?: string };
-                  if (filePart.data?.startsWith("gs://")) {
-                    attGcsUri = filePart.data;
-                  }
+                  candidate = filePart.data || candidate;
                   if (filePart.mimeType)
                     attMimeType = inferMimeType(att.name, filePart.mimeType);
                 }
               }
             }
 
-            // 2. Direct lookup in attachment store
-            if (!attGcsUri) {
-              const meta =
-                defaultAttachmentStore.get(att.id) ||
-                defaultAttachmentStore.findByAny?.(att.id) ||
-                defaultAttachmentStore.getByFilename?.(att.name);
-              if (meta?.gcsUri) {
-                attGcsUri = meta.gcsUri;
-                if (meta.contentType)
-                  attMimeType = inferMimeType(att.name, meta.contentType);
-              }
-            }
-
-            attMimeType = inferMimeType(att.name, attMimeType);
+            const resolvedAtt = resolveGcsUri({
+              candidate,
+              filename: att.name,
+              mimeTypeHint: attMimeType,
+              attachmentIds: [att.id],
+              store: defaultAttachmentStore,
+            });
+            attGcsUri = resolvedAtt.uri;
+            attMimeType = resolvedAtt.mimeType;
 
             if (attGcsUri && attGcsUri.startsWith("gs://")) {
               const alreadyExists = parts.some(
