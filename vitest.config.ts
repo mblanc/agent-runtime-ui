@@ -12,6 +12,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
+    setupFiles: ["./tests/setup.ts"],
     env: {
       // The provider factory mocks on intent rather than on NODE_ENV, so the
       // suite has to declare it. Individual tests still override this to
