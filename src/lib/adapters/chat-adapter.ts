@@ -126,129 +126,21 @@ export function resolveGcsUri(opts: {
   return { uri, mimeType: inferMimeType(filename, contentType || mimeTypeHint) };
 }
 
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-export function appendToolResultToReasoning(
-  reasoning: string,
-  toolName: string,
-  resStr: string
-): string {
-  const toolBlockRegex = new RegExp(
-    `:::tool\\[${escapeRegex(toolName)}\\](\\{[^}]*status="(?:running|requires-action)"[^}]*\\})\\s*\\r?\\n([\\s\\S]*?)(?:\\r?\\n:::|$)`,
-    "g"
-  );
-
-  let lastMatch: RegExpExecArray | null = null;
-  let match: RegExpExecArray | null;
-  while ((match = toolBlockRegex.exec(reasoning)) !== null) {
-    lastMatch = match;
-  }
-
-  if (lastMatch) {
-    const matchIndex = lastMatch.index;
-    const fullMatch = lastMatch[0];
-    const attrGroup = lastMatch[1];
-    const bodyGroup = lastMatch[2];
-
-    const updatedAttr = attrGroup.replace(
-      /status="(?:running|requires-action)"/,
-      'status="complete"'
-    );
-
-    let updatedBody = bodyGroup.trimEnd();
-    if (updatedBody.includes("**Result:**")) {
-      updatedBody = updatedBody.replace(
-        /\*\*Result:\*\*\s*\r?\n```(?:json)?\s*\r?\n[\s\S]*?\r?\n```/i,
-        `**Result:**\n\`\`\`json\n${resStr}\n\`\`\``
-      );
-    } else {
-      updatedBody = `${updatedBody}\n**Result:**\n\`\`\`json\n${resStr}\n\`\`\``;
-    }
-
-    const replacement = `:::tool[${toolName}]${updatedAttr}\n${updatedBody}\n:::`;
-    return (
-      reasoning.substring(0, matchIndex) +
-      replacement +
-      reasoning.substring(matchIndex + fullMatch.length)
-    );
-  }
-
-  // If no running block was found, check if a complete block already exists with results
-  const completeRegex = new RegExp(
-    `:::tool\\[${escapeRegex(toolName)}\\]\\{status="complete"\\}`,
-    "i"
-  );
-  if (completeRegex.test(reasoning)) {
-    return reasoning;
-  }
-
+/**
+ * Strips characters that would break out of a `:::directive[name]{attrs}` block.
+ *
+ * Tool and subagent names originate from the model, so a crafted name is an
+ * injection into the rendering DSL: `]` closes the label early, `"` escapes an
+ * attribute value, and `:` can start a sibling directive. The blast radius today
+ * is garbled UI, but it grows with every directive added, and the cost of
+ * closing it is one replace at the single point where names are rendered.
+ */
+export function sanitizeDirectiveName(name: string): string {
   return (
-    reasoning +
-    `\n\n:::tool[${toolName}]{status="complete"}\n**Result:**\n\`\`\`json\n${resStr}\n\`\`\`\n:::`
-  );
-}
-
-export function appendAgentResponseToReasoning(
-  reasoning: string,
-  agentName: string,
-  responseStr: string,
-  displayName?: string,
-  status: "running" | "complete" = "complete"
-): string {
-  const name = displayName || formatAgentDisplayName(agentName);
-  const subagentRegex = new RegExp(
-    `:::subagent\\[${escapeRegex(name)}\\](\\{[^}]*agent="${escapeRegex(agentName)}"[^}]*\\})\\s*\\r?\\n([\\s\\S]*?)(?:\\r?\\n:::|$)`,
-    "g"
-  );
-
-  let lastMatch: RegExpExecArray | null = null;
-  let match: RegExpExecArray | null;
-  while ((match = subagentRegex.exec(reasoning)) !== null) {
-    lastMatch = match;
-  }
-
-  if (lastMatch) {
-    const matchIndex = lastMatch.index;
-    const fullMatch = lastMatch[0];
-    const attrGroup = lastMatch[1];
-    const bodyGroup = lastMatch[2];
-
-    const updatedAttr = attrGroup.replace(/status="[^"]*"/, `status="${status}"`);
-
-    let updatedBody = bodyGroup.replace(/\r?\n$/, "");
-    if (updatedBody.includes("**Response:**")) {
-      const respRegex = /(\*\*Response:\*\*\s*\r?\n)([\s\S]*)/i;
-      const respMatch = updatedBody.match(respRegex);
-      if (respMatch) {
-        const prefix = updatedBody.substring(0, respMatch.index! + respMatch[1].length);
-        const currentResp = respMatch[2];
-        const newResp = currentResp ? `${currentResp}${responseStr}` : responseStr;
-        updatedBody = `${prefix}${newResp}`;
-      } else {
-        updatedBody = `${updatedBody}\n${responseStr}`;
-      }
-    } else if (
-      updatedBody.includes("**Task Input:**") ||
-      updatedBody.includes("**Input:**")
-    ) {
-      updatedBody = `${updatedBody.trimEnd()}\n**Response:**\n${responseStr}`;
-    } else {
-      updatedBody = updatedBody ? `${updatedBody}${responseStr}` : responseStr;
-    }
-
-    const replacement = `:::subagent[${name}]${updatedAttr}\n${updatedBody}\n:::`;
-    return (
-      reasoning.substring(0, matchIndex) +
-      replacement +
-      reasoning.substring(matchIndex + fullMatch.length)
-    );
-  }
-
-  return (
-    reasoning +
-    `\n\n:::subagent[${name}]{status="${status}" agent="${agentName}"}\n${responseStr.trim()}\n:::`
+    name
+      .replace(/[[\]{}":]/g, "")
+      .replace(/\s+/g, " ")
+      .trim() || "tool"
   );
 }
 
@@ -685,10 +577,22 @@ export function createGeminiChatAdapter(
           status: "running" | "complete";
         }
 
+        // Tool entries hold structured fields rather than a rendered markdown
+        // string. The block used to be built once and then edited in place by a
+        // RegExp assembled from the model-supplied tool name, which meant a
+        // result containing `\n:::` or `status="complete"` could terminate or
+        // corrupt its own block. Rendering from data once per yield removes the
+        // parse-back entirely, matching how subagent entries already work.
         type ReasoningEntry =
           | { type: "thought"; text: string }
           | { type: "subagent"; agentName: string }
-          | { type: "tool"; toolName: string; block: string };
+          | {
+              type: "tool";
+              toolName: string;
+              argsJson?: string;
+              resultJson?: string;
+              status: "running" | "requires-action" | "complete";
+            };
 
         const subagentsMap = new Map<string, SubagentStreamItem>();
         const reasoningEntries: ReasoningEntry[] = [];
@@ -758,7 +662,23 @@ export function createGeminiChatAdapter(
               body += sub.response;
             }
           }
-          return `:::subagent[${sub.displayName}]{status="${sub.status}" agent="${sub.agentName}"}\n${body.trim()}\n:::`;
+          return `:::subagent[${sanitizeDirectiveName(sub.displayName)}]{status="${sub.status}" agent="${sanitizeDirectiveName(sub.agentName)}"}\n${body.trim()}\n:::`;
+        };
+
+        const formatToolMarkdown = (entry: {
+          toolName: string;
+          argsJson?: string;
+          resultJson?: string;
+          status: "running" | "requires-action" | "complete";
+        }) => {
+          let body = "";
+          if (entry.argsJson) {
+            body += `**Arguments:**\n\`\`\`json\n${entry.argsJson}\n\`\`\`\n`;
+          }
+          if (entry.resultJson !== undefined) {
+            body += `**Result:**\n\`\`\`json\n${entry.resultJson}\n\`\`\`\n`;
+          }
+          return `:::tool[${sanitizeDirectiveName(entry.toolName)}]{status="${entry.status}"}\n${body.trim()}\n:::`;
         };
 
         const buildReasoningMarkdown = () => {
@@ -773,9 +693,7 @@ export function createGeminiChatAdapter(
                 parts.push(formatSubagentMarkdown(sub));
               }
             } else if (entry.type === "tool") {
-              if (entry.block.trim()) {
-                parts.push(entry.block.trim());
-              }
+              parts.push(formatToolMarkdown(entry));
             }
           }
           return parts.join("\n\n");
@@ -826,11 +744,11 @@ export function createGeminiChatAdapter(
                   }
                 }
                 for (const entry of reasoningEntries) {
-                  if (entry.type === "tool") {
-                    entry.block = entry.block.replaceAll(
-                      'status="running"',
-                      'status="complete"'
-                    );
+                  // A field flip, where this used to be a string replaceAll over
+                  // rendered markdown that would also have rewritten the literal
+                  // text status="running" appearing inside a tool result.
+                  if (entry.type === "tool" && entry.status === "running") {
+                    entry.status = "complete";
                   }
                 }
                 accumulatedReasoning = buildReasoningMarkdown();
@@ -1122,13 +1040,11 @@ export function createGeminiChatAdapter(
                   });
 
                   if (isNewCall) {
-                    const argsStr = JSON.stringify(tc.args || {}, null, 2);
-                    const statusTag = isReqAction ? "requires-action" : "running";
-                    const toolBlock = `:::tool[${toolName}]{status="${statusTag}"}\n**Arguments:**\n\`\`\`json\n${argsStr}\n\`\`\`\n:::`;
                     reasoningEntries.push({
                       type: "tool",
                       toolName,
-                      block: toolBlock,
+                      argsJson: JSON.stringify(tc.args || {}, null, 2),
+                      status: isReqAction ? "requires-action" : "running",
                     });
                   }
                   accumulatedReasoning = buildReasoningMarkdown();
@@ -1218,16 +1134,15 @@ export function createGeminiChatAdapter(
                     .find((e) => e.type === "tool" && e.toolName === toolName);
 
                   if (existingToolEntry && existingToolEntry.type === "tool") {
-                    existingToolEntry.block = appendToolResultToReasoning(
-                      existingToolEntry.block,
-                      toolName,
-                      resStr
-                    );
+                    // Set fields rather than rewriting rendered markdown.
+                    existingToolEntry.resultJson = resStr;
+                    existingToolEntry.status = "complete";
                   } else {
                     reasoningEntries.push({
                       type: "tool",
                       toolName,
-                      block: `:::tool[${toolName}]{status="complete"}\n**Result:**\n\`\`\`json\n${resStr}\n\`\`\`\n:::`,
+                      resultJson: resStr,
+                      status: "complete",
                     });
                   }
                   accumulatedReasoning = buildReasoningMarkdown();
@@ -1266,11 +1181,8 @@ export function createGeminiChatAdapter(
                     }
                   }
                   for (const entry of reasoningEntries) {
-                    if (entry.type === "tool") {
-                      entry.block = entry.block.replaceAll(
-                        'status="running"',
-                        'status="complete"'
-                      );
+                    if (entry.type === "tool" && entry.status === "running") {
+                      entry.status = "complete";
                     }
                   }
                   accumulatedReasoning = buildReasoningMarkdown();

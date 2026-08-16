@@ -6,46 +6,9 @@ import {
   isRootWorkflowOutput,
   groupTurnSessionEvents,
 } from "@/lib/agent-runtime-client";
-import {
-  appendToolResultToReasoning,
-  createYieldContent,
-} from "@/lib/gemini-runtime-adapter";
+import { createYieldContent } from "@/lib/gemini-runtime-adapter";
 
 describe("AgentRuntimeClient", () => {
-  it("appends tool results inside running tool blocks and converts status to complete", () => {
-    const initialReasoning =
-      'Analyzing query...\n\n:::tool[fetch_public_claims]{status="running"}\n**Arguments:**\n```json\n{\n  "ticker": "INTC"\n}\n```\n:::';
-    const resultJson = JSON.stringify({ status: "success", count: 5 });
-
-    const updated = appendToolResultToReasoning(
-      initialReasoning,
-      "fetch_public_claims",
-      resultJson
-    );
-
-    expect(updated).toContain(':::tool[fetch_public_claims]{status="complete"}');
-    expect(updated).toContain(
-      '**Result:**\n```json\n{"status":"success","count":5}\n```'
-    );
-    expect(updated.endsWith(":::")).toBe(true);
-    expect(updated).not.toContain('status="running"');
-  });
-
-  it("does not create duplicate tool blocks when appendToolResultToReasoning is called on already completed tool", () => {
-    const completedReasoning =
-      'Analyzing query...\n\n:::tool[fetch_public_claims]{status="complete"}\n**Arguments:**\n```json\n{\n  "ticker": "INTC"\n}\n```\n**Result:**\n```json\n{"status":"success"}\n```\n:::';
-    const resultJson = JSON.stringify({ status: "success" });
-
-    const updated = appendToolResultToReasoning(
-      completedReasoning,
-      "fetch_public_claims",
-      resultJson
-    );
-
-    const matches = updated.match(/:::tool\[fetch_public_claims\]/g);
-    expect(matches?.length).toBe(1);
-  });
-
   it("deduplicates repeated tool calls across intermediate session events in groupTurnSessionEvents", () => {
     const rawEvents = [
       {
@@ -504,63 +467,6 @@ describe("AgentRuntimeClient", () => {
     expect(grouped[1].content).toBe("Final Comprehensive Market Report");
     expect(grouped[1].thought).toContain(":::subagent[Specialist A]");
     expect(grouped[1].thought).toContain(":::subagent[Specialist B]");
-  });
-
-  it("updates running subagent block with appendAgentResponseToReasoning in adapter", async () => {
-    const { appendAgentResponseToReasoning } =
-      await import("@/lib/gemini-runtime-adapter");
-
-    const initialReasoning =
-      'Analyzing workflow...\n\n:::subagent[Financial Analyst]{status="running" agent="financial_analyst"}\n**Task Input:**\nAnalyze Q3 revenue\n:::';
-
-    const updated = appendAgentResponseToReasoning(
-      initialReasoning,
-      "financial_analyst",
-      "Q3 revenue increased by 14% YoY driven by data center AI chips.",
-      "Financial Analyst"
-    );
-
-    expect(updated).toContain(
-      ':::subagent[Financial Analyst]{status="complete" agent="financial_analyst"}'
-    );
-    expect(updated).toContain("**Task Input:**\nAnalyze Q3 revenue");
-    expect(updated).toContain(
-      "**Response:**\nQ3 revenue increased by 14% YoY driven by data center AI chips."
-    );
-    expect(updated).not.toContain('status="running"');
-  });
-
-  it("accumulates multiple streaming delta chunks into the same subagent block without creating duplicates", async () => {
-    const { appendAgentResponseToReasoning } =
-      await import("@/lib/gemini-runtime-adapter");
-
-    let reasoning =
-      ':::subagent[Panel Member 1]{status="running" agent="member_1"}\n**Task Input:**\nAnalyze AI History\n:::';
-
-    // Chunk 1
-    reasoning = appendAgentResponseToReasoning(
-      reasoning,
-      "member_1",
-      "In 1950, ",
-      "Panel Member 1",
-      "running"
-    );
-    // Chunk 2
-    reasoning = appendAgentResponseToReasoning(
-      reasoning,
-      "member_1",
-      "Alan Turing proposed the Turing Test.",
-      "Panel Member 1",
-      "complete"
-    );
-
-    const matches = reasoning.match(/:::subagent\[Panel Member 1\]/g);
-    expect(matches?.length).toBe(1);
-    expect(reasoning).toContain(
-      "**Response:**\nIn 1950, Alan Turing proposed the Turing Test."
-    );
-    expect(reasoning).toContain('status="complete"');
-    expect(reasoning).not.toContain('status="running"');
   });
 
   it("streams council subagents and Chairman final response into unified thread parts", async () => {

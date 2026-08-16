@@ -5,10 +5,7 @@ import { useLocalRuntime, AssistantRuntimeProvider } from "@assistant-ui/react";
 import type { ToolCallMessagePartProps } from "@assistant-ui/react";
 import { GeminiThread } from "@/components/assistant-ui/gemini-thread";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
-import {
-  createGeminiChatAdapter,
-  appendToolResultToReasoning,
-} from "@/lib/gemini-runtime-adapter";
+import { createGeminiChatAdapter } from "@/lib/gemini-runtime-adapter";
 import { AgentRuntimeClient } from "@/lib/agent-runtime-client";
 import { POST as chatRoute } from "@/app/api/chat/route";
 import { auth } from "@/lib/auth";
@@ -312,20 +309,6 @@ describe("ToolFallback & ADK HITL Integration", () => {
         name: "adk_request_confirmation",
         response: { confirmed: true },
       });
-    });
-
-    it("appendToolResultToReasoning replaces requires-action header cleanly", () => {
-      const initialReasoning =
-        ':::tool[adk_request_confirmation]{status="requires-action"}\n**Arguments:**\n```json\n{\n  "prompt": "Delete"\n}\n```\n:::';
-      const updated = appendToolResultToReasoning(
-        initialReasoning,
-        "adk_request_confirmation",
-        JSON.stringify({ confirmed: true }, null, 2)
-      );
-
-      expect(updated).toContain('status="complete"');
-      expect(updated).not.toContain('status="requires-action"');
-      expect(updated).toContain("**Result:**");
     });
   });
 
