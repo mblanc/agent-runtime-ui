@@ -3,10 +3,11 @@ import { withAuth } from "@/lib/api-handler";
 import { AgentRuntimeClient } from "@/lib/agent-runtime-client";
 import { isSessionOwnedBy } from "@/lib/session-ownership";
 import { ChatRequestBody } from "@/types/agent";
+import { log } from "@/lib/logger";
 
 export const runtime = "nodejs";
 
-export const POST = withAuth(async (req, { userId, userEmail }) => {
+export const POST = withAuth(async (req, { userId, userEmail, requestId }) => {
   let body: ChatRequestBody;
   try {
     body = await req.json();
@@ -57,12 +58,15 @@ export const POST = withAuth(async (req, { userId, userEmail }) => {
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
-      console.log(
-        "[/api/chat] Starting stream for sessionId:",
-        body.sessionId,
-        "user:",
-        userId
-      );
+      const startedAt = Date.now();
+      let eventCount = 0;
+      let outcome: "complete" | "cancelled" | "error" = "complete";
+
+      log.info({
+        event: "chat.stream.start",
+        requestId,
+        sessionId: body.sessionId,
+      });
 
       heartbeatInterval = setInterval(() => {
         if (isCancelled) return;
@@ -80,16 +84,23 @@ export const POST = withAuth(async (req, { userId, userEmail }) => {
           upstream.signal
         )) {
           if (isCancelled) break;
-          console.log("[/api/chat] Yielding event:", event.event_type);
+          eventCount++;
           const chunk = `data: ${JSON.stringify(event)}\n\n`;
           controller.enqueue(encoder.encode(chunk));
         }
-        console.log("[/api/chat] Completed streamQuery loop normally");
       } catch (err: unknown) {
         if (!isCancelled) {
           const errorMessage =
             err instanceof Error ? err.message : "Streaming error occurred";
-          console.error("[/api/chat] Stream error:", errorMessage);
+          outcome = "error";
+          log.error({
+            event: "chat.stream.error",
+            requestId,
+            sessionId: body.sessionId,
+            durationMs: Date.now() - startedAt,
+            eventCount,
+            message: errorMessage,
+          });
           const errChunk = `data: ${JSON.stringify({
             event_type: "error",
             error: errorMessage,
@@ -102,7 +113,14 @@ export const POST = withAuth(async (req, { userId, userEmail }) => {
         }
       } finally {
         if (heartbeatInterval) clearInterval(heartbeatInterval);
-        console.log("[/api/chat] Controller closing stream");
+        log.info({
+          event: "chat.stream.end",
+          requestId,
+          sessionId: body.sessionId,
+          durationMs: Date.now() - startedAt,
+          eventCount,
+          outcome: isCancelled ? "cancelled" : outcome,
+        });
         try {
           controller.close();
         } catch {
@@ -111,7 +129,12 @@ export const POST = withAuth(async (req, { userId, userEmail }) => {
       }
     },
     cancel(reason) {
-      console.log("[/api/chat] Client cancelled stream:", reason);
+      log.info({
+        event: "chat.stream.cancelled",
+        requestId,
+        sessionId: body.sessionId,
+        reason: String(reason ?? ""),
+      });
       isCancelled = true;
       upstream.abort();
       if (heartbeatInterval) clearInterval(heartbeatInterval);

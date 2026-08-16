@@ -1,4 +1,5 @@
 import { AgentActionsDelta, AgentStreamEvent, ChatRequestBody } from "@/types/agent";
+import { log } from "@/lib/logger";
 import { VertexAiContext } from "./context";
 import {
   extractSessionIdFromResourceName,
@@ -157,9 +158,12 @@ export class VertexAiStreamingService {
 
       if (!response.ok) {
         const streamErrText = await response.text().catch(() => "");
-        console.warn(
-          `[VertexAiStreamingService] :streamQuery returned ${response.status} (${response.statusText}): ${streamErrText}. Falling back to :query.`
-        );
+        log.warn({
+          event: "vertex.streamQuery.fallback",
+          status: response.status,
+          statusText: response.statusText,
+          message: streamErrText,
+        });
         const queryEndpoint = `https://${this.context.location}-aiplatform.googleapis.com/v1/${this.context.getNormalizedEngineResource()}:query`;
         const queryResponse = await this.context.fetchWithAuth(
           queryEndpoint,
@@ -196,10 +200,11 @@ export class VertexAiStreamingService {
             extractUsageMetadata(outputObj) ||
             extractUsageMetadata(respObj);
 
-          console.log("[VertexAiStreamingService :query]", {
+          log.debug({
+            event: "vertex.query.fallback",
             resultKeys: Object.keys(rawObj),
             outputKeys: Object.keys(outputObj),
-            usageMetadata: usageMeta,
+            hasUsageMetadata: Boolean(usageMeta),
           });
 
           const groundingMeta =
@@ -289,7 +294,7 @@ export class VertexAiStreamingService {
     } catch (err: unknown) {
       const errorMessage =
         err instanceof Error ? err.message : "Failed to stream from Agent Runtime";
-      console.error("Agent Runtime stream error:", errorMessage);
+      log.error({ event: "vertex.stream.error", message: errorMessage });
       yield {
         event_type: "error",
         error: errorMessage,

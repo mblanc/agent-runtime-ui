@@ -18,9 +18,29 @@ import {
   extractGroundingMetadata,
   mergeGroundingMetadata,
 } from "@/lib/grounding/citation-parser";
+
 import { formatAgentDisplayName } from "@/lib/utils";
 import { defaultAttachmentStore } from "../attachments/attachment-store";
 import { inferMimeType } from "../attachments/mime-types";
+
+/**
+ * Client-side stream tracing, off unless NEXT_PUBLIC_DEBUG_STREAM is "true".
+ *
+ * These call sites used to log unconditionally: the whole outbound conversation
+ * on every turn, and one line per parsed SSE event. That put message content and
+ * attachment URIs in the browser console of any shared machine, and ran a
+ * pretty-printing JSON.stringify of a growing history on the main thread.
+ */
+const DEBUG_STREAM = process.env.NEXT_PUBLIC_DEBUG_STREAM === "true";
+
+function debugStream(event: string, detail?: unknown): void {
+  if (!DEBUG_STREAM) return;
+  if (detail === undefined) {
+    console.debug(`[chat-adapter] ${event}`);
+  } else {
+    console.debug(`[chat-adapter] ${event}`, detail);
+  }
+}
 
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -605,13 +625,12 @@ export function createGeminiChatAdapter(
       const agentId = getAgentId?.();
       const location = getLocation?.();
 
-      console.log(
-        `[createGeminiChatAdapter] Starting run for sessionId: ${sessionId} agentId: ${agentId} location: ${location}`
-      );
-      console.log(
-        "[createGeminiChatAdapter] Sending formattedMessages:",
-        JSON.stringify(formattedMessages, null, 2)
-      );
+      // The full outbound conversation used to be pretty-printed here on every
+      // turn: message content and GCS attachment URIs into the console of a
+      // possibly shared or screen-shared machine, plus a JSON.stringify of a
+      // growing history on the main thread. Behind a flag, off by default.
+      debugStream("run.start", { sessionId, agentId, location });
+      debugStream("run.messages", formattedMessages);
 
       try {
         const headers: Record<string, string> = {
@@ -794,7 +813,7 @@ export function createGeminiChatAdapter(
 
               const jsonStr = trimmed.substring(dataPrefix.length).trim();
               if (jsonStr === "[DONE]") {
-                console.log("[createGeminiChatAdapter] Received [DONE]");
+                debugStream("sse.done");
                 finalizeAllSubagents();
                 flushCurrentTextSegment();
                 for (const tc of toolCallsMap.values()) {
@@ -827,10 +846,8 @@ export function createGeminiChatAdapter(
 
               try {
                 const parsed = JSON.parse(jsonStr);
-                console.log(
-                  "[createGeminiChatAdapter] Parsed SSE event:",
-                  parsed.event_type
-                );
+                // Once per SSE event: hundreds of lines for a long generation.
+                debugStream("sse.event", parsed.event_type);
 
                 latestEventId =
                   parsed.eventId ||
@@ -1319,7 +1336,7 @@ export function createGeminiChatAdapter(
         }
       } catch (err: unknown) {
         if ((err instanceof Error && err.name === "AbortError") || abortSignal?.aborted) {
-          console.log("[createGeminiChatAdapter] Chat stream aborted cleanly by client");
+          debugStream("run.aborted");
           return;
         }
         console.error("[createGeminiChatAdapter] Run error:", err);
