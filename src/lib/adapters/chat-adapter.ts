@@ -166,15 +166,32 @@ type ToolCallContentPart = Extract<
   { type: "tool-call" }
 >;
 
-export function createYieldContent(
-  reasoning: string,
-  text: string,
-  toolCalls?: ToolCallYieldItem[],
-  eventId?: string,
-  retrievedMemories?: MemoryRetrievalItem[],
-  groundingMetadata?: GroundingMetadata,
-  messageInfo?: AgentMessageInfoMetadata
-): ChatModelRunResult {
+/**
+ * One yielded snapshot of a message in progress.
+ *
+ * A single object rather than seven positional parameters, five of them
+ * optional and four of them `string | undefined`: transposing two of those was
+ * silent, and adding a metadata channel meant editing every call site.
+ */
+export interface YieldContentFields {
+  reasoning: string;
+  text: string;
+  toolCalls?: ToolCallYieldItem[];
+  eventId?: string;
+  retrievedMemories?: MemoryRetrievalItem[];
+  groundingMetadata?: GroundingMetadata;
+  messageInfo?: AgentMessageInfoMetadata;
+}
+
+export function createYieldContent({
+  reasoning,
+  text,
+  toolCalls,
+  eventId,
+  retrievedMemories,
+  groundingMetadata,
+  messageInfo,
+}: YieldContentFields): ChatModelRunResult {
   const hasRequiresAction = (toolCalls || []).some(
     (tc) => tc.status?.type === "requires-action" && tc.result === undefined
   );
@@ -681,6 +698,24 @@ export function createGeminiChatAdapter(
           return `:::tool[${sanitizeDirectiveName(entry.toolName)}]{status="${entry.status}"}\n${body.trim()}\n:::`;
         };
 
+        /**
+         * The current message-in-progress as a yieldable result.
+         *
+         * Every yield in the dispatch loop passed the same seven expressions in
+         * the same order — eleven identical argument lists. Adding a metadata
+         * channel now means editing this one function instead of all of them.
+         */
+        const snapshot = (): ChatModelRunResult =>
+          createYieldContent({
+            reasoning: accumulatedReasoning,
+            text: accumulatedText,
+            toolCalls: Array.from(toolCallsMap.values()),
+            eventId: latestEventId,
+            retrievedMemories: retrievedMemoriesList,
+            groundingMetadata: latestGroundingMetadata,
+            messageInfo: getMessageInfo(),
+          });
+
         const buildReasoningMarkdown = () => {
           const parts: string[] = [];
           for (const entry of reasoningEntries) {
@@ -754,15 +789,7 @@ export function createGeminiChatAdapter(
                 accumulatedReasoning = buildReasoningMarkdown();
                 accumulatedText = finalizedTextPrefix;
 
-                yield createYieldContent(
-                  accumulatedReasoning,
-                  accumulatedText,
-                  Array.from(toolCallsMap.values()),
-                  latestEventId,
-                  retrievedMemoriesList,
-                  latestGroundingMetadata,
-                  getMessageInfo()
-                );
+                yield snapshot();
                 return;
               }
 
@@ -851,15 +878,7 @@ export function createGeminiChatAdapter(
                   accumulatedReasoning = buildReasoningMarkdown();
                   if (shouldYield) {
                     lastStreamYieldTime = now;
-                    yield createYieldContent(
-                      accumulatedReasoning,
-                      accumulatedText,
-                      Array.from(toolCallsMap.values()),
-                      latestEventId,
-                      retrievedMemoriesList,
-                      latestGroundingMetadata,
-                      getMessageInfo()
-                    );
+                    yield snapshot();
                   }
                 } else if (parsed.event_type === "thought" && parsed.thought) {
                   const last = reasoningEntries[reasoningEntries.length - 1];
@@ -883,15 +902,7 @@ export function createGeminiChatAdapter(
                   accumulatedReasoning = buildReasoningMarkdown();
                   if (shouldYield) {
                     lastStreamYieldTime = now;
-                    yield createYieldContent(
-                      accumulatedReasoning,
-                      accumulatedText,
-                      Array.from(toolCallsMap.values()),
-                      latestEventId,
-                      retrievedMemoriesList,
-                      latestGroundingMetadata,
-                      getMessageInfo()
-                    );
+                    yield snapshot();
                   }
                 } else if (parsed.event_type === "agent_call" && parsed.agent_call) {
                   const subagent = parsed.agent_call;
@@ -927,15 +938,7 @@ export function createGeminiChatAdapter(
                   }
 
                   accumulatedReasoning = buildReasoningMarkdown();
-                  yield createYieldContent(
-                    accumulatedReasoning,
-                    accumulatedText,
-                    Array.from(toolCallsMap.values()),
-                    latestEventId,
-                    retrievedMemoriesList,
-                    latestGroundingMetadata,
-                    getMessageInfo()
-                  );
+                  yield snapshot();
                 } else if (
                   parsed.event_type === "agent_response" &&
                   parsed.agent_response
@@ -972,15 +975,7 @@ export function createGeminiChatAdapter(
                   }
 
                   accumulatedReasoning = buildReasoningMarkdown();
-                  yield createYieldContent(
-                    accumulatedReasoning,
-                    accumulatedText,
-                    Array.from(toolCallsMap.values()),
-                    latestEventId,
-                    retrievedMemoriesList,
-                    latestGroundingMetadata,
-                    getMessageInfo()
-                  );
+                  yield snapshot();
                 } else if (parsed.event_type === "tool_call" && parsed.tool_call) {
                   if (activeSubagentName) {
                     const prev = subagentsMap.get(activeSubagentName);
@@ -1049,15 +1044,7 @@ export function createGeminiChatAdapter(
                   }
                   accumulatedReasoning = buildReasoningMarkdown();
 
-                  yield createYieldContent(
-                    accumulatedReasoning,
-                    accumulatedText,
-                    Array.from(toolCallsMap.values()),
-                    latestEventId,
-                    retrievedMemoriesList,
-                    latestGroundingMetadata,
-                    getMessageInfo()
-                  );
+                  yield snapshot();
                 } else if (parsed.event_type === "tool_result" && parsed.tool_result) {
                   if (activeSubagentName) {
                     const prev = subagentsMap.get(activeSubagentName);
@@ -1147,30 +1134,14 @@ export function createGeminiChatAdapter(
                   }
                   accumulatedReasoning = buildReasoningMarkdown();
 
-                  yield createYieldContent(
-                    accumulatedReasoning,
-                    accumulatedText,
-                    Array.from(toolCallsMap.values()),
-                    latestEventId,
-                    retrievedMemoriesList,
-                    latestGroundingMetadata,
-                    getMessageInfo()
-                  );
+                  yield snapshot();
                 } else if (parsed.event_type === "error" && parsed.error) {
                   finalizeAllSubagents();
                   flushCurrentTextSegment();
                   accumulatedText +=
                     (accumulatedText ? "\n\n" : "") +
                     `⚠️ **Agent Runtime Error:** ${parsed.error}`;
-                  yield createYieldContent(
-                    accumulatedReasoning,
-                    accumulatedText,
-                    Array.from(toolCallsMap.values()),
-                    latestEventId,
-                    retrievedMemoriesList,
-                    latestGroundingMetadata,
-                    getMessageInfo()
-                  );
+                  yield snapshot();
                   return;
                 } else if (parsed.event_type === "done") {
                   finalizeAllSubagents();
@@ -1188,15 +1159,7 @@ export function createGeminiChatAdapter(
                   accumulatedReasoning = buildReasoningMarkdown();
                   accumulatedText = finalizedTextPrefix;
 
-                  yield createYieldContent(
-                    accumulatedReasoning,
-                    accumulatedText,
-                    Array.from(toolCallsMap.values()),
-                    latestEventId,
-                    retrievedMemoriesList,
-                    latestGroundingMetadata,
-                    getMessageInfo()
-                  );
+                  yield snapshot();
                   return;
                 } else if (extractedMeta) {
                   // Metadata-only event: nothing else to handle, so force a yield
@@ -1209,15 +1172,7 @@ export function createGeminiChatAdapter(
                   // final event carries. That skipped the `done` branch's tool
                   // and subagent finalisation, leaving spinners running forever,
                   // and swallowed backend errors entirely.
-                  yield createYieldContent(
-                    accumulatedReasoning,
-                    accumulatedText,
-                    Array.from(toolCallsMap.values()),
-                    latestEventId,
-                    retrievedMemoriesList,
-                    latestGroundingMetadata,
-                    getMessageInfo()
-                  );
+                  yield snapshot();
                 }
               } catch (e: unknown) {
                 console.warn(
@@ -1232,15 +1187,7 @@ export function createGeminiChatAdapter(
           flushCurrentTextSegment();
           accumulatedReasoning = buildReasoningMarkdown();
           accumulatedText = finalizedTextPrefix;
-          yield createYieldContent(
-            accumulatedReasoning,
-            accumulatedText,
-            Array.from(toolCallsMap.values()),
-            latestEventId,
-            retrievedMemoriesList,
-            latestGroundingMetadata,
-            getMessageInfo()
-          );
+          yield snapshot();
         } finally {
           if (typeof reader?.releaseLock === "function") {
             try {

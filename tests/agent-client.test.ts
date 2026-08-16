@@ -1167,14 +1167,11 @@ describe("AgentRuntimeClient", () => {
 
   describe("Stream Telemetry & Message Info Propagation", () => {
     it("packs message info telemetry into metadata.custom via createYieldContent", () => {
-      const result = createYieldContent(
-        "Reasoning thought",
-        "Final response text",
-        undefined,
-        "evt-123",
-        undefined,
-        undefined,
-        {
+      const result = createYieldContent({
+        reasoning: "Reasoning thought",
+        text: "Final response text",
+        eventId: "evt-123",
+        messageInfo: {
           invocationId: "e-inv-456",
           modelVersion: "gemini-2.5-pro",
           usageMetadata: {
@@ -1187,8 +1184,8 @@ describe("AgentRuntimeClient", () => {
           nodePath: "root_agent@1",
           thoughtSignature: "Sig-XYZ-789",
           finishReason: "STOP",
-        }
-      );
+        },
+      });
 
       const custom = result.metadata?.custom as Record<string, unknown>;
       expect(custom).toBeDefined();

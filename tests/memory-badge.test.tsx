@@ -56,13 +56,13 @@ describe("MemoryRetrievalBadge Component", () => {
 
 describe("Chat Adapter createYieldContent with Memory Context", () => {
   it("includes retrievedMemories inside metadata.custom", () => {
-    const result = createYieldContent(
-      "Thinking...",
-      "Hello world",
-      [],
-      "event-123",
-      mockRetrievedMemories
-    );
+    const result = createYieldContent({
+      reasoning: "Thinking...",
+      text: "Hello world",
+      toolCalls: [],
+      eventId: "event-123",
+      retrievedMemories: mockRetrievedMemories,
+    });
 
     expect(result.metadata?.custom?.eventId).toBe("event-123");
     expect(result.metadata?.custom?.retrievedMemories).toEqual(mockRetrievedMemories);
