@@ -63,7 +63,7 @@ describe("Agents API Route", () => {
     expect(opsAgent.location).toBe("us-central1");
 
     const genericAgent = data.agents.find(
-      (a: { id: string }) => a.id === "generic-agent"
+      (a: { id: string }) => a.id === "mock-generic-agent"
     );
     expect(genericAgent).toBeDefined();
     expect(genericAgent.displayName).toBe("Generic Agent");
@@ -88,7 +88,7 @@ describe("Agents API Route", () => {
     expect(res.headers.get("Cache-Control")).toContain("no-store");
   });
 
-  it("returns 500 when AgentRuntimeClient fails to list reasoning engines", async () => {
+  it("returns 500 when the provider fails to list reasoning engines", async () => {
     vi.spyOn(auth.api, "getSession").mockResolvedValueOnce({
       user: {
         id: "test-user",
@@ -100,8 +100,9 @@ describe("Agents API Route", () => {
       },
     });
 
-    const { AgentRuntimeClient } = await import("@/lib/agent-runtime-client");
-    vi.spyOn(AgentRuntimeClient.prototype, "listReasoningEngines").mockRejectedValueOnce(
+    const { MockAgentRuntimeProvider } =
+      await import("@/lib/agent-runtime/mock/mock-provider");
+    vi.spyOn(MockAgentRuntimeProvider.prototype, "listAgents").mockRejectedValueOnce(
       new Error("GCP Discovery Service Unavailable")
     );
 

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { withAuthDynamic } from "@/lib/api-handler";
-import { AgentRuntimeClient } from "@/lib/agent-runtime-client";
+import { createAgentRuntimeProvider } from "@/lib/agent-runtime/factory";
 import { isSessionOwnedBy } from "@/lib/session-ownership";
 import type { SessionStateMap } from "@/types/agent";
 
@@ -35,8 +35,8 @@ export const GET = withAuthDynamic<SessionParams>(
       undefined;
     const location = req.nextUrl.searchParams.get("location") || undefined;
 
-    const agentClient = new AgentRuntimeClient(agentId, location);
-    const sessionDetails = await agentClient.getSession(sessionId, agentId, location);
+    const provider = createAgentRuntimeProvider(agentId, location);
+    const sessionDetails = await provider.getSession(sessionId, agentId, location);
 
     if (!sessionDetails) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
@@ -49,7 +49,7 @@ export const GET = withAuthDynamic<SessionParams>(
       );
     }
 
-    const state = await agentClient.getSessionState(sessionId, agentId, location);
+    const state = await provider.getSessionState(sessionId, agentId, location);
 
     return NextResponse.json(
       {
@@ -88,8 +88,8 @@ export const PATCH = withAuthDynamic<SessionParams>(
     const location =
       req.nextUrl.searchParams.get("location") || body?.location || undefined;
 
-    const agentClient = new AgentRuntimeClient(agentId, location);
-    const sessionDetails = await agentClient.getSession(sessionId, agentId, location);
+    const provider = createAgentRuntimeProvider(agentId, location);
+    const sessionDetails = await provider.getSession(sessionId, agentId, location);
 
     if (!sessionDetails) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
@@ -111,7 +111,7 @@ export const PATCH = withAuthDynamic<SessionParams>(
     }
 
     const mode: "merge" | "replace" = body?.mode === "replace" ? "replace" : "merge";
-    const updatedState = await agentClient.updateSessionState(
+    const updatedState = await provider.updateSessionState(
       sessionId,
       rawState as SessionStateMap,
       mode,

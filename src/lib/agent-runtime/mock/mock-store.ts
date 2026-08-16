@@ -83,9 +83,9 @@ export const mockAgentsStore: DeployedAgent[] = [
     updateTime: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
   },
   {
-    id: "generic-agent",
+    id: "mock-generic-agent",
     resourceName:
-      "projects/mock-project/locations/us-central1/reasoningEngines/generic-agent",
+      "projects/mock-project/locations/us-central1/reasoningEngines/mock-generic-agent",
     displayName: "Generic Agent",
     description:
       "Multi-purpose reasoning engine with human-in-the-loop confirmation capabilities",
@@ -146,7 +146,7 @@ export const mockSessionsStore = new Map<string, AgentSession>([
     "2648707499674304512",
     {
       id: "2648707499674304512",
-      name: "projects/mock-project/locations/us-central1/reasoningEngines/generic-agent/sessions/2648707499674304512",
+      name: "projects/mock-project/locations/us-central1/reasoningEngines/mock-generic-agent/sessions/2648707499674304512",
       userId: "test-user",
       title: "Summarize https://yongzx.github.io/blog/2026/08/08/llm-can-jump",
       createTime: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),

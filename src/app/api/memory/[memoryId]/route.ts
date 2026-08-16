@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { withAuthDynamic } from "@/lib/api-handler";
-import { AgentRuntimeClient } from "@/lib/agent-runtime-client";
+import { createAgentRuntimeProvider } from "@/lib/agent-runtime/factory";
 
 export const runtime = "nodejs";
 
@@ -35,8 +35,8 @@ export const PATCH = withAuthDynamic<MemoryParams>(async (req, { userId, params 
     req.nextUrl.searchParams.get("location") || body?.location || undefined;
 
   try {
-    const agentClient = new AgentRuntimeClient(agentId, location);
-    const updated = await agentClient.updateMemory(
+    const provider = createAgentRuntimeProvider(agentId, location);
+    const updated = await provider.updateMemory(
       userId,
       memoryId,
       fact ? fact.trim() : "",
@@ -72,8 +72,8 @@ export const DELETE = withAuthDynamic<MemoryParams>(async (req, { userId, params
   const location = req.nextUrl.searchParams.get("location") || undefined;
 
   try {
-    const agentClient = new AgentRuntimeClient(agentId, location);
-    await agentClient.deleteMemory(userId, memoryId, agentId, location);
+    const provider = createAgentRuntimeProvider(agentId, location);
+    await provider.deleteMemory(userId, memoryId, agentId, location);
 
     return NextResponse.json({
       success: true,

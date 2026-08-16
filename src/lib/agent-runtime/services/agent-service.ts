@@ -28,7 +28,7 @@ export class VertexAiAgentService {
       await this.listAgents();
       return this.context.resolveEngineId(engineId);
     } catch (err) {
-      console.warn(`[AgentRuntimeClient] Failed to resolve engine "${engineId}":`, err);
+      console.warn(`[VertexAiAgentService] Failed to resolve engine "${engineId}":`, err);
       return engineId || this.context.reasoningEngineId;
     }
   }

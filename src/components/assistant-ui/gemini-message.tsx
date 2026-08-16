@@ -23,7 +23,11 @@ import {
   FileText,
 } from "lucide-react";
 import { useState, memo } from "react";
-import type { GroundingMetadata, MemoryRetrievalItem } from "@/types/agent";
+import type {
+  GroundingMetadata,
+  MemoryRetrievalItem,
+  ReasoningTraceEntry,
+} from "@/types/agent";
 import {
   ReasoningRoot,
   ReasoningTrigger,
@@ -72,6 +76,35 @@ function AssistantMessageGrounding() {
   );
 
   return <GroundingFooter metadata={groundingMetadata} />;
+}
+
+/**
+ * A reasoning part, rendered from the structured trace when the message has one.
+ *
+ * The trace lives on the message rather than on the part because assistant-ui
+ * owns the reasoning part's shape and it carries only `text`. Both producers
+ * emit exactly one reasoning part per assistant message, so the message-level
+ * trace is that part's trace. The count guard makes that assumption explicit:
+ * were a message ever to carry two reasoning parts, rendering the whole trace
+ * against each would duplicate every card, so both fall back to parsing their
+ * own text — which is still correct, just lossy.
+ */
+function AssistantReasoningPart({ text }: { text: string }) {
+  const trace = useAuiState(
+    (s: {
+      message?: {
+        metadata?: { custom?: { reasoningTrace?: ReasoningTraceEntry[] } };
+      };
+    }) => s.message?.metadata?.custom?.reasoningTrace
+  );
+  const reasoningPartCount = useAuiState(
+    (s: { message?: { content?: readonly { type?: string }[] } }) =>
+      s.message?.content?.filter((p) => p.type === "reasoning").length ?? 0
+  );
+
+  return (
+    <ReasoningText text={text} trace={reasoningPartCount === 1 ? trace : undefined} />
+  );
 }
 
 function AssistantWorkingDots() {
@@ -265,7 +298,7 @@ function ChatMessageImpl() {
                         </div>
                       );
                     case "reasoning":
-                      return <ReasoningText text={part.text} />;
+                      return <AssistantReasoningPart text={part.text} />;
                     case "tool-call": {
                       const isRequiresAction =
                         part.status?.type === "requires-action" ||

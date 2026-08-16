@@ -27,6 +27,24 @@ interface SessionApiItem {
   updateTime: string;
 }
 
+/**
+ * Puts the replayed trace where the live stream puts it: `metadata.custom`.
+ *
+ * The renderer reads one place regardless of which path produced the message,
+ * so history replay and streaming cannot drift into rendering differently — the
+ * failure mode this whole representation change exists to remove.
+ */
+function mergeReasoningTraceIntoMetadata(
+  metadata: { custom?: Record<string, unknown> },
+  reasoningTrace: unknown[] | undefined
+): Record<string, unknown> {
+  if (!reasoningTrace) return metadata as Record<string, unknown>;
+  return {
+    ...metadata,
+    custom: { ...(metadata.custom || {}), reasoningTrace },
+  };
+}
+
 export function formatRemoteMessagesToThreadMessages(
   rawRemoteMessages: Array<Record<string, unknown>>
 ): ThreadMessageLike[] {
@@ -41,6 +59,13 @@ export function formatRemoteMessagesToThreadMessages(
     if (thoughtStr) {
       parts.push({ type: "reasoning", text: thoughtStr });
     }
+
+    // The structured trace behind `thought`. This side of the pipe is typed as
+    // `Record<string, unknown>` because it is raw JSON off the session API, so
+    // the only check worth making is that it is an array — an older backend, or
+    // a session persisted before the field existed, simply has none and the
+    // renderer falls back to parsing `thoughtStr`.
+    const reasoningTrace = Array.isArray(m.reasoningTrace) ? m.reasoningTrace : undefined;
 
     // Extract tool calls from session message
     const toolCalls =
@@ -127,18 +152,46 @@ export function formatRemoteMessagesToThreadMessages(
             },
           }
         : {}),
-      metadata: (m.metadata as Record<string, unknown>) || {
-        custom: { ...(m.id ? { eventId: m.id } : {}) },
-      },
+      metadata: mergeReasoningTraceIntoMetadata(
+        (m.metadata as { custom?: Record<string, unknown> } | undefined) || {
+          custom: { ...(m.id ? { eventId: m.id } : {}) },
+        },
+        reasoningTrace
+      ),
     } as unknown as ThreadMessageLike;
   });
 }
 
-export function useSessionThreadHistoryAdapter(agentId?: string): ThreadHistoryAdapter {
+/**
+ * Builds the query string shared by every per-session API request.
+ *
+ * `location` matters as much as `agentId`: when the agent id is a bare id (not a
+ * full `projects/.../locations/.../reasoningEngines/...` resource path) the server
+ * cannot derive the region from it and falls back to GOOGLE_CLOUD_LOCATION, which
+ * routes the request to the wrong regional host for agents deployed outside the
+ * default region.
+ */
+function sessionQuery(agentId?: string, location?: string): string {
+  const params = new URLSearchParams();
+  if (agentId) params.set("agentId", agentId);
+  if (location) params.set("location", location);
+  const queryStr = params.toString();
+  return queryStr ? `?${queryStr}` : "";
+}
+
+export function useSessionThreadHistoryAdapter(
+  agentId?: string,
+  location?: string
+): ThreadHistoryAdapter {
   const aui = useAui();
   const auiRef = useRef(aui);
+  // Refs (not useMemo deps) because the returned adapter object identity must stay
+  // stable — assistant-ui re-subscribes when it changes. Updated on every render so
+  // the callbacks always read the currently active agent.
   const agentIdRef = useRef(agentId);
   agentIdRef.current = agentId;
+  const locationRef = useRef(location);
+  locationRef.current = location;
 
   useEffect(() => {
     auiRef.current = aui;
@@ -159,10 +212,7 @@ export function useSessionThreadHistoryAdapter(agentId?: string): ThreadHistoryA
         }
 
         try {
-          const currentAgentId = agentIdRef.current;
-          const query = currentAgentId
-            ? `?agentId=${encodeURIComponent(currentAgentId)}`
-            : "";
+          const query = sessionQuery(agentIdRef.current, locationRef.current);
           const res = await fetch(
             getApiUrl(`/api/sessions/${encodeURIComponent(remoteId)}${query}`),
             {
@@ -224,17 +274,18 @@ function getApiUrl(path: string): string {
 
 export function useSessionThreadListAdapter(
   userId?: string,
-  agentId?: string
+  agentId?: string,
+  location?: string
 ): RemoteThreadListAdapter {
   const unstable_Provider: FC<PropsWithChildren> = useCallback(
     function Provider({ children }) {
-      const history = useSessionThreadHistoryAdapter(agentId);
+      const history = useSessionThreadHistoryAdapter(agentId, location);
       const adapters = useMemo(() => ({ history }), [history]);
       return (
         <RuntimeAdapterProvider adapters={adapters}>{children}</RuntimeAdapterProvider>
       );
     },
-    [agentId]
+    [agentId, location]
   );
 
   return useMemo<RemoteThreadListAdapter>(() => {
@@ -244,6 +295,7 @@ export function useSessionThreadListAdapter(
           const params = new URLSearchParams();
           if (userId) params.set("userId", userId);
           if (agentId) params.set("agentId", agentId);
+          if (location) params.set("location", location);
           const queryStr = params.toString();
           const url = getApiUrl(queryStr ? `/api/sessions?${queryStr}` : "/api/sessions");
 
@@ -285,6 +337,7 @@ export function useSessionThreadListAdapter(
             body: JSON.stringify({
               title: "New conversation",
               ...(agentId ? { agentId } : {}),
+              ...(location ? { location } : {}),
             }),
           });
 
@@ -303,7 +356,7 @@ export function useSessionThreadListAdapter(
 
       fetch: async (threadId: string) => {
         try {
-          const query = agentId ? `?agentId=${encodeURIComponent(agentId)}` : "";
+          const query = sessionQuery(agentId, location);
           const res = await fetch(
             getApiUrl(`/api/sessions/${encodeURIComponent(threadId)}${query}`),
             {
@@ -340,7 +393,7 @@ export function useSessionThreadListAdapter(
 
       delete: async (remoteId: string) => {
         try {
-          const query = agentId ? `?agentId=${encodeURIComponent(agentId)}` : "";
+          const query = sessionQuery(agentId, location);
           await fetch(
             getApiUrl(`/api/sessions/${encodeURIComponent(remoteId)}${query}`),
             {
@@ -354,7 +407,7 @@ export function useSessionThreadListAdapter(
 
       rename: async (remoteId: string, newTitle: string) => {
         try {
-          const query = agentId ? `?agentId=${encodeURIComponent(agentId)}` : "";
+          const query = sessionQuery(agentId, location);
           await fetch(
             getApiUrl(`/api/sessions/${encodeURIComponent(remoteId)}${query}`),
             {
@@ -373,12 +426,6 @@ export function useSessionThreadListAdapter(
       unarchive: async () => {},
 
       generateTitle: async (remoteId: string, messages: readonly ThreadMessage[]) => {
-        console.log(
-          "[session-adapter] generateTitle called for remoteId:",
-          remoteId,
-          "messages count:",
-          messages.length
-        );
         const firstUserMsg = messages.find((m) => m.role === "user");
         let title = "New conversation";
         if (firstUserMsg && firstUserMsg.content) {
@@ -400,13 +447,7 @@ export function useSessionThreadListAdapter(
 
         // Persist the generated title to backend Session Service
         try {
-          console.log(
-            "[session-adapter] PATCHing title for remoteId:",
-            remoteId,
-            "to:",
-            title
-          );
-          const query = agentId ? `?agentId=${encodeURIComponent(agentId)}` : "";
+          const query = sessionQuery(agentId, location);
           await fetch(
             getApiUrl(`/api/sessions/${encodeURIComponent(remoteId)}${query}`),
             {
@@ -427,5 +468,5 @@ export function useSessionThreadListAdapter(
 
       unstable_Provider,
     };
-  }, [unstable_Provider, userId, agentId]);
+  }, [unstable_Provider, userId, agentId, location]);
 }

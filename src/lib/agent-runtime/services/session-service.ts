@@ -63,11 +63,7 @@ export class VertexAiSessionService {
   async getSessionsBaseUrl(customEngineId?: string): Promise<string> {
     const resolved = await this.agentService.resolveEngineIdAsync(customEngineId);
     const targetEngine = resolved || this.context.reasoningEngineId;
-    let loc = this.context.location;
-    if (targetEngine.startsWith("projects/")) {
-      const match = targetEngine.match(/^projects\/[^/]+\/locations\/([^/]+)\//);
-      if (match && match[1]) loc = this.context.resolveLocation(match[1]);
-    }
+    const loc = this.context.resolveLocationForResource(targetEngine);
     return `https://${loc}-aiplatform.googleapis.com/v1beta1/${this.context.getNormalizedEngineResource(targetEngine, loc)}/sessions`;
   }
 
@@ -93,11 +89,7 @@ export class VertexAiSessionService {
     const cleanId = extractSessionIdFromResourceName(sessionId);
     const resolved = await this.agentService.resolveEngineIdAsync(customEngineId);
     const targetEngine = resolved || this.context.reasoningEngineId;
-    let loc = this.context.resolveLocation(customLocation);
-    if (targetEngine.startsWith("projects/")) {
-      const match = targetEngine.match(/^projects\/[^/]+\/locations\/([^/]+)\//);
-      if (match && match[1]) loc = this.context.resolveLocation(match[1]);
-    }
+    const loc = this.context.resolveLocationForResource(targetEngine, customLocation);
     const base = `https://${loc}-aiplatform.googleapis.com/v1beta1/${this.context.getNormalizedEngineResource(targetEngine, loc)}/sessions/${encodeURIComponent(cleanId)}`;
     return subPath ? `${base}/${subPath}` : base;
   }

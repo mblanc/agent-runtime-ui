@@ -183,7 +183,7 @@ describe("Sessions API Routes", () => {
       });
 
       const req = new NextRequest(
-        "http://localhost:3000/api/sessions/2648707499674304512?agentId=generic-agent"
+        "http://localhost:3000/api/sessions/2648707499674304512?agentId=mock-generic-agent"
       );
       const res = await getSessionDetail(req, {
         params: Promise.resolve({ sessionId: "2648707499674304512" }),

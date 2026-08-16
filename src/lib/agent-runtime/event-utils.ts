@@ -35,15 +35,56 @@ export function safeParseJson(val: unknown): unknown {
   return val;
 }
 
+export interface QueryOutputToolCall {
+  id?: string;
+  name: string;
+  args: Record<string, unknown>;
+}
+
+export interface QueryOutputToolResult {
+  id?: string;
+  name: string;
+  /**
+   * Wrapped in `{ output }` when the payload is not already an object, which is
+   * the shape the rest of the pipe assumes and how `toAgentMessages` wraps a
+   * scalar tool result on the way back out.
+   */
+  result: Record<string, unknown>;
+}
+
+/**
+ * Flattens a `:query` response into the channels the stream has events for.
+ *
+ * Tool calls used to leave here disguised as thoughts — one
+ * `[Tool Executed]: <name>` line per `functionCall` part, appended to
+ * `thoughts`. That was a third serialisation of the trace, alongside the
+ * directive DSL, and it only rendered as a tool card because the consumer
+ * regex-matched the marker back out of the thought text. Once the trace became
+ * data, a thought string was a thought and the card became a generic "Thought"
+ * with the marker syntax showing through.
+ *
+ * They now come out as their own channel, so the `:query` fallback can emit real
+ * `tool_call` events and both paths produce a `type: "tool"` entry by
+ * construction rather than by string matching.
+ *
+ * Responses come out too. A call emitted without one leaves an unanswered
+ * `function_call` in the thread, which is then replayed upstream on the next
+ * turn; `:query` returns the whole flattened turn, so the matching
+ * `functionResponse` parts are normally right there.
+ */
 export function extractTextFromQueryOutput(output: unknown): {
   text: string;
   thoughts: string[];
+  toolCalls: QueryOutputToolCall[];
+  toolResults: QueryOutputToolResult[];
 } {
   let text = "";
   const thoughts: string[] = [];
+  const toolCalls: QueryOutputToolCall[] = [];
+  const toolResults: QueryOutputToolResult[] = [];
 
   if (typeof output === "string") {
-    return { text: output, thoughts };
+    return { text: output, thoughts, toolCalls, toolResults };
   }
 
   if (output && typeof output === "object") {
@@ -67,9 +108,31 @@ export function extractTextFromQueryOutput(output: unknown): {
           const p = part as Record<string, unknown>;
           if (p.thought) thoughts.push(String(p.thought));
           if (p.text) text += (text ? "\n" : "") + String(p.text);
-          if (p.functionCall) {
-            const fn = p.functionCall as Record<string, unknown>;
-            thoughts.push(`[Tool Executed]: ${fn.name || "tool"}`);
+
+          // Both casings, as everywhere else that reads parts off the wire.
+          // This helper only ever looked at `functionCall`, so a snake_case
+          // payload produced no tool marker at all.
+          const fn = (p.functionCall || p.function_call) as
+            Record<string, unknown> | undefined;
+          if (fn) {
+            toolCalls.push({
+              ...(typeof fn.id === "string" && fn.id ? { id: fn.id } : {}),
+              name: typeof fn.name === "string" && fn.name ? fn.name : "tool",
+              args: (fn.args as Record<string, unknown>) || {},
+            });
+          }
+
+          const fr = (p.functionResponse || p.function_response) as
+            Record<string, unknown> | undefined;
+          if (fr) {
+            toolResults.push({
+              ...(typeof fr.id === "string" && fr.id ? { id: fr.id } : {}),
+              name: typeof fr.name === "string" && fr.name ? fr.name : "tool",
+              result:
+                fr.response && typeof fr.response === "object"
+                  ? (fr.response as Record<string, unknown>)
+                  : { output: fr.response ?? null },
+            });
           }
         }
       }
@@ -79,10 +142,17 @@ export function extractTextFromQueryOutput(output: unknown): {
       const nested = extractTextFromQueryOutput(obj.output);
       text = nested.text;
       thoughts.push(...nested.thoughts);
+      toolCalls.push(...nested.toolCalls);
+      toolResults.push(...nested.toolResults);
     }
   }
 
-  return { text: text || (output ? JSON.stringify(output) : ""), thoughts };
+  return {
+    text: text || (output ? JSON.stringify(output) : ""),
+    thoughts,
+    toolCalls,
+    toolResults,
+  };
 }
 
 export function extractSessionIdFromResourceName(nameStr: string): string {

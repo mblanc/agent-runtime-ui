@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-handler";
-import { AgentRuntimeClient } from "@/lib/agent-runtime-client";
+import { createAgentRuntimeProvider } from "@/lib/agent-runtime/factory";
 import { isSessionOwnedBy } from "@/lib/session-ownership";
 import { ChatRequestBody } from "@/types/agent";
 import { log } from "@/lib/logger";
@@ -22,7 +22,7 @@ export const POST = withAuth(async (req, { userId, userEmail, requestId }) => {
   const customEngineId =
     req.headers.get("x-reasoning-engine-id") || body.reasoningEngineId;
   const customLocation = req.headers.get("x-location") || body.location;
-  const agentClient = new AgentRuntimeClient(customEngineId, customLocation);
+  const provider = createAgentRuntimeProvider(customEngineId, customLocation);
 
   // Validate session ownership for non-local persisted sessions
   if (
@@ -34,7 +34,7 @@ export const POST = withAuth(async (req, { userId, userEmail, requestId }) => {
     // legitimate new-session case and proceeds to streamQuery. A *thrown* error
     // is not: swallowing it let a transient failure of the ownership lookup
     // wave the request through unchecked, so it propagates to a 500 instead.
-    const sessionDetails = await agentClient.getSession(
+    const sessionDetails = await provider.getSession(
       body.sessionId,
       customEngineId,
       customLocation
@@ -78,11 +78,7 @@ export const POST = withAuth(async (req, { userId, userEmail, requestId }) => {
       }, 15000);
 
       try {
-        for await (const event of agentClient.streamQuery(
-          body,
-          userId,
-          upstream.signal
-        )) {
+        for await (const event of provider.streamQuery(body, userId, upstream.signal)) {
           if (isCancelled) break;
           eventCount++;
           const chunk = `data: ${JSON.stringify(event)}\n\n`;

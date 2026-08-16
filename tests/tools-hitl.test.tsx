@@ -6,7 +6,7 @@ import type { ToolCallMessagePartProps } from "@assistant-ui/react";
 import { GeminiThread } from "@/components/assistant-ui/gemini-thread";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import { createGeminiChatAdapter } from "@/lib/gemini-runtime-adapter";
-import { AgentRuntimeClient } from "@/lib/agent-runtime-client";
+import { createAgentRuntimeProvider } from "@/lib/agent-runtime/factory";
 import { POST as chatRoute } from "@/app/api/chat/route";
 import { auth } from "@/lib/auth";
 
@@ -312,9 +312,9 @@ describe("ToolFallback & ADK HITL Integration", () => {
     });
   });
 
-  describe("AgentRuntimeClient & Mock Mode HITL", () => {
+  describe("Provider & Mock Mode HITL", () => {
     it("yields tool_call with requires-action on prompt requesting confirmation", async () => {
-      const client = new AgentRuntimeClient();
+      const client = createAgentRuntimeProvider();
       const events = [];
 
       for await (const evt of client.streamQuery(
@@ -339,7 +339,7 @@ describe("ToolFallback & ADK HITL Integration", () => {
     });
 
     it("yields confirmed tool_result and resumed execution when receiving function_response", async () => {
-      const client = new AgentRuntimeClient();
+      const client = createAgentRuntimeProvider();
       const events = [];
 
       for await (const evt of client.streamQuery(
@@ -377,7 +377,7 @@ describe("ToolFallback & ADK HITL Integration", () => {
     });
 
     it("yields declined tool_result when receiving function_response with confirmed: false", async () => {
-      const client = new AgentRuntimeClient();
+      const client = createAgentRuntimeProvider();
       const events = [];
 
       for await (const evt of client.streamQuery(

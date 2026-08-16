@@ -1,15 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { VertexAiContext } from "@/lib/agent-runtime/services/context";
-import {
-  AgentRuntimeClient,
-  parseRawSessionEvent,
-  formatAgentDisplayName,
-  isRootWorkflowOutput,
-  groupTurnSessionEvents,
-} from "@/lib/agent-runtime-client";
+import { createAgentRuntimeProvider } from "@/lib/agent-runtime/factory";
+import { parseRawSessionEvent } from "@/lib/agent-runtime/parse-event";
+import { isRootWorkflowOutput } from "@/lib/agent-runtime/event-utils";
+import { groupTurnSessionEvents } from "@/lib/agent-runtime/group-turns";
+import { formatAgentDisplayName } from "@/lib/utils";
 import { createYieldContent } from "@/lib/gemini-runtime-adapter";
 
-describe("AgentRuntimeClient", () => {
+describe("agent runtime provider", () => {
   it("deduplicates repeated tool calls across intermediate session events in groupTurnSessionEvents", () => {
     const rawEvents = [
       {
@@ -78,7 +76,7 @@ describe("AgentRuntimeClient", () => {
   });
 
   it("initializes in mock mode when credentials are not configured", () => {
-    const client = new AgentRuntimeClient();
+    const client = createAgentRuntimeProvider();
     expect(client).toBeDefined();
   });
 
@@ -113,7 +111,7 @@ describe("AgentRuntimeClient", () => {
   });
 
   it("lists sessions for the user in mock mode", async () => {
-    const client = new AgentRuntimeClient();
+    const client = createAgentRuntimeProvider();
     const sessions = await client.listSessions("test-user");
 
     expect(Array.isArray(sessions)).toBe(true);
@@ -124,7 +122,7 @@ describe("AgentRuntimeClient", () => {
   });
 
   it("creates a new session in mock mode", async () => {
-    const client = new AgentRuntimeClient();
+    const client = createAgentRuntimeProvider();
     const newSession = await client.createSession("test-user", "Custom Thread Test");
 
     expect(newSession).toBeDefined();
@@ -137,7 +135,7 @@ describe("AgentRuntimeClient", () => {
   });
 
   it("retrieves session events history in mock mode", async () => {
-    const client = new AgentRuntimeClient();
+    const client = createAgentRuntimeProvider();
     const events = await client.listSessionEvents("1");
 
     expect(Array.isArray(events)).toBe(true);
@@ -147,7 +145,7 @@ describe("AgentRuntimeClient", () => {
   });
 
   it("deletes a session in mock mode", async () => {
-    const client = new AgentRuntimeClient();
+    const client = createAgentRuntimeProvider();
     const created = await client.createSession("test-user", "To be deleted");
     expect(await client.getSession(created.id)).toBeDefined();
 
@@ -157,7 +155,7 @@ describe("AgentRuntimeClient", () => {
   });
 
   it("yields streaming events in mock mode and records to session history", async () => {
-    const client = new AgentRuntimeClient();
+    const client = createAgentRuntimeProvider();
     const session = await client.createSession("test-user", "Streaming Session");
     const events = [];
 
@@ -181,7 +179,7 @@ describe("AgentRuntimeClient", () => {
   });
 
   it("isolates sessions per user and supports email fallback", async () => {
-    const client = new AgentRuntimeClient();
+    const client = createAgentRuntimeProvider();
     const userASession = await client.createSession("user-a-sub", "User A Chat");
     const userBSession = await client.createSession(
       "user-b-email@example.com",
@@ -554,9 +552,9 @@ describe("AgentRuntimeClient", () => {
     expect(reasoningText).toContain("Part 2: 2012 AlexNet & Deep Learning.");
   });
 
-  describe("AgentRuntimeClient.submitFeedback", () => {
+  describe("provider.submitFeedback", () => {
     it("submits feedback in mock mode and returns AgentFeedbackResponse", async () => {
-      const client = new AgentRuntimeClient();
+      const client = createAgentRuntimeProvider();
       const res = await client.submitFeedback(
         {
           sessionId: "session-123",
@@ -592,7 +590,7 @@ describe("AgentRuntimeClient", () => {
         mockFetch as unknown as typeof fetch
       );
 
-      const client = new AgentRuntimeClient();
+      const client = createAgentRuntimeProvider();
       vi.spyOn(VertexAiContext.prototype, "getAccessToken").mockResolvedValue(
         "mock-access-token"
       );
@@ -665,7 +663,7 @@ describe("AgentRuntimeClient", () => {
         mockFetch as unknown as typeof fetch
       );
 
-      const client = new AgentRuntimeClient();
+      const client = createAgentRuntimeProvider();
       await client.submitFeedback(
         {
           sessionId: "sess-100",
@@ -685,7 +683,7 @@ describe("AgentRuntimeClient", () => {
     });
   });
 
-  describe("AgentRuntimeClient Multimodal streamQuery", () => {
+  describe("provider multimodal streamQuery", () => {
     it("forwards file_data parts in input payload to Vertex AI Reasoning Engine", async () => {
       process.env.MOCK_AGENT_RUNTIME = "false";
       process.env.GOOGLE_CLOUD_PROJECT = "test-project";
@@ -709,7 +707,7 @@ describe("AgentRuntimeClient", () => {
         mockFetch as unknown as typeof fetch
       );
 
-      const client = new AgentRuntimeClient();
+      const client = createAgentRuntimeProvider();
       vi.spyOn(VertexAiContext.prototype, "getAccessToken").mockResolvedValue(
         "mock-token"
       );
@@ -789,7 +787,7 @@ describe("AgentRuntimeClient", () => {
         mockFetch as unknown as typeof fetch
       );
 
-      const client = new AgentRuntimeClient();
+      const client = createAgentRuntimeProvider();
       vi.spyOn(VertexAiContext.prototype, "getAccessToken").mockResolvedValue(
         "mock-token"
       );
@@ -821,7 +819,7 @@ describe("AgentRuntimeClient", () => {
 
     it("streams mock multimodal evaluation response in mock mode", async () => {
       process.env.MOCK_AGENT_RUNTIME = "true";
-      const client = new AgentRuntimeClient();
+      const client = createAgentRuntimeProvider();
 
       const events = [];
       for await (const event of client.streamQuery(
@@ -861,8 +859,8 @@ describe("AgentRuntimeClient", () => {
 
   describe("Multi-Agent Backend Discovery & Scoping", () => {
     it("discovers available reasoning engines in mock mode", async () => {
-      const client = new AgentRuntimeClient();
-      const result = await client.listReasoningEngines();
+      const client = createAgentRuntimeProvider();
+      const result = await client.listAgents();
 
       expect(result).toBeDefined();
       expect(Array.isArray(result.agents)).toBe(true);
@@ -870,12 +868,12 @@ describe("AgentRuntimeClient", () => {
       expect(result.agents.some((a) => a.id === "mock-arch-advisor")).toBe(true);
       expect(result.agents.some((a) => a.id === "mock-code-reviewer")).toBe(true);
       expect(result.agents.some((a) => a.id === "mock-cloud-ops")).toBe(true);
-      expect(result.agents.some((a) => a.id === "generic-agent")).toBe(true);
+      expect(result.agents.some((a) => a.id === "mock-generic-agent")).toBe(true);
       expect(result.activeAgentId).toBe("mock-arch-advisor");
     });
 
     it("filters sessions strictly by reasoningEngineId in mock mode", async () => {
-      const client = new AgentRuntimeClient();
+      const client = createAgentRuntimeProvider();
       const archSessions = await client.listSessions(
         "test-user",
         undefined,
@@ -907,7 +905,7 @@ describe("AgentRuntimeClient", () => {
     });
 
     it("creates session scoped to the selected reasoningEngineId in mock mode", async () => {
-      const client = new AgentRuntimeClient();
+      const client = createAgentRuntimeProvider();
       const newSession = await client.createSession(
         "test-user",
         "Security Audit #99",
@@ -1198,9 +1196,9 @@ describe("AgentRuntimeClient", () => {
     });
   });
 
-  describe("AgentRuntimeClient.getSessionState & updateSessionState", () => {
+  describe("provider.getSessionState & updateSessionState", () => {
     it("retrieves session state in mock mode", async () => {
-      const client = new AgentRuntimeClient();
+      const client = createAgentRuntimeProvider();
       const state = await client.getSessionState("1");
 
       expect(state).toBeDefined();
@@ -1210,7 +1208,7 @@ describe("AgentRuntimeClient", () => {
     });
 
     it("updates session state in mock mode with merge and replace options", async () => {
-      const client = new AgentRuntimeClient();
+      const client = createAgentRuntimeProvider();
       const session = await client.createSession("test-user", "State Test Session");
 
       // Seed initial state

@@ -1,13 +1,14 @@
 import { IAgentRuntimeProvider } from "./types";
 import { VertexAiReasoningEngineProvider } from "./client";
 import { MockAgentRuntimeProvider } from "./mock/mock-provider";
+import { mockAgentsStore } from "./mock/mock-store";
 import { TtlCache } from "./services/ttl-cache";
 
 /**
  * Providers are reused across requests rather than rebuilt per call.
  *
- * Every one of the 15 routes constructs an AgentRuntimeClient per request, and
- * each build creates a GoogleAuth client. google-auth-library caches access
+ * Every one of the 15 routes asks for a provider per request, and each build
+ * creates a GoogleAuth client. google-auth-library caches access
  * tokens *per instance*, so a fresh instance per request defeated that cache and
  * re-hit the metadata server on essentially every call.
  *
@@ -35,8 +36,23 @@ export function createAgentRuntimeProvider(
   const projectId = process.env.GOOGLE_CLOUD_PROJECT || "";
   const effectiveAgentId = agentId || process.env.GOOGLE_REASONING_ENGINE_ID || "";
   const isFullResource = effectiveAgentId.startsWith("projects/");
+  // Membership, not just the naming convention. `generic-agent` is a fixture in
+  // mockAgentsStore that carries neither the `mock-` prefix nor the
+  // `mock-engine` name, so it used to pass for a real id and build a Vertex
+  // provider aimed at an engine that exists nowhere upstream. The literal id
+  // only reaches a route from an `agent_runtime_active_agent_id` left in
+  // localStorage by a mock-mode session, which is precisely the leftover-mock
+  // misconfiguration this guard is here to name.
+  //
+  // The prefix checks stay: `mock-engine` is not in the store, and an id a
+  // developer invents while mocking should fail the same way. The cost is that
+  // a real engine addressed by a display name that collides with a fixture id
+  // is refused; the error says which id was rejected, and a numeric id or a
+  // full `projects/...` resource always gets through.
   const isMockAgent =
-    effectiveAgentId.startsWith("mock-") || effectiveAgentId === "mock-engine";
+    effectiveAgentId.startsWith("mock-") ||
+    effectiveAgentId === "mock-engine" ||
+    mockAgentsStore.some((a) => a.id === effectiveAgentId);
   const isConfigured = Boolean(
     (projectId || isFullResource) && effectiveAgentId && !isMockAgent
   );
@@ -60,7 +76,11 @@ export function createAgentRuntimeProvider(
     const missingVars: string[] = [];
     if (!projectId && !isFullResource) missingVars.push("GOOGLE_CLOUD_PROJECT");
     if (!effectiveAgentId) missingVars.push("GOOGLE_REASONING_ENGINE_ID");
-    if (isMockAgent) missingVars.push(`a real agent id (got "${effectiveAgentId}")`);
+    if (isMockAgent) {
+      missingVars.push(
+        `a real agent id (got "${effectiveAgentId}", which only exists in the mock fixture set)`
+      );
+    }
 
     throw new Error(
       `Configuration Error: agent runtime is not configured. Missing: ${missingVars.join(

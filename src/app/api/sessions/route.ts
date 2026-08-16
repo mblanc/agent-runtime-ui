@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-handler";
-import { AgentRuntimeClient } from "@/lib/agent-runtime-client";
+import { createAgentRuntimeProvider } from "@/lib/agent-runtime/factory";
 
 export const runtime = "nodejs";
 
@@ -9,9 +9,10 @@ export const GET = withAuth(async (req, { userId, userEmail }) => {
     req.nextUrl.searchParams.get("agentId") ||
     req.nextUrl.searchParams.get("reasoningEngineId") ||
     undefined;
+  const location = req.nextUrl.searchParams.get("location") || undefined;
 
-  const agentClient = new AgentRuntimeClient(agentId);
-  const sessions = await agentClient.listSessions(userId, userEmail, agentId);
+  const provider = createAgentRuntimeProvider(agentId, location);
+  const sessions = await provider.listSessions(userId, userEmail, agentId);
 
   return NextResponse.json(
     { sessions },
@@ -26,16 +27,18 @@ export const GET = withAuth(async (req, { userId, userEmail }) => {
 export const POST = withAuth(async (req, { userId }) => {
   let title: string | undefined;
   let agentId: string | undefined;
+  let location: string | undefined;
   try {
     const body = await req.json();
     title = body?.title || body?.displayName;
     agentId = body?.agentId || body?.reasoningEngineId;
+    location = body?.location;
   } catch {
     // Body is optional
   }
 
-  const agentClient = new AgentRuntimeClient(agentId);
-  const newSession = await agentClient.createSession(userId, title, agentId);
+  const provider = createAgentRuntimeProvider(agentId, location);
+  const newSession = await provider.createSession(userId, title, agentId);
 
   return NextResponse.json({ session: newSession }, { status: 201 });
 });

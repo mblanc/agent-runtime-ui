@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-handler";
-import { AgentRuntimeClient } from "@/lib/agent-runtime-client";
+import { createAgentRuntimeProvider } from "@/lib/agent-runtime/factory";
 
 export const runtime = "nodejs";
 
 export const GET = withAuth(async () => {
-  const agentClient = new AgentRuntimeClient();
-  const result = await agentClient.listReasoningEngines();
+  const provider = createAgentRuntimeProvider();
+  const result = await provider.listAgents();
 
   return NextResponse.json(result, {
     headers: {

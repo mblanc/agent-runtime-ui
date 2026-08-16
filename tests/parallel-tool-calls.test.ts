@@ -124,6 +124,49 @@ describe("parallel calls to the same tool", () => {
     // An id that is present but unknown must not silently name-match.
     expect((a?.result as { hit?: string })?.hit).not.toBe("stray");
   });
+
+  it("routes each result to its own thinking-trace block, not just its tool part", async () => {
+    // The trace used to be keyed by tool name while the tool-call panel was
+    // keyed by id, so the two structures disagreed: both results landed on the
+    // last same-named block and the other block stayed resultless.
+    streamOf([
+      'data: {"event_type":"tool_call","tool_call":{"id":"call-A","name":"search","args":{"q":"alpha"}}}\n\n',
+      'data: {"event_type":"tool_call","tool_call":{"id":"call-B","name":"search","args":{"q":"beta"}}}\n\n',
+      'data: {"event_type":"tool_result","tool_result":{"id":"call-B","name":"search","result":{"hit":"beta-result"}}}\n\n',
+      'data: {"event_type":"tool_result","tool_result":{"id":"call-A","name":"search","result":{"hit":"alpha-result"}}}\n\n',
+      "data: [DONE]\n\n",
+    ]);
+
+    const results = await runAdapter();
+    const parts = toolPartsOf(results);
+    const a = parts.find((p) => p.toolCallId === "call-A");
+    const b = parts.find((p) => p.toolCallId === "call-B");
+    expect((a?.result as { hit: string })?.hit).toBe("alpha-result");
+    expect((b?.result as { hit: string })?.hit).toBe("beta-result");
+
+    const last = results[results.length - 1]!;
+    const reasoning = (last.content || [])
+      .filter((p: { type: string }) => p.type === "reasoning")
+      .map((p) => (p as unknown as { text: string }).text)
+      .join("\n");
+
+    const blocks = reasoning
+      .split(":::tool[")
+      .slice(1)
+      .map((b) => b.split("\n:::")[0]!);
+
+    expect(blocks).toHaveLength(2);
+
+    const alphaBlock = blocks.find((b) => b.includes('"alpha"'))!;
+    const betaBlock = blocks.find((b) => b.includes('"beta"'))!;
+    expect(alphaBlock).toBeDefined();
+    expect(betaBlock).toBeDefined();
+
+    expect(alphaBlock).toContain("alpha-result");
+    expect(alphaBlock).not.toContain("beta-result");
+    expect(betaBlock).toContain("beta-result");
+    expect(betaBlock).not.toContain("alpha-result");
+  });
 });
 
 describe("backends that omit ids", () => {

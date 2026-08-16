@@ -2,6 +2,7 @@
 
 import { ReactNode, useState, useMemo } from "react";
 import { ChevronDown, ChevronRight, BrainCircuit, CheckCircle2 } from "lucide-react";
+import type { ReasoningTraceEntry } from "@/types/agent";
 import { cn } from "@/lib/utils";
 import { SubAgentCollapsible } from "./subagent-collapsible";
 import { ToolCollapsible } from "./tool-collapsible";
@@ -195,6 +196,20 @@ function parseToolBlockContent(content: string): {
   return { args, result };
 }
 
+/**
+ * FALLBACK PATH.
+ *
+ * Everything from here down to `parseLegacyToolTraces` exists for messages that
+ * arrive without a structured trace. Every live producer now ships the array
+ * alongside the string — including the `:query` fallback, which used to encode
+ * tool calls as `[Tool Executed]: name` thought text and now emits real
+ * `tool_call` events — so nothing written today needs this.
+ *
+ * Two sources still can: sessions persisted before `ReasoningTraceEntry`
+ * existed, and the single-assistant-event fast path in `group-turns.ts`, which
+ * passes an event through without building a trace. This can be deleted once
+ * neither can reach the renderer.
+ */
 function parseReasoningBlocks(rawText: string): ParsedReasoningBlock[] {
   const blocks: ParsedReasoningBlock[] = [];
   const regex =
@@ -238,6 +253,26 @@ function parseReasoningBlocks(rawText: string): ParsedReasoningBlock[] {
   return deduplicateParsedBlocks(blocks);
 }
 
+/**
+ * Repairs of the string representation, with no counterpart on the structured
+ * path — deliberately.
+ *
+ * Two things happen here. Same-named subagent blocks are merged, because a
+ * producer that emitted one block per response chunk would otherwise show one
+ * card per chunk. And a tool's running block is dropped once a completed block
+ * with the same `name-args` key exists, because the running and completed
+ * states of one call were emitted as two separate blocks that the string form
+ * gives no way to relate.
+ *
+ * Neither is needed for a `ReasoningTraceEntry[]`. Subagents are already one
+ * entry per agent at both sources (`subagentsMap` when streaming,
+ * `subagentsGrouped` on replay) and that entry is mutated in place. A tool is
+ * one entry keyed by `toolCallId`, updated from running to complete rather than
+ * appended to. Running the merge over structured entries would in fact be
+ * *wrong*: its key is `name-args`, so two parallel calls to the same tool with
+ * identical arguments — which the toolCallId keying exists to keep apart —
+ * would collapse back into one card.
+ */
 function deduplicateParsedBlocks(blocks: ParsedReasoningBlock[]): ParsedReasoningBlock[] {
   const completedToolKeys = new Set<string>();
 
@@ -380,13 +415,87 @@ export function parseLegacyToolTraces(text: string): string {
   });
 }
 
+/**
+ * Renders a trace that arrived as data.
+ *
+ * Nothing is parsed, nothing is unescaped, and no value is inspected for
+ * characters that used to be able to break a block: a tool result containing
+ * `\n:::` or `**Result:**` is just a string here. The cards and their props are
+ * the same ones the string path feeds, so the two render identically for any
+ * trace both can express.
+ */
+function ReasoningTraceBlocks({
+  trace,
+  streaming,
+  defaultOpen,
+  className,
+}: {
+  trace: readonly ReasoningTraceEntry[];
+  streaming: boolean;
+  defaultOpen: boolean;
+  className?: string;
+}) {
+  return (
+    <div className={cn("space-y-2", className)}>
+      {trace.map((entry, idx) => {
+        if (entry.type === "subagent") {
+          return (
+            <SubAgentCollapsible
+              key={`subagent-${entry.id || entry.agentName}-${idx}`}
+              displayName={entry.displayName}
+              agentName={entry.agentName}
+              status={entry.status}
+              callInput={entry.input}
+              output={entry.response}
+              defaultOpen={defaultOpen}
+            />
+          );
+        }
+
+        if (entry.type === "tool") {
+          return (
+            <ToolCollapsible
+              key={`tool-${entry.toolCallId}`}
+              toolName={entry.toolName}
+              args={entry.argsJson}
+              result={entry.resultJson}
+              status={entry.status}
+              defaultOpen={defaultOpen}
+            />
+          );
+        }
+
+        // Thoughts carry no status of their own. The string path inferred one
+        // from position — the trailing block of a streaming message is the one
+        // still being written — and that inference is kept here.
+        return (
+          <ThoughtCollapsible
+            key={`thought-${idx}`}
+            title="Thought"
+            thought={entry.text}
+            status={streaming && idx === trace.length - 1 ? "running" : "complete"}
+            defaultOpen={defaultOpen}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 export function ReasoningText({
   text,
+  trace,
   children,
   defaultOpen = false,
   className,
 }: {
   text?: string;
+  /**
+   * The trace as data. When present it is rendered directly and `text` is
+   * ignored; `text` is the legacy string form, kept for messages that predate
+   * the structured field.
+   */
+  trace?: readonly ReasoningTraceEntry[];
   children?: ReactNode;
   defaultOpen?: boolean;
   className?: string;
@@ -397,7 +506,15 @@ export function ReasoningText({
     return text !== undefined ? text : getTextFromChildren(children);
   }, [text, children]);
 
-  const rawString = useMemo(() => parseLegacyToolTraces(raw), [raw]);
+  // A structured trace makes the string irrelevant, so it is not parsed at all
+  // — not merely parsed and discarded. The hooks still run unconditionally;
+  // only their work is skipped.
+  const hasTrace = Boolean(trace && trace.length > 0);
+
+  const rawString = useMemo(
+    () => (hasTrace ? "" : parseLegacyToolTraces(raw)),
+    [raw, hasTrace]
+  );
 
   const blocks = useMemo(() => {
     if (!rawString.trim()) {
@@ -405,6 +522,17 @@ export function ReasoningText({
     }
     return parseReasoningBlocks(rawString);
   }, [rawString]);
+
+  if (trace && hasTrace) {
+    return (
+      <ReasoningTraceBlocks
+        trace={trace}
+        streaming={streaming}
+        defaultOpen={defaultOpen}
+        className={className}
+      />
+    );
+  }
 
   if (blocks.length === 0) {
     return null;

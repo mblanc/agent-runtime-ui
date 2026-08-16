@@ -68,7 +68,8 @@ function ChatContent() {
 
   const sessionListAdapter = useSessionThreadListAdapter(
     session?.user?.id,
-    activeAgent?.id
+    activeAgent?.id,
+    activeAgent?.location
   );
 
   const runtimeRef = useRef<AssistantRuntime | null>(null);

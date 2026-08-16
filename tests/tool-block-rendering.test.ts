@@ -1,8 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  createGeminiChatAdapter,
-  sanitizeDirectiveName,
-} from "@/lib/adapters/chat-adapter";
+import { createGeminiChatAdapter } from "@/lib/adapters/chat-adapter";
+import { sanitizeDirectiveName } from "@/lib/agent-runtime/reasoning-directives";
 import type { ChatModelRunResult } from "@assistant-ui/react";
 
 /**
@@ -181,6 +179,44 @@ describe("sanitizeDirectiveName", () => {
     ]);
 
     expect(reasoning).not.toContain(":::tool[injected");
+  });
+});
+
+describe("body content cannot terminate its own block", () => {
+  it("keeps a subagent response containing a ::: line inside the block", async () => {
+    // Subagent responses arrive as raw strings, so unlike the JSON-encoded tool
+    // payloads they can carry a real newline followed by the terminator.
+    const reasoning = await reasoningOf([
+      'data: {"event_type":"agent_response","agent_response":{"agent":"researcher","response":"before\\n:::\\nafter"}}\n\n',
+      DONE,
+      "data: [DONE]\n\n",
+    ]);
+
+    expect(reasoning.split("\n:::")).toHaveLength(2);
+    expect(reasoning.endsWith("\n:::")).toBe(true);
+    expect(reasoning).toContain("before\n\u200b:::\nafter");
+  });
+
+  it("renders an ordinary block exactly as before", async () => {
+    const reasoning = await reasoningOf([
+      CALL("search", { q: "vertex" }),
+      RESULT("search", { hits: 2 }),
+      DONE,
+      "data: [DONE]\n\n",
+    ]);
+
+    expect(reasoning).toBe(
+      ':::tool[search]{status="complete"}\n' +
+        "**Arguments:**\n" +
+        "```json\n" +
+        '{\n  "q": "vertex"\n}\n' +
+        "```\n" +
+        "**Result:**\n" +
+        "```json\n" +
+        '{\n  "hits": 2\n}\n' +
+        "```\n" +
+        ":::"
+    );
   });
 });
 

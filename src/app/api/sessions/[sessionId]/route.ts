@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import { withAuthDynamic } from "@/lib/api-handler";
-import {
-  AgentRuntimeClient,
-  formatSessionEventsToThreadMessages,
-} from "@/lib/agent-runtime-client";
+import { createAgentRuntimeProvider } from "@/lib/agent-runtime/factory";
+import { formatSessionEventsToThreadMessages } from "@/lib/agent-runtime/to-thread-messages";
 import { isSessionOwnedBy } from "@/lib/session-ownership";
 import { PLACEHOLDER_SESSION_TITLE_RE } from "@/lib/agent-runtime/event-utils";
 
@@ -38,8 +36,8 @@ export const GET = withAuthDynamic<SessionParams>(
       undefined;
     const location = req.nextUrl.searchParams.get("location") || undefined;
 
-    const agentClient = new AgentRuntimeClient(agentId, location);
-    const sessionDetails = await agentClient.getSession(sessionId, agentId, location);
+    const provider = createAgentRuntimeProvider(agentId, location);
+    const sessionDetails = await provider.getSession(sessionId, agentId, location);
 
     if (!sessionDetails) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
@@ -49,7 +47,7 @@ export const GET = withAuthDynamic<SessionParams>(
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    const events = await agentClient.listSessionEvents(sessionId, agentId, location);
+    const events = await provider.listSessionEvents(sessionId, agentId, location);
 
     // Derive smart title in-memory without mutating external backend on GET (CQS principle)
     if (
@@ -105,8 +103,8 @@ export const PATCH = withAuthDynamic<SessionParams>(
     const location =
       req.nextUrl.searchParams.get("location") || body?.location || undefined;
 
-    const agentClient = new AgentRuntimeClient(agentId, location);
-    const sessionDetails = await agentClient.getSession(sessionId, agentId, location);
+    const provider = createAgentRuntimeProvider(agentId, location);
+    const sessionDetails = await provider.getSession(sessionId, agentId, location);
 
     if (!sessionDetails) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
@@ -125,13 +123,7 @@ export const PATCH = withAuthDynamic<SessionParams>(
       return NextResponse.json({ error: "Valid title is required" }, { status: 400 });
     }
 
-    await agentClient.updateSessionTitle(
-      sessionId,
-      title.trim(),
-      userId,
-      agentId,
-      location
-    );
+    await provider.updateSessionTitle(sessionId, title.trim(), userId, agentId, location);
 
     return NextResponse.json({
       success: true,
@@ -159,8 +151,8 @@ export const DELETE = withAuthDynamic<SessionParams>(
       undefined;
     const location = req.nextUrl.searchParams.get("location") || undefined;
 
-    const agentClient = new AgentRuntimeClient(agentId, location);
-    const sessionDetails = await agentClient.getSession(sessionId, agentId, location);
+    const provider = createAgentRuntimeProvider(agentId, location);
+    const sessionDetails = await provider.getSession(sessionId, agentId, location);
 
     if (!sessionDetails) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
@@ -173,7 +165,7 @@ export const DELETE = withAuthDynamic<SessionParams>(
       );
     }
 
-    await agentClient.deleteSession(sessionId, agentId, location);
+    await provider.deleteSession(sessionId, agentId, location);
 
     return NextResponse.json({
       success: true,

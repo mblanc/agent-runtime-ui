@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-handler";
-import { AgentRuntimeClient } from "@/lib/agent-runtime-client";
+import { createAgentRuntimeProvider } from "@/lib/agent-runtime/factory";
 import { AgentFeedbackRequest, FeedbackType } from "@/types/agent";
 
 export const runtime = "nodejs";
@@ -69,8 +69,8 @@ export const POST = withAuth(async (req, { userId }) => {
       : {}),
   };
 
-  const agentClient = new AgentRuntimeClient();
-  const result = await agentClient.submitFeedback(feedbackRequest, userId);
+  const provider = createAgentRuntimeProvider();
+  const result = await provider.submitFeedback(feedbackRequest, userId);
 
   return NextResponse.json(result, { status: 200 });
 });

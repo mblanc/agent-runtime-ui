@@ -194,6 +194,22 @@ export class VertexAiContext {
     return assertValidLocation(customLocation);
   }
 
+  /**
+   * The region a resolved engine resource lives in, for building its upstream
+   * host. `resolveEngineId` can map a display name onto a full resource path in
+   * a different region than `this.location`, so the host has to come from the
+   * resource that was actually resolved rather than from the context default.
+   * The extracted segment still goes through `resolveLocation`, which validates
+   * it before it can reach a hostname.
+   */
+  resolveLocationForResource(engineResource: string, customLocation?: string): string {
+    if (engineResource.startsWith("projects/")) {
+      const match = engineResource.match(/^projects\/[^/]+\/locations\/([^/]+)\//);
+      if (match && match[1]) return this.resolveLocation(match[1]);
+    }
+    return this.resolveLocation(customLocation);
+  }
+
   getNormalizedEngineResource(customEngineId?: string, customLocation?: string): string {
     const targetEngine = this.resolveEngineId(customEngineId) || this.reasoningEngineId;
     if (targetEngine) assertValidEngineResource(targetEngine);

@@ -1,4 +1,4 @@
-import { AgentSessionEvent } from "@/types/agent";
+import { AgentSessionEvent, ReasoningTraceEntry } from "@/types/agent";
 import { formatAgentDisplayName } from "@/lib/utils";
 import {
   extractGroundingMetadata,
@@ -11,6 +11,7 @@ import {
   isRootWorkflowOutput,
 } from "./event-utils";
 import { parseRawSessionEvent } from "./parse-event";
+import { formatReasoningTrace } from "./reasoning-directives";
 
 /**
  * Turn segmentation: groups a flat event list into user/assistant turns,
@@ -89,7 +90,11 @@ export function groupTurnSessionEvents(
     const finalEvent = turn.assistantEvents[finalIdx];
     const intermediateEvents = turn.assistantEvents.filter((_, idx) => idx !== finalIdx);
 
-    const reasoningBlocks: string[] = [];
+    // Replay builds the trace as data and derives the directive markdown from
+    // it, rather than assembling markdown directly. The two representations
+    // therefore cannot describe different traces, and the values below reach
+    // the renderer unescaped.
+    const reasoningTrace: ReasoningTraceEntry[] = [];
     const subAgentsList = [];
     const usedResultKeys = new Set<string>();
     const processedCallKeys = new Set<string>();
@@ -141,7 +146,7 @@ export function groupTurnSessionEvents(
       const calls = getEventToolCalls(inter);
       const results = getEventToolResults(inter);
 
-      for (const call of calls) {
+      for (const [callIdx, call] of calls.entries()) {
         const toolName = call.name || "tool";
         const argsStr = JSON.stringify(call.args || {}, null, 2);
         const callKey = `${toolName}-${argsStr}`;
@@ -193,16 +198,31 @@ export function groupTurnSessionEvents(
           if (matchedResultStr !== undefined) break;
         }
 
+        // The persisted call may have no id — replay pairs by name in that case
+        // — but the renderer needs a stable key per block. Deriving it from the
+        // event and the call's position keeps it stable across re-renders and
+        // distinct between two parallel calls to the same tool.
+        const toolCallId = call.id || `${inter.id}-call-${callIdx}`;
+
         if (matchedResultStr !== undefined) {
           processedCallKeys.add(callKey);
-          reasoningBlocks.push(
-            `:::tool[${toolName}]{status="complete"}\n**Arguments:**\n\`\`\`json\n${argsStr}\n\`\`\`\n**Result:**\n\`\`\`json\n${matchedResultStr}\n\`\`\`\n:::`
-          );
+          reasoningTrace.push({
+            type: "tool",
+            toolCallId,
+            toolName,
+            argsJson: argsStr,
+            resultJson: matchedResultStr,
+            status: "complete",
+          });
         } else if (!processedCallKeys.has(callKey)) {
           processedCallKeys.add(callKey);
-          reasoningBlocks.push(
-            `:::tool[${toolName}]{status="complete"}\n**Arguments:**\n\`\`\`json\n${argsStr}\n\`\`\`\n:::`
-          );
+          reasoningTrace.push({
+            type: "tool",
+            toolCallId,
+            toolName,
+            argsJson: argsStr,
+            status: "complete",
+          });
         }
       }
 
@@ -211,9 +231,13 @@ export function groupTurnSessionEvents(
         const res = results[resIdx];
         const toolName = res.name || "tool";
         const resStr = JSON.stringify(res.result || {}, null, 2);
-        reasoningBlocks.push(
-          `:::tool[${toolName}]{status="complete"}\n**Result:**\n\`\`\`json\n${resStr}\n\`\`\`\n:::`
-        );
+        reasoningTrace.push({
+          type: "tool",
+          toolCallId: res.id || `${inter.id}-result-${resIdx}`,
+          toolName,
+          resultJson: resStr,
+          status: "complete",
+        });
       }
     }
 
@@ -232,20 +256,25 @@ export function groupTurnSessionEvents(
           timestamp: sub.timestamp,
         });
 
-        reasoningBlocks.push(
-          `:::subagent[${sub.displayName}]{id="${sub.id}" agent="${sub.agentName}" status="complete"}\n${combinedContent}\n:::`
-        );
+        reasoningTrace.push({
+          type: "subagent",
+          id: sub.id,
+          displayName: sub.displayName,
+          agentName: sub.agentName,
+          response: combinedContent,
+          status: "complete",
+        });
       } else if (combinedThought) {
-        reasoningBlocks.push(combinedThought);
+        reasoningTrace.push({ type: "thought", text: combinedThought });
       }
     }
 
     if (finalEvent.thought?.trim()) {
-      reasoningBlocks.push(finalEvent.thought.trim());
+      reasoningTrace.push({ type: "thought", text: finalEvent.thought.trim() });
     }
 
     const unifiedThought =
-      reasoningBlocks.length > 0 ? reasoningBlocks.join("\n\n") : undefined;
+      reasoningTrace.length > 0 ? formatReasoningTrace(reasoningTrace) : undefined;
 
     const finalEventToolCalls = getEventToolCalls(finalEvent);
     const finalEventToolResults = getEventToolResults(finalEvent);
@@ -331,6 +360,7 @@ export function groupTurnSessionEvents(
       ...(modelVersion ? { modelVersion, model_version: modelVersion } : {}),
       content: finalEvent.content,
       ...(unifiedThought ? { thought: unifiedThought } : {}),
+      ...(reasoningTrace.length > 0 ? { reasoningTrace } : {}),
       ...(thoughtSignature
         ? { thoughtSignature, thought_signature: thoughtSignature }
         : {}),

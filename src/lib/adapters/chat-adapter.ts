@@ -13,6 +13,7 @@ import type {
   AgentUsageMetadata,
   GroundingMetadata,
   MemoryRetrievalItem,
+  ReasoningTraceEntry,
 } from "@/types/agent";
 import {
   extractGroundingMetadata,
@@ -20,6 +21,7 @@ import {
 } from "@/lib/grounding/citation-parser";
 
 import { formatAgentDisplayName } from "@/lib/utils";
+import { formatReasoningTrace } from "@/lib/agent-runtime/reasoning-directives";
 import {
   defaultAttachmentStore,
   type IAttachmentMetadataStore,
@@ -126,24 +128,6 @@ export function resolveGcsUri(opts: {
   return { uri, mimeType: inferMimeType(filename, contentType || mimeTypeHint) };
 }
 
-/**
- * Strips characters that would break out of a `:::directive[name]{attrs}` block.
- *
- * Tool and subagent names originate from the model, so a crafted name is an
- * injection into the rendering DSL: `]` closes the label early, `"` escapes an
- * attribute value, and `:` can start a sibling directive. The blast radius today
- * is garbled UI, but it grows with every directive added, and the cost of
- * closing it is one replace at the single point where names are rendered.
- */
-export function sanitizeDirectiveName(name: string): string {
-  return (
-    name
-      .replace(/[[\]{}":]/g, "")
-      .replace(/\s+/g, " ")
-      .trim() || "tool"
-  );
-}
-
 export interface ToolCallYieldItem {
   toolCallId: string;
   toolName: string;
@@ -175,6 +159,14 @@ type ToolCallContentPart = Extract<
  */
 export interface YieldContentFields {
   reasoning: string;
+  /**
+   * The same trace as `reasoning`, structured. It rides on the message metadata
+   * rather than in the `reasoning` content part because that part's only field
+   * is `text` — assistant-ui owns its shape. The renderer reads it from there
+   * and skips parsing `reasoning` entirely; `reasoning` remains the payload that
+   * makes the part (and therefore the panel) exist at all.
+   */
+  reasoningTrace?: ReasoningTraceEntry[];
   text: string;
   toolCalls?: ToolCallYieldItem[];
   eventId?: string;
@@ -185,6 +177,7 @@ export interface YieldContentFields {
 
 export function createYieldContent({
   reasoning,
+  reasoningTrace,
   text,
   toolCalls,
   eventId,
@@ -220,12 +213,14 @@ export function createYieldContent({
       : {}),
     ...(eventId ||
     (retrievedMemories && retrievedMemories.length > 0) ||
+    (reasoningTrace && reasoningTrace.length > 0) ||
     groundingMetadata ||
     messageInfo
       ? {
           metadata: {
             custom: {
               ...(eventId ? { eventId } : {}),
+              ...(reasoningTrace && reasoningTrace.length > 0 ? { reasoningTrace } : {}),
               ...(retrievedMemories && retrievedMemories.length > 0
                 ? { retrievedMemories }
                 : {}),
@@ -584,8 +579,6 @@ export function createGeminiChatAdapter(
         const decoder = new TextDecoder();
         let buffer = "";
 
-        let accumulatedReasoning = "";
-
         interface SubagentStreamItem {
           agentName: string;
           displayName: string;
@@ -594,25 +587,26 @@ export function createGeminiChatAdapter(
           status: "running" | "complete";
         }
 
-        // Tool entries hold structured fields rather than a rendered markdown
-        // string. The block used to be built once and then edited in place by a
-        // RegExp assembled from the model-supplied tool name, which meant a
-        // result containing `\n:::` or `status="complete"` could terminate or
-        // corrupt its own block. Rendering from data once per yield removes the
-        // parse-back entirely, matching how subagent entries already work.
-        type ReasoningEntry =
-          | { type: "thought"; text: string }
-          | { type: "subagent"; agentName: string }
-          | {
-              type: "tool";
-              toolName: string;
-              argsJson?: string;
-              resultJson?: string;
-              status: "running" | "requires-action" | "complete";
-            };
+        // Entries hold structured fields rather than a rendered markdown string.
+        // The block used to be built once and then edited in place by a RegExp
+        // assembled from the model-supplied tool name, which meant a result
+        // containing `\n:::` or `status="complete"` could terminate or corrupt
+        // its own block. These entries are what the renderer now consumes; the
+        // markdown projection in agent-runtime/reasoning-directives.ts is
+        // derived from them for the fallback path.
+        //
+        // Thought and tool entries are the shared `ReasoningTraceEntry` shapes
+        // as-is. Subagents are the exception: a subagent's state keeps changing
+        // after its entry is pushed (status flips, response chunks append), so
+        // the entry holds only the map key and `buildReasoningTrace` resolves it
+        // at yield time. Inlining the fields here would mean maintaining two
+        // copies of a mutating record.
+        type StreamReasoningEntry =
+          | Extract<ReasoningTraceEntry, { type: "thought" } | { type: "tool" }>
+          | { type: "subagent"; agentName: string };
 
         const subagentsMap = new Map<string, SubagentStreamItem>();
-        const reasoningEntries: ReasoningEntry[] = [];
+        const reasoningEntries: StreamReasoningEntry[] = [];
         let activeSubagentName: string | null = null;
 
         let accumulatedText = "";
@@ -667,35 +661,33 @@ export function createGeminiChatAdapter(
           };
         };
 
-        const formatSubagentMarkdown = (sub: SubagentStreamItem) => {
-          let body = "";
-          if (sub.input) {
-            body += `**Input:**\n\`\`\`json\n${sub.input}\n\`\`\`\n`;
-          }
-          if (sub.response) {
-            if (sub.input) {
-              body += `**Response:**\n${sub.response}`;
+        /**
+         * The trace as the renderer consumes it: subagent references resolved
+         * against their live map entries, thoughts trimmed, and thoughts that
+         * are only whitespace dropped.
+         *
+         * The trimming is not cosmetic. The markdown projection has always
+         * skipped empty thoughts, so emitting them here would make the
+         * structured path render an empty "Thought" card where the string path
+         * renders nothing, and the two paths have to agree block for block.
+         */
+        const buildReasoningTrace = (): ReasoningTraceEntry[] => {
+          const trace: ReasoningTraceEntry[] = [];
+          for (const entry of reasoningEntries) {
+            if (entry.type === "thought") {
+              const text = entry.text.trim();
+              if (text) trace.push({ type: "thought", text });
+            } else if (entry.type === "subagent") {
+              const sub = subagentsMap.get(entry.agentName);
+              if (sub) trace.push({ type: "subagent", ...sub });
             } else {
-              body += sub.response;
+              // Copied, not referenced. Tool entries are mutated in place as
+              // results arrive, so handing out the live object would make an
+              // already-yielded snapshot change underneath its consumer.
+              trace.push({ ...entry });
             }
           }
-          return `:::subagent[${sanitizeDirectiveName(sub.displayName)}]{status="${sub.status}" agent="${sanitizeDirectiveName(sub.agentName)}"}\n${body.trim()}\n:::`;
-        };
-
-        const formatToolMarkdown = (entry: {
-          toolName: string;
-          argsJson?: string;
-          resultJson?: string;
-          status: "running" | "requires-action" | "complete";
-        }) => {
-          let body = "";
-          if (entry.argsJson) {
-            body += `**Arguments:**\n\`\`\`json\n${entry.argsJson}\n\`\`\`\n`;
-          }
-          if (entry.resultJson !== undefined) {
-            body += `**Result:**\n\`\`\`json\n${entry.resultJson}\n\`\`\`\n`;
-          }
-          return `:::tool[${sanitizeDirectiveName(entry.toolName)}]{status="${entry.status}"}\n${body.trim()}\n:::`;
+          return trace;
         };
 
         /**
@@ -704,10 +696,18 @@ export function createGeminiChatAdapter(
          * Every yield in the dispatch loop passed the same seven expressions in
          * the same order — eleven identical argument lists. Adding a metadata
          * channel now means editing this one function instead of all of them.
+         *
+         * The trace is built here rather than accumulated into a variable that
+         * every branch had to remember to refresh before yielding. One branch
+         * (the error path) did not, and shipped a stale trace; deriving both
+         * representations from the entries at yield time makes that impossible
+         * and guarantees the string and the array describe the same trace.
          */
-        const snapshot = (): ChatModelRunResult =>
-          createYieldContent({
-            reasoning: accumulatedReasoning,
+        const snapshot = (): ChatModelRunResult => {
+          const reasoningTrace = buildReasoningTrace();
+          return createYieldContent({
+            reasoning: formatReasoningTrace(reasoningTrace),
+            reasoningTrace,
             text: accumulatedText,
             toolCalls: Array.from(toolCallsMap.values()),
             eventId: latestEventId,
@@ -715,23 +715,6 @@ export function createGeminiChatAdapter(
             groundingMetadata: latestGroundingMetadata,
             messageInfo: getMessageInfo(),
           });
-
-        const buildReasoningMarkdown = () => {
-          const parts: string[] = [];
-          for (const entry of reasoningEntries) {
-            if (entry.type === "thought") {
-              const trimmed = entry.text.trim();
-              if (trimmed) parts.push(trimmed);
-            } else if (entry.type === "subagent") {
-              const sub = subagentsMap.get(entry.agentName);
-              if (sub) {
-                parts.push(formatSubagentMarkdown(sub));
-              }
-            } else if (entry.type === "tool") {
-              parts.push(formatToolMarkdown(entry));
-            }
-          }
-          return parts.join("\n\n");
         };
 
         const finalizeAllSubagents = () => {
@@ -786,7 +769,6 @@ export function createGeminiChatAdapter(
                     entry.status = "complete";
                   }
                 }
-                accumulatedReasoning = buildReasoningMarkdown();
                 accumulatedText = finalizedTextPrefix;
 
                 yield snapshot();
@@ -875,7 +857,6 @@ export function createGeminiChatAdapter(
                     accumulatedText = finalizedTextPrefix;
                   }
 
-                  accumulatedReasoning = buildReasoningMarkdown();
                   if (shouldYield) {
                     lastStreamYieldTime = now;
                     yield snapshot();
@@ -899,7 +880,6 @@ export function createGeminiChatAdapter(
                     });
                   }
 
-                  accumulatedReasoning = buildReasoningMarkdown();
                   if (shouldYield) {
                     lastStreamYieldTime = now;
                     yield snapshot();
@@ -937,7 +917,6 @@ export function createGeminiChatAdapter(
                     });
                   }
 
-                  accumulatedReasoning = buildReasoningMarkdown();
                   yield snapshot();
                 } else if (
                   parsed.event_type === "agent_response" &&
@@ -974,7 +953,6 @@ export function createGeminiChatAdapter(
                     });
                   }
 
-                  accumulatedReasoning = buildReasoningMarkdown();
                   yield snapshot();
                 } else if (parsed.event_type === "tool_call" && parsed.tool_call) {
                   if (activeSubagentName) {
@@ -1037,12 +1015,12 @@ export function createGeminiChatAdapter(
                   if (isNewCall) {
                     reasoningEntries.push({
                       type: "tool",
+                      toolCallId,
                       toolName,
                       argsJson: JSON.stringify(tc.args || {}, null, 2),
                       status: isReqAction ? "requires-action" : "running",
                     });
                   }
-                  accumulatedReasoning = buildReasoningMarkdown();
 
                   yield snapshot();
                 } else if (parsed.event_type === "tool_result" && parsed.tool_result) {
@@ -1058,19 +1036,27 @@ export function createGeminiChatAdapter(
                   // Pair on id whenever the result carries one. Falling back to
                   // first-match-by-name for a result whose id is simply unknown
                   // attached it to an unrelated invocation of the same tool.
-                  let matched = false;
-                  if (parsed.tool_result.id) {
-                    const tc = toolCallsMap.get(parsed.tool_result.id);
+                  //
+                  // This block is the *only* place that decides which call a
+                  // result belongs to: it reports the id it settled on, and the
+                  // thinking trace below is looked up by that id rather than
+                  // re-deriving identity from the tool name. Two structures
+                  // pairing by two different rules is precisely how the trace
+                  // and the tool-call panel came to disagree.
+                  const rawId: string | undefined = parsed.tool_result.id;
+                  let matchedCallId: string | undefined;
+                  if (rawId) {
+                    const tc = toolCallsMap.get(rawId);
                     if (tc) {
                       tc.result = result;
                       tc.status = { type: "complete" };
-                      matched = true;
+                      matchedCallId = rawId;
                     }
                   } else {
                     // Id-less result: pair by name, but only against calls that
                     // are themselves id-less. A call with a real id can only be
                     // resolved by that id.
-                    for (const tc of toolCallsMap.values()) {
+                    for (const [id, tc] of toolCallsMap.entries()) {
                       if (
                         tc.toolName === toolName &&
                         tc.status?.type !== "complete" &&
@@ -1078,19 +1064,18 @@ export function createGeminiChatAdapter(
                       ) {
                         tc.result = result;
                         tc.status = { type: "complete" };
-                        matched = true;
+                        matchedCallId = id;
                         break;
                       }
                     }
-                    if (!matched) {
+                    if (!matchedCallId) {
                       console.warn(
                         `[createGeminiChatAdapter] Unpaired id-less tool_result for "${toolName}" — ` +
                           `no id-less call in flight to attach it to.`
                       );
                     }
                   }
-                  if (!matched) {
-                    const rawId = parsed.tool_result.id;
+                  if (!matchedCallId) {
                     const existsInPriorMessages =
                       rawId &&
                       sourceMessages.some((msg) =>
@@ -1113,12 +1098,15 @@ export function createGeminiChatAdapter(
                         result,
                         status: { type: "complete" },
                       });
+                      matchedCallId = toolCallId;
                     }
                   }
 
-                  const existingToolEntry = [...reasoningEntries]
-                    .reverse()
-                    .find((e) => e.type === "tool" && e.toolName === toolName);
+                  const existingToolEntry = matchedCallId
+                    ? reasoningEntries.find(
+                        (e) => e.type === "tool" && e.toolCallId === matchedCallId
+                      )
+                    : undefined;
 
                   if (existingToolEntry && existingToolEntry.type === "tool") {
                     // Set fields rather than rewriting rendered markdown.
@@ -1127,12 +1115,15 @@ export function createGeminiChatAdapter(
                   } else {
                     reasoningEntries.push({
                       type: "tool",
+                      toolCallId:
+                        matchedCallId ||
+                        rawId ||
+                        `result_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
                       toolName,
                       resultJson: resStr,
                       status: "complete",
                     });
                   }
-                  accumulatedReasoning = buildReasoningMarkdown();
 
                   yield snapshot();
                 } else if (parsed.event_type === "error" && parsed.error) {
@@ -1156,7 +1147,6 @@ export function createGeminiChatAdapter(
                       entry.status = "complete";
                     }
                   }
-                  accumulatedReasoning = buildReasoningMarkdown();
                   accumulatedText = finalizedTextPrefix;
 
                   yield snapshot();
@@ -1185,7 +1175,6 @@ export function createGeminiChatAdapter(
           }
 
           flushCurrentTextSegment();
-          accumulatedReasoning = buildReasoningMarkdown();
           accumulatedText = finalizedTextPrefix;
           yield snapshot();
         } finally {

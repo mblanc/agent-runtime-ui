@@ -195,6 +195,49 @@ Synthesis completed.`;
     expect(screen.getByText("Synthesis completed.")).toBeDefined();
   });
 
+  it("renders a subagent block identically whichever order its attributes are in", () => {
+    // History replay now emits `status agent id` where it used to emit
+    // `id agent status`; the consumer reads attributes into a map, so the two
+    // orders must be indistinguishable once rendered.
+    const renderOrder = (attrs: string) =>
+      render(
+        <ReasoningRoot defaultOpen={true}>
+          <ReasoningContent>
+            <ReasoningText
+              text={`:::subagent[Council Member Beta]{${attrs}}\nBeta opinion\n:::`}
+            />
+          </ReasoningContent>
+        </ReasoningRoot>
+      ).container.innerHTML;
+
+    expect(renderOrder('status="complete" agent="council_member_beta" id="evt-3"')).toBe(
+      renderOrder('id="evt-3" agent="council_member_beta" status="complete"')
+    );
+  });
+
+  it("renders a body line of ::: inside the block instead of ending it", () => {
+    // What a producer emits for hostile content: the terminator is defused by a
+    // zero-width space, so the line stays in the block and stays readable.
+    render(
+      <ReasoningRoot defaultOpen={true}>
+        <ReasoningContent>
+          <ReasoningText
+            text={
+              ':::subagent[Researcher]{status="complete" agent="researcher"}\n' +
+              "before\n\u200b:::\nafter\n:::"
+            }
+          />
+        </ReasoningContent>
+      </ReasoningRoot>
+    );
+
+    const agentTrigger = screen.getByRole("button", { name: /researcher/i });
+    fireEvent.click(agentTrigger);
+
+    expect(screen.getByText(/before/)).toBeDefined();
+    expect(screen.getByText(/after/)).toBeDefined();
+  });
+
   it("renders ToolFallback with arguments and result inspection", () => {
     render(
       <ToolFallback

@@ -27,11 +27,7 @@ export class VertexAiFeedbackService {
     }
 
     const targetEngine = customEngineId || this.context.reasoningEngineId;
-    let loc = this.context.resolveLocation(customLocation);
-    if (targetEngine.startsWith("projects/")) {
-      const match = targetEngine.match(/^projects\/[^/]+\/locations\/([^/]+)\//);
-      if (match && match[1]) loc = this.context.resolveLocation(match[1]);
-    }
+    const loc = this.context.resolveLocationForResource(targetEngine, customLocation);
     return `https://${loc}-aiplatform.googleapis.com/v1beta1/${this.context.getNormalizedEngineResource(targetEngine, loc)}/feedbackEntries`;
   }
 

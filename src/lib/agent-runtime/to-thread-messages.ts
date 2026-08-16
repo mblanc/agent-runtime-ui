@@ -1,4 +1,4 @@
-import { AgentSessionEvent } from "@/types/agent";
+import { AgentSessionEvent, ReasoningTraceEntry } from "@/types/agent";
 import { FormattedSessionThreadMessage } from "./types";
 import { extractGroundingMetadata } from "@/lib/grounding/citation-parser";
 
@@ -11,6 +11,17 @@ export function formatSessionEventsToThreadMessages(
 ): FormattedSessionThreadMessage[] {
   const threadMessages: FormattedSessionThreadMessage[] = [];
   let accumulatedThoughts: string[] = [];
+  // Shadows `accumulatedThoughts` entry for entry: an event contributes its
+  // thought string and its trace to the same message, so the two must be
+  // accumulated and flushed together or the renderer would show one turn's
+  // structured trace against another turn's text.
+  let accumulatedTrace: ReasoningTraceEntry[] = [];
+  // The renderer shows the array *instead of* the string when it has one, so a
+  // partial array is worse than none: any thought whose event carried no trace
+  // would vanish. The trace is therefore emitted only when it accounts for
+  // every thought in the message — an invariant checked here rather than
+  // assumed of every future producer.
+  let traceCoversEveryThought = true;
 
   for (let i = 0; i < events.length; i++) {
     const e = events[i];
@@ -37,6 +48,11 @@ export function formatSessionEventsToThreadMessages(
 
     if (thought) {
       accumulatedThoughts.push(thought);
+      if (e.reasoningTrace?.length) {
+        accumulatedTrace.push(...e.reasoningTrace);
+      } else {
+        traceCoversEveryThought = false;
+      }
     }
 
     if (e.role === "user") {
@@ -79,6 +95,10 @@ export function formatSessionEventsToThreadMessages(
         createdAt: e.createTime,
         thought:
           accumulatedThoughts.length > 0 ? accumulatedThoughts.join("\n\n") : undefined,
+        reasoningTrace:
+          traceCoversEveryThought && accumulatedTrace.length > 0
+            ? accumulatedTrace
+            : undefined,
         subAgents: e.subAgents,
         toolCalls: e.tool_calls,
         toolResults: e.tool_results,
@@ -102,6 +122,8 @@ export function formatSessionEventsToThreadMessages(
         },
       });
       accumulatedThoughts = [];
+      accumulatedTrace = [];
+      traceCoversEveryThought = true;
     }
   }
 
@@ -111,6 +133,9 @@ export function formatSessionEventsToThreadMessages(
       role: "assistant",
       content: "",
       thought: accumulatedThoughts.join("\n\n"),
+      ...(traceCoversEveryThought && accumulatedTrace.length > 0
+        ? { reasoningTrace: accumulatedTrace }
+        : {}),
       createdAt: new Date().toISOString(),
     });
   }

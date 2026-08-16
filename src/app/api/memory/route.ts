@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-handler";
-import { AgentRuntimeClient } from "@/lib/agent-runtime-client";
+import { createAgentRuntimeProvider } from "@/lib/agent-runtime/factory";
 
 export const runtime = "nodejs";
 
@@ -12,8 +12,8 @@ export const GET = withAuth(async (req, { userId }) => {
     undefined;
   const location = req.nextUrl.searchParams.get("location") || undefined;
 
-  const agentClient = new AgentRuntimeClient(agentId, location);
-  const memories = await agentClient.listMemories(userId, topic, agentId, location);
+  const provider = createAgentRuntimeProvider(agentId, location);
+  const memories = await provider.listMemories(userId, topic, agentId, location);
 
   return NextResponse.json(
     {
@@ -48,8 +48,8 @@ export const POST = withAuth(async (req, { userId }) => {
   const location =
     req.nextUrl.searchParams.get("location") || body?.location || undefined;
 
-  const agentClient = new AgentRuntimeClient(agentId, location);
-  const newMemory = await agentClient.createMemory(
+  const provider = createAgentRuntimeProvider(agentId, location);
+  const newMemory = await provider.createMemory(
     userId,
     fact.trim(),
     topic ? String(topic).trim() : undefined,

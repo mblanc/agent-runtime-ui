@@ -4,6 +4,7 @@ import {
   clearProviderCache,
 } from "@/lib/agent-runtime/factory";
 import { MockAgentRuntimeProvider } from "@/lib/agent-runtime/mock/mock-provider";
+import { mockAgentsStore } from "@/lib/agent-runtime/mock/mock-store";
 import { VertexAiReasoningEngineProvider } from "@/lib/agent-runtime/client";
 
 /**
@@ -69,6 +70,45 @@ describe("createAgentRuntimeProvider", () => {
     expect(() => createAgentRuntimeProvider("mock-arch-advisor")).toThrow(
       /real agent id/
     );
+  });
+
+  /**
+   * The invariant, asserted over the store rather than over one id: no fixture
+   * can ever build a real provider.
+   *
+   * `generic-agent` used to match neither the `mock-` prefix nor `mock-engine`,
+   * so it slipped past the guard and built a Vertex provider pointed at an
+   * engine that exists nowhere upstream. It has since been renamed, but naming
+   * is the weak part — a future fixture added without the prefix would
+   * reintroduce exactly that hole, and a test naming a single id would not
+   * notice. Driving the store catches it.
+   *
+   * A fixture id reaches a route from a stale `agent_runtime_active_agent_id`
+   * left in localStorage by a mock-mode session, which is precisely the
+   * misconfiguration this guard exists to name.
+   */
+  it("rejects every mock fixture id when mocking was not requested", () => {
+    process.env.GOOGLE_CLOUD_PROJECT = "my-project";
+    expect(mockAgentsStore.length).toBeGreaterThan(0);
+    for (const agent of mockAgentsStore) {
+      expect(() => createAgentRuntimeProvider(agent.id)).toThrow(/real agent id/);
+      expect(() => createAgentRuntimeProvider(agent.id)).toThrow(agent.id);
+    }
+  });
+
+  /**
+   * Documents the short-circuit, and is not coverage of the guard: `isExplicitMock`
+   * returns before `isMockAgent` is consulted, so this would pass for any string.
+   * It is here so that a change making the guard run *before* the explicit-mock
+   * check — which would break mock mode for every fixture — fails loudly.
+   */
+  it("still mocks every fixture id when mocking was requested", () => {
+    process.env.MOCK_AGENT_RUNTIME = "true";
+    for (const agent of mockAgentsStore) {
+      expect(createAgentRuntimeProvider(agent.id)).toBeInstanceOf(
+        MockAgentRuntimeProvider
+      );
+    }
   });
 
   it("builds the real provider when fully configured", () => {

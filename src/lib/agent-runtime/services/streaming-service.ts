@@ -133,7 +133,12 @@ export class VertexAiStreamingService {
     signal?: AbortSignal
   ): AsyncGenerator<AgentStreamEvent, void, unknown> {
     try {
-      const endpoint = `https://${this.context.location}-aiplatform.googleapis.com/v1/${this.context.getNormalizedEngineResource()}:streamQuery`;
+      // Resolve the engine once and derive the host region from it: a display
+      // name can resolve to a resource in a region other than the context
+      // default, and the fallback `:query` below must not disagree with this URL.
+      const engineResource = this.context.getNormalizedEngineResource();
+      const loc = this.context.resolveLocationForResource(engineResource);
+      const endpoint = `https://${loc}-aiplatform.googleapis.com/v1/${engineResource}:streamQuery`;
       const cleanSessionId =
         body.sessionId && !isLocalSessionId(body.sessionId)
           ? extractSessionIdFromResourceName(body.sessionId)
@@ -164,7 +169,7 @@ export class VertexAiStreamingService {
           statusText: response.statusText,
           message: streamErrText,
         });
-        const queryEndpoint = `https://${this.context.location}-aiplatform.googleapis.com/v1/${this.context.getNormalizedEngineResource()}:query`;
+        const queryEndpoint = `https://${loc}-aiplatform.googleapis.com/v1/${engineResource}:query`;
         const queryResponse = await this.context.fetchWithAuth(
           queryEndpoint,
           {
@@ -246,6 +251,29 @@ export class VertexAiStreamingService {
             };
           }
 
+          // Before the answer, and in call-then-result order, so the trace reads
+          // the way it does on the streaming path: tool cards above the final
+          // text. These used to reach the client as `[Tool Executed]: <name>`
+          // lines inside the thought above, which the renderer had to
+          // regex-match back into a tool card.
+          for (const call of parsed.toolCalls) {
+            yield {
+              event_type: "tool_call",
+              tool_call: call,
+              ...(modelVersion ? { model_version: modelVersion, modelVersion } : {}),
+              ...(invocationId ? { invocation_id: invocationId, invocationId } : {}),
+            };
+          }
+
+          for (const toolResult of parsed.toolResults) {
+            yield {
+              event_type: "tool_result",
+              tool_result: toolResult,
+              ...(modelVersion ? { model_version: modelVersion, modelVersion } : {}),
+              ...(invocationId ? { invocation_id: invocationId, invocationId } : {}),
+            };
+          }
+
           if (parsed.text) {
             yield {
               event_type: "content",
@@ -278,7 +306,10 @@ export class VertexAiStreamingService {
           };
           return;
         } else {
-          const streamErrText = await response.text().catch(() => "");
+          // A Response body is single-read: `streamErrText` was captured above
+          // and must be reused here. Re-reading `response` rejects (the body is
+          // already disturbed) and the swallowed rejection silently emptied the
+          // :streamQuery message out of the diagnostic below.
           const queryErrText = await queryResponse.text().catch(() => "");
           throw new Error(
             `Agent Runtime error (${queryResponse.status}): ${queryErrText || streamErrText || response.statusText}`

@@ -8,6 +8,7 @@ import type {
   ChatRequestBody,
   ListAgentsResponse,
   MemoryRetrievalItem,
+  ReasoningTraceEntry,
   SessionStateMap,
 } from "@/types/agent";
 
@@ -134,6 +135,12 @@ export interface FormattedSessionThreadMessage {
     result: Record<string, unknown>;
   };
   thought?: string;
+  /**
+   * The trace behind `thought`, as data. Serialised into the session GET
+   * response and picked up by `formatRemoteMessagesToThreadMessages`, which
+   * moves it onto the message metadata so the renderer never parses `thought`.
+   */
+  reasoningTrace?: ReasoningTraceEntry[];
   metadata?: {
     custom?: Record<string, unknown>;
   };
