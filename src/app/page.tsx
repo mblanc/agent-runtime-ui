@@ -51,8 +51,14 @@ function ChatContent() {
   const activeAgentIdRef = useRef<string | undefined>(activeAgent?.id);
   const activeLocationRef = useRef<string | undefined>(activeAgent?.location);
 
-  activeAgentIdRef.current = activeAgent?.id;
-  activeLocationRef.current = activeAgent?.location;
+  // Written after commit, not during render. Under concurrent rendering a render
+  // can be started, abandoned and restarted, so a render-phase write can land
+  // from a render that is never committed. The refs are read by the chat adapter
+  // via getThreadMessages, so they must reflect committed state.
+  useEffect(() => {
+    activeAgentIdRef.current = activeAgent?.id;
+    activeLocationRef.current = activeAgent?.location;
+  }, [activeAgent?.id, activeAgent?.location]);
 
   useEffect(() => {
     if (!isPending && !session?.user) {
@@ -128,7 +134,9 @@ function ChatContent() {
     onThreadIdChange: handleThreadIdChange,
   });
 
-  runtimeRef.current = runtime;
+  useEffect(() => {
+    runtimeRef.current = runtime;
+  }, [runtime]);
 
   const handleAgentChange = useCallback(() => {
     runtime.threads.switchToNewThread();

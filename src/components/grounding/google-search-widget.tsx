@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { SearchEntryPoint } from "@/types/agent";
 import DOMPurify from "isomorphic-dompurify";
 
@@ -10,35 +10,22 @@ interface GoogleSearchWidgetProps {
 }
 
 /**
- * Sanitizes HTML and CSS provided in searchEntryPoint.renderedContent.
+ * Sanitizes the HTML in searchEntryPoint.renderedContent.
  *
- * DOMPurify in jsdom/browser body-fragment mode moves <style> elements into <head>
- * and strips them from the body output. To ensure Google's official search suggestion
- * styling and dark/light logo toggles work as intended without rendering stacked logos,
- * we extract and sanitize <style> blocks (preventing CSS expressions and external @imports)
- * and recombine them with DOMPurify-sanitized HTML elements.
+ * The widget renders inside a shadow root, so `<style>` survives DOMPurify's
+ * body-fragment mode (which otherwise hoists style elements to <head> and drops
+ * them) and the CSS is scoped to the shadow tree by construction.
+ *
+ * That scoping is what removed the previous hand-rolled CSS sanitizer: style
+ * blocks used to be extracted before sanitising, scrubbed with three regexes for
+ * expression()/javascript:/@import, then concatenated back onto the output. The
+ * regexes were the only thing standing between Google's markup and page-wide
+ * rules that could overlay or restyle the whole app. Scoping beats filtering.
  */
 function sanitizeSearchWidgetHtml(rawHtml: string): string {
   if (!rawHtml) return "";
 
-  // 1. Extract and sanitize <style> blocks
-  const styleRegex = /<style\b[^>]*>([\s\S]*?)<\/style>/gi;
-  const styleContents: string[] = [];
-  let match: RegExpExecArray | null;
-  while ((match = styleRegex.exec(rawHtml)) !== null) {
-    const cssBody = match[1];
-    // Remove unsafe CSS patterns: expression(), javascript:, url(javascript:), @import
-    const safeCss = cssBody
-      .replace(/expression\s*\(.*?\)/gi, "")
-      .replace(/javascript\s*:/gi, "")
-      .replace(/@import/gi, "");
-    styleContents.push(safeCss);
-  }
-
-  // 2. Sanitize the HTML without the <style> tags
-  const htmlWithoutStyles = rawHtml.replace(styleRegex, "");
-
-  const sanitizedBody = DOMPurify.sanitize(htmlWithoutStyles, {
+  return DOMPurify.sanitize(rawHtml, {
     ALLOWED_TAGS: [
       "div",
       "span",
@@ -98,15 +85,18 @@ function sanitizeSearchWidgetHtml(rawHtml: string): string {
       "role",
     ],
     ADD_ATTR: ["target", "rel"],
+    // `style` is allowed through because the shadow root confines it. Script
+    // execution is not reachable from CSS in modern browsers; the risk this
+    // addresses is unscoped rules leaking into the host page.
+    ADD_TAGS: ["style"],
+    // Without this, DOMPurify's body-fragment mode hoists <style> into <head>
+    // and drops it from the output — the exact behaviour that forced the old
+    // extract-scrub-reattach workaround. FORCE_BODY keeps it in-band, and
+    // unlike WHOLE_DOCUMENT it does not wrap the result in <html><head>.
+    FORCE_BODY: true,
     FORBID_TAGS: ["script", "iframe", "object", "embed", "form", "meta", "link"],
     FORBID_ATTR: ["onerror", "onload", "onclick", "onmouseover", "onfocus"],
   });
-
-  // 3. Recombine sanitized styles and HTML body
-  const combinedStyles =
-    styleContents.length > 0 ? `<style>${styleContents.join("\n")}</style>` : "";
-
-  return `${combinedStyles}${sanitizedBody}`;
 }
 
 /**
@@ -126,11 +116,24 @@ export function GoogleSearchWidget({
     return sanitizeSearchWidgetHtml(rawHtml);
   }, [rawHtml]);
 
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const shadowRef = useRef<ShadowRoot | null>(null);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+
+    if (!shadowRef.current) {
+      // attachShadow throws if called twice on the same element, which React
+      // will do across re-renders and in StrictMode's double-invoked effects.
+      shadowRef.current = host.shadowRoot ?? host.attachShadow({ mode: "open" });
+    }
+    shadowRef.current.innerHTML = sanitizedHtml;
+  }, [sanitizedHtml]);
+
   if (!sanitizedHtml) {
     return null;
   }
 
-  return (
-    <div className={className} dangerouslySetInnerHTML={{ __html: sanitizedHtml }} />
-  );
+  return <div ref={hostRef} className={className} />;
 }

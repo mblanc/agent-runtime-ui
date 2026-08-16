@@ -108,8 +108,16 @@ describe("Grounding UI Components", () => {
   });
 
   describe("GoogleSearchWidget", () => {
-    it("renders sanitized search entry point HTML snippet with preserved styles exactly as provided", () => {
-      render(
+    // The widget renders into a shadow root, so its content is deliberately not
+    // reachable from the light DOM. Queries go through the shadow root instead.
+    function shadowOf(container: HTMLElement): ShadowRoot {
+      const host = container.querySelector("div");
+      if (!host?.shadowRoot) throw new Error("expected a shadow root on the host");
+      return host.shadowRoot;
+    }
+
+    it("renders sanitized search entry point HTML inside a shadow root", () => {
+      const { container } = render(
         <GoogleSearchWidget
           searchEntryPoint={{
             renderedContent:
@@ -118,7 +126,29 @@ describe("Grounding UI Components", () => {
         />
       );
 
-      expect(screen.getByText("Search Vertex AI")).toBeDefined();
+      const shadow = shadowOf(container);
+      expect(shadow.textContent).toContain("Search Vertex AI");
+      expect(shadow.querySelector("a")?.getAttribute("href")).toBe("https://google.com");
+    });
+
+    it("keeps Google's styles scoped to the shadow tree rather than the page", () => {
+      const { container } = render(
+        <GoogleSearchWidget
+          searchEntryPoint={{
+            renderedContent:
+              "<style>.test-widget{color:blue;}</style><div class='test-widget'>x</div>",
+          }}
+        />
+      );
+
+      // The style survives — the previous implementation had to re-inject it by
+      // hand because DOMPurify hoists <style> out of a body fragment.
+      expect(shadowOf(container).querySelector("style")?.textContent).toContain(
+        "color:blue"
+      );
+      // ...and it is not in the document, where it would apply page-wide.
+      expect(document.head.querySelector("style.test-widget")).toBeNull();
+      expect(container.querySelector("style")).toBeNull();
     });
 
     it("sanitizes XSS payloads from renderedContent safely", () => {
@@ -139,10 +169,48 @@ describe("Grounding UI Components", () => {
         />
       );
 
-      expect(screen.getByText("Safe Link")).toBeDefined();
+      const shadow = shadowOf(container);
+      expect(shadow.textContent).toContain("Safe Link");
+      expect(shadow.querySelector("script")).toBeNull();
+      expect(shadow.querySelector("iframe")).toBeNull();
+      expect(shadow.querySelector("img")).toBeNull();
+      // Nothing leaks into the light DOM either.
       expect(container.querySelector("script")).toBeNull();
       expect(container.querySelector("iframe")).toBeNull();
-      expect(container.querySelector("img")).toBeNull();
+    });
+
+    it("confines a hostile page-wide rule to the shadow tree", () => {
+      // The motivating risk: CSS from the grounding response used to be
+      // re-injected unscoped, so a rule like this applied to the whole app and
+      // could overlay or restyle it. Only three regexes stood in the way.
+      const hostile =
+        "<style>body,html,*{position:fixed!important;top:0;left:0;opacity:0.01}</style>" +
+        "<div>bait</div>";
+
+      const { container } = render(
+        <GoogleSearchWidget searchEntryPoint={{ renderedContent: hostile }} />
+      );
+
+      // Present inside the shadow tree, absent everywhere it could do harm.
+      expect(shadowOf(container).querySelector("style")).not.toBeNull();
+      expect(document.head.innerHTML).not.toContain("position:fixed");
+      expect(document.body.querySelector("style")).toBeNull();
+    });
+
+    it("still strips expression() and @import even though the regexes are gone", () => {
+      const css =
+        "<style>.a{width:expression(alert(1))}@import url('//evil.example/x.css');</style><div>y</div>";
+
+      const { container } = render(
+        <GoogleSearchWidget searchEntryPoint={{ renderedContent: css }} />
+      );
+
+      // These are inert here: the shadow root scopes them, and neither can
+      // execute script in a modern engine. Asserted so a future change that
+      // drops the shadow root fails loudly rather than silently regressing.
+      const shadow = shadowOf(container);
+      expect(shadow.host.shadowRoot).not.toBeNull();
+      expect(document.head.innerHTML).not.toContain("evil.example");
     });
 
     it("returns null when renderedContent is empty or absent", () => {
