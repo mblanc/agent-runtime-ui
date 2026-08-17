@@ -167,7 +167,7 @@ src/
 │       └── gemini-message.tsx                # Mount A2UI renderer for a2ui message parts
 ├── lib/
 │   ├── agent-runtime-client.ts               # Mock stream triggers for A2UI cards/forms
-│   └── gemini-runtime-adapter.ts             # Parse application/json+a2ui stream parts
+│   └── adapters/chat-adapter.ts              # Parse application/json+a2ui stream parts
 └── types/
     └── agent.ts                              # A2UIComponentNode, A2UIAction, A2UIPartData
 ```

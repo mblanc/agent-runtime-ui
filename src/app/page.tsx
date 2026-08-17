@@ -6,13 +6,13 @@ import {
   useRemoteThreadListRuntime,
   type AssistantRuntime,
 } from "@assistant-ui/react";
+import { createGeminiChatAdapter } from "@/lib/adapters/chat-adapter";
+import { createGeminiFeedbackAdapter } from "@/lib/adapters/feedback-adapter";
+import { createGcsAttachmentAdapter } from "@/lib/adapters/gcs-attachment-adapter";
 import {
-  createGeminiChatAdapter,
-  createGeminiFeedbackAdapter,
-  createGcsAttachmentAdapter,
   createWebSpeechDictationAdapter,
   createWebSpeechSynthesisAdapter,
-} from "@/lib/gemini-runtime-adapter";
+} from "@/lib/adapters/speech-adapters";
 import { useSessionThreadListAdapter } from "@/lib/session-adapter";
 import { ThreadSidebar } from "@/components/assistant-ui/thread-sidebar";
 import { GeminiThread } from "@/components/assistant-ui/gemini-thread";

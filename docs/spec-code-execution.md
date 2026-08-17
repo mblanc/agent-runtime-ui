@@ -115,7 +115,7 @@ export interface AgentStreamEvent {
 }
 ```
 
-### 4.3 Part Grouping & Normalization (`src/lib/gemini-runtime-adapter.ts`)
+### 4.3 Part Grouping & Normalization (`src/lib/adapters/chat-adapter.ts`)
 
 When `:streamQuery` emits an `executable_code` part followed by a `code_execution_result` part:
 
@@ -194,7 +194,7 @@ src/
 │   │   ├── output-parser.ts                  # Extracts text output vs image data URLs
 │   │   └── ansi-to-html.ts                   # Converts terminal ANSI colors for errors
 │   ├── agent-runtime-client.ts               # Mock code execution triggers & outputs
-│   └── gemini-runtime-adapter.ts             # Map executable_code & result parts
+│   └── adapters/chat-adapter.ts              # Map executable_code & result parts
 └── types/
     └── agent.ts                              # ExecutableCodeData, CodeExecutionResultData
 ```

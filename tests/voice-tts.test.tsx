@@ -13,7 +13,7 @@ import {
 import {
   createWebSpeechDictationAdapter,
   createWebSpeechSynthesisAdapter,
-} from "@/lib/gemini-runtime-adapter";
+} from "@/lib/adapters/speech-adapters";
 import { GeminiComposer } from "@/components/assistant-ui/gemini-composer";
 import { ChatMessage } from "@/components/assistant-ui/gemini-message";
 

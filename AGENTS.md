@@ -130,7 +130,7 @@ Use this index to quickly locate specific subsystems and implementations across 
 ### Business Logic & Services
 
 - [`src/lib/agent-runtime-client.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/agent-runtime-client.ts): Vertex AI Reasoning Engine REST API client, SSE stream handler, and mock store.
-- [`src/lib/gemini-runtime-adapter.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/gemini-runtime-adapter.ts): `ChatModelAdapter` translating `/api/chat` SSE stream to assistant-ui runtime.
+- [`src/lib/adapters/chat-adapter.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/adapters/chat-adapter.ts): `ChatModelAdapter` translating `/api/chat` SSE stream to assistant-ui runtime.
 - [`src/lib/context-caching/cache-metrics.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/context-caching/cache-metrics.ts): Context caching hit ratio and cost reduction calculations.
 - [`src/lib/session-state/state-context.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/session-state/state-context.tsx): Session state React Context and hooks (`useSessionState`).
 - [`src/lib/session-state/state-diff.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/session-state/state-diff.ts): Structural state delta diffing and type inference.

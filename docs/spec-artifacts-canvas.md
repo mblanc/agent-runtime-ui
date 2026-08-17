@@ -211,7 +211,7 @@ src/
 │       └── version-selector.tsx              # Version history dropdown and diff viewer
 ├── lib/
 │   ├── agent-runtime-client.ts               # Artifacts mock store & stream generation
-│   ├── gemini-runtime-adapter.ts             # Map artifact events to assistant-ui runtime
+│   ├── adapters/chat-adapter.ts              # Map artifact events to assistant-ui runtime
 │   └── artifact-context.tsx                  # React Context & state hook for Artifacts
 └── types/
     └── agent.ts                              # AgentArtifact, ArtifactVersion, StreamEvent extensions

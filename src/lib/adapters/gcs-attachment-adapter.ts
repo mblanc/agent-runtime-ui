@@ -213,5 +213,3 @@ export function createGcsAttachmentAdapter(
     },
   };
 }
-
-export const gcsAttachmentAdapter = createGcsAttachmentAdapter();

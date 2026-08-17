@@ -45,7 +45,7 @@ export interface SkillStreamEventPayload {
 }
 ```
 
-### 2.2 Tool Call Interception Mapping (`src/lib/gemini-runtime-adapter.ts`)
+### 2.2 Tool Call Interception Mapping (`src/lib/adapters/chat-adapter.ts`)
 
 When the SSE stream receives a tool event:
 
@@ -115,7 +115,7 @@ src/
 │       └── tool-fallback.tsx                 # Route load_skill / search_skills to specialized badges
 ├── lib/
 │   ├── agent-runtime-client.ts               # Mock load_skill / search_skills responses
-│   └── gemini-runtime-adapter.ts             # Map load_skill tool calls to LoadedSkillMetadata
+│   └── adapters/chat-adapter.ts              # Map load_skill tool calls to LoadedSkillMetadata
 └── types/
     └── agent.ts                              # LoadedSkillMetadata, SkillSearchMatch
 ```

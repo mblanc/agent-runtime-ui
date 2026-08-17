@@ -8,11 +8,9 @@ import {
   type ChatModelRunResult,
   type ChatModelRunOptions,
 } from "@assistant-ui/react";
-import {
-  createGcsAttachmentAdapter,
-  attachmentMetadataMap,
-  createGeminiChatAdapter,
-} from "@/lib/gemini-runtime-adapter";
+import { createGcsAttachmentAdapter } from "@/lib/adapters/gcs-attachment-adapter";
+import { createGeminiChatAdapter } from "@/lib/adapters/chat-adapter";
+import { defaultAttachmentStore } from "@/lib/attachments/attachment-store";
 import { GeminiComposer } from "@/components/assistant-ui/gemini-composer";
 import { ChatMessage } from "@/components/assistant-ui/gemini-message";
 import React from "react";
@@ -57,7 +55,7 @@ function TestRuntimeWrapper({ children }: { children: React.ReactNode }) {
 describe("Multimodal Attachments & GCS Adapter", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    attachmentMetadataMap.clear();
+    defaultAttachmentStore.clear();
   });
 
   describe("GCS Attachment Adapter", () => {
@@ -122,9 +120,9 @@ describe("Multimodal Attachments & GCS Adapter", () => {
       expect(finalResult.status.reason).toBe("composer-send");
 
       // Verify metadata cache maps both stable ID and fileId
-      expect(attachmentMetadataMap.has(finalResult.id)).toBe(true);
-      expect(attachmentMetadataMap.has("file-xyz-123")).toBe(true);
-      const meta = attachmentMetadataMap.get(finalResult.id);
+      expect(defaultAttachmentStore.has(finalResult.id)).toBe(true);
+      expect(defaultAttachmentStore.has("file-xyz-123")).toBe(true);
+      const meta = defaultAttachmentStore.get(finalResult.id);
       expect(meta?.gcsUri).toBe("gs://bucket/users/user-1/file-xyz-123-diagram.png");
       expect(meta?.readUrl).toBe("https://storage.googleapis.com/read-url");
 
@@ -173,7 +171,7 @@ describe("Multimodal Attachments & GCS Adapter", () => {
       const adapter = createGcsAttachmentAdapter();
       const mockFile = new File(["img-bytes"], "chart.png", { type: "image/png" });
 
-      attachmentMetadataMap.set("att-img-1", {
+      defaultAttachmentStore.set("att-img-1", {
         gcsUri: "gs://bucket/users/user-1/att-img-1-chart.png",
         readUrl: "https://storage.googleapis.com/read-chart.png",
         previewUrl: "blob:http://localhost/blob-1",
@@ -203,7 +201,7 @@ describe("Multimodal Attachments & GCS Adapter", () => {
         type: "application/pdf",
       });
 
-      attachmentMetadataMap.set("att-doc-1", {
+      defaultAttachmentStore.set("att-doc-1", {
         gcsUri: "gs://bucket/users/user-1/att-doc-1-contract.pdf",
         readUrl: "https://storage.googleapis.com/read-contract.pdf",
         previewUrl: "blob:http://localhost/blob-2",
@@ -236,14 +234,14 @@ describe("Multimodal Attachments & GCS Adapter", () => {
       const adapter = createGcsAttachmentAdapter();
       const mockFile = new File(["bytes"], "temp.png", { type: "image/png" });
 
-      attachmentMetadataMap.set("att-temp", {
+      defaultAttachmentStore.set("att-temp", {
         gcsUri: "gs://bucket/temp.png",
         readUrl: "https://read.url",
         previewUrl: "blob:http://localhost/blob-temp",
         contentType: "image/png",
       });
 
-      expect(attachmentMetadataMap.has("att-temp")).toBe(true);
+      expect(defaultAttachmentStore.has("att-temp")).toBe(true);
       await adapter.remove({
         id: "att-temp",
         type: "image",
@@ -252,13 +250,13 @@ describe("Multimodal Attachments & GCS Adapter", () => {
         status: { type: "complete" },
         content: [],
       });
-      expect(attachmentMetadataMap.has("att-temp")).toBe(false);
+      expect(defaultAttachmentStore.has("att-temp")).toBe(false);
     });
   });
 
   describe("Chat Adapter Multimodal Formatting", () => {
     it("maps image and file parts with GCS URIs into file_data parts for /api/chat payload", async () => {
-      attachmentMetadataMap.set("att-1", {
+      defaultAttachmentStore.set("att-1", {
         gcsUri: "gs://my-bucket/users/u1/doc.pdf",
         readUrl: "https://storage.googleapis.com/doc.pdf",
         previewUrl: "blob:preview-url",

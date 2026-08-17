@@ -440,5 +440,3 @@ export function createGeminiChatAdapter(
     },
   };
 }
-
-export const geminiChatAdapter = createGeminiChatAdapter();

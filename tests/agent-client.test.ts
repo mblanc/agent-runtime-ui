@@ -5,7 +5,7 @@ import { parseRawSessionEvent } from "@/lib/agent-runtime/parse-event";
 import { isRootWorkflowOutput } from "@/lib/agent-runtime/event-utils";
 import { groupTurnSessionEvents } from "@/lib/agent-runtime/group-turns";
 import { formatAgentDisplayName } from "@/lib/utils";
-import { createYieldContent } from "@/lib/gemini-runtime-adapter";
+import { createYieldContent } from "@/lib/adapters/yield-content";
 
 describe("agent runtime provider", () => {
   it("deduplicates repeated tool calls across intermediate session events in groupTurnSessionEvents", () => {

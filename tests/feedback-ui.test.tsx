@@ -9,7 +9,7 @@ import {
 import {
   createGeminiFeedbackAdapter,
   geminiFeedbackAdapter,
-} from "@/lib/gemini-runtime-adapter";
+} from "@/lib/adapters/feedback-adapter";
 import { ChatMessage } from "@/components/assistant-ui/gemini-message";
 
 beforeAll(() => {

@@ -264,7 +264,7 @@ src/
 │   ├── session-state/
 │   │   └── state-context.tsx                 # React Context & hooks for session state
 │   ├── agent-runtime-client.ts               # Mock store state CRUD & stream delta triggers
-│   └── gemini-runtime-adapter.ts             # Map usage_metadata & state_delta to AUI
+│   └── adapters/chat-adapter.ts              # Map usage_metadata & state_delta to AUI
 └── types/
     └── agent.ts                              # UsageMetadata, SessionStateMap, StateDelta
 ```
@@ -311,7 +311,7 @@ export function calculateContextCacheMetrics(
    - Test `calculateContextCacheMetrics` with zero cache, partial cache (e.g. 3000/4000), 100% cache, and missing `usage_metadata`.
    - Test cache hit ratio and cost reduction formatting.
 2. **State Store & Adapter Tests (`tests/session-state-adapter.test.ts`)**:
-   - Test `gemini-runtime-adapter` parsing `actions.state_delta` from SSE chunks.
+   - Test `adapters/chat-adapter` parsing `actions.state_delta` from SSE chunks.
    - Test state delta classification (`added`, `updated`, `deleted`).
 3. **BFF Route Tests (`tests/session-state-api.test.ts`)**:
    - Test `GET /api/sessions/[sessionId]/state` with authenticated session.

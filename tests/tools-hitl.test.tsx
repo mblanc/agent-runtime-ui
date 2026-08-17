@@ -5,7 +5,7 @@ import { useLocalRuntime, AssistantRuntimeProvider } from "@assistant-ui/react";
 import type { ToolCallMessagePartProps } from "@assistant-ui/react";
 import { GeminiThread } from "@/components/assistant-ui/gemini-thread";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
-import { createGeminiChatAdapter } from "@/lib/gemini-runtime-adapter";
+import { createGeminiChatAdapter } from "@/lib/adapters/chat-adapter";
 import { createAgentRuntimeProvider } from "@/lib/agent-runtime/factory";
 import { POST as chatRoute } from "@/app/api/chat/route";
 import { auth } from "@/lib/auth";
