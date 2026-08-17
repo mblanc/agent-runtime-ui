@@ -91,6 +91,7 @@ export class StreamAccumulator {
   private latestGroundingMetadata: GroundingMetadata | undefined;
 
   private lastStreamYieldTime = 0;
+  private isTerminal = false;
 
   /**
    * @param sourceMessages the conversation the turn was sent with. Read only by
@@ -106,6 +107,10 @@ export class StreamAccumulator {
    * the metadata-only branch at the bottom.
    */
   handle(parsed: AgentStreamEvent): HandleOutcome {
+    if (this.isTerminal) {
+      return "skip";
+    }
+
     // Carry-forward, not extraction. Every alternative spelling
     // Vertex uses — `invocation_id`, `config.invocationId`,
     // `raw_event.model_version`, a bare `state_delta` — is resolved
@@ -546,6 +551,7 @@ export class StreamAccumulator {
    * captured before finalising, and the subagent spinners ran forever.
    */
   private handleError(error: string): HandleOutcome {
+    this.isTerminal = true;
     this.finalizeAllSubagents();
     this.flushCurrentTextSegment();
     this.accumulatedText +=
@@ -557,6 +563,7 @@ export class StreamAccumulator {
 
   /** Shared by the `done` event and the `[DONE]` sentinel, which mean the same. */
   private completeTerminalState(): void {
+    this.isTerminal = true;
     this.finalizeAllSubagents();
     this.flushCurrentTextSegment();
     for (const tc of this.toolCallsMap.values()) {

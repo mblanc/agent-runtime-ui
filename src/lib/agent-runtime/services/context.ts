@@ -57,7 +57,19 @@ function composeSignals(
   if (typeof AbortSignal.any === "function") {
     return AbortSignal.any([caller, timeout]);
   }
-  return caller;
+  const controller = new AbortController();
+  const onAbort = () => controller.abort(caller.reason || timeout.reason);
+  if (caller.aborted) {
+    controller.abort(caller.reason);
+    return controller.signal;
+  }
+  if (timeout.aborted) {
+    controller.abort(timeout.reason);
+    return controller.signal;
+  }
+  caller.addEventListener("abort", onAbort, { once: true });
+  timeout.addEventListener("abort", onAbort, { once: true });
+  return controller.signal;
 }
 
 export class InvalidRoutingParameterError extends Error {
@@ -101,6 +113,10 @@ export class VertexAiContext {
     this.location = overrideLocation
       ? assertValidLocation(overrideLocation)
       : process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
+
+    if (overrideEngineId) {
+      assertValidEngineResource(overrideEngineId);
+    }
     this.reasoningEngineId =
       overrideEngineId || process.env.GOOGLE_REASONING_ENGINE_ID || "";
 
@@ -110,7 +126,7 @@ export class VertexAiContext {
       );
       if (match) {
         if (match[1]) this.projectId = match[1];
-        if (match[2]) this.location = match[2];
+        if (match[2]) this.location = assertValidLocation(match[2]);
       }
     }
 

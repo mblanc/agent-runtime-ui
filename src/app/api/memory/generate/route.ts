@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { resolveAgentTarget, withAuth } from "@/lib/api-handler";
 import { createAgentRuntimeProvider } from "@/lib/agent-runtime/factory";
+import { isLocalSessionId } from "@/lib/agent-runtime/event-utils";
+import { requireSessionOwner } from "@/lib/session-ownership";
 
 export const runtime = "nodejs";
 
-export const POST = withAuth(async (req, { userId }) => {
+export const POST = withAuth(async (req, { userId, userEmail }) => {
   const body = await req.json().catch(() => ({}));
   const sessionId = body?.sessionId;
 
@@ -17,16 +19,30 @@ export const POST = withAuth(async (req, { userId }) => {
 
   // See the memory collection route: `?reasoningEngineId=` has never been an
   // accepted alias here, only the body field.
-  const { agentId, location } = resolveAgentTarget(req, body, {
+  const target = resolveAgentTarget(req, body, {
     legacyQueryAlias: false,
   });
 
-  const provider = createAgentRuntimeProvider(agentId, location);
+  const provider = createAgentRuntimeProvider(target.agentId, target.location);
+
+  if (!isLocalSessionId(sessionId)) {
+    const ownership = await requireSessionOwner({
+      provider,
+      sessionId: sessionId.trim(),
+      target,
+      userId,
+      userEmail,
+      onUnowned: "forbidden",
+      onMissing: "not-found",
+    });
+    if (ownership instanceof NextResponse) return ownership;
+  }
+
   const memories = await provider.generateMemories(
     userId,
     sessionId.trim(),
-    agentId,
-    location
+    target.agentId,
+    target.location
   );
 
   return NextResponse.json({

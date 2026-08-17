@@ -405,6 +405,29 @@ describe("StreamAccumulator — dispatch ordering", () => {
     const acc = new StreamAccumulator();
     expect(acc.handle({ event_type: "content", content: "" })).toBe("skip");
   });
+
+  it("locks terminal state after done event and ignores subsequent mutations", () => {
+    const acc = new StreamAccumulator();
+    acc.handle({ event_type: "content", content: "Final answer" });
+    const doneOutcome = acc.handle({ event_type: "done" });
+    expect(doneOutcome).toBe("final");
+
+    // Subsequent events after terminal completion should be skipped and ignored
+    const postOutcome = acc.handle({ event_type: "content", content: " Extra text" });
+    expect(postOutcome).toBe("skip");
+    expect(text(acc.snapshot())).toBe("Final answer");
+  });
+
+  it("locks terminal state after error event and ignores subsequent mutations", () => {
+    const acc = new StreamAccumulator();
+    const errOutcome = acc.handle({ event_type: "error", error: "Fatal error" });
+    expect(errOutcome).toBe("final");
+
+    const postOutcome = acc.handle({ event_type: "content", content: "Post error" });
+    expect(postOutcome).toBe("skip");
+    expect(text(acc.snapshot())).toContain("Fatal error");
+    expect(text(acc.snapshot())).not.toContain("Post error");
+  });
 });
 
 describe("StreamAccumulator — prior-message tool results", () => {

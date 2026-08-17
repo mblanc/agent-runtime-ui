@@ -172,6 +172,18 @@ export class VertexAiStreamingService {
           statusText: response.statusText,
           message: streamErrText,
         });
+
+        // Fail fast on auth errors, permissions, and quota rate-limits where :query is guaranteed to fail
+        if (
+          response.status === 401 ||
+          response.status === 403 ||
+          response.status === 429
+        ) {
+          throw new Error(
+            `Agent Runtime error (${response.status}): ${streamErrText || response.statusText}`
+          );
+        }
+
         const queryEndpoint = `https://${loc}-aiplatform.googleapis.com/v1/${engineResource}:query`;
         const queryResponse = await this.context.fetchWithAuth(
           queryEndpoint,

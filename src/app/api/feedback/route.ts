@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-handler";
 import { createAgentRuntimeProvider } from "@/lib/agent-runtime/factory";
-import { AgentFeedbackRequest, FeedbackType } from "@/types/agent";
+import { isLocalSessionId } from "@/lib/agent-runtime/event-utils";
+import { requireSessionOwner } from "@/lib/session-ownership";
+import { AgentFeedbackRequest, AgentTarget, FeedbackType } from "@/types/agent";
 
 export const runtime = "nodejs";
 
@@ -11,7 +13,7 @@ const VALID_FEEDBACK_TYPES: Set<FeedbackType> = new Set([
   "FEEDBACK_TYPE_UNSPECIFIED",
 ]);
 
-export const POST = withAuth(async (req, { userId }) => {
+export const POST = withAuth(async (req, { userId, userEmail }) => {
   let body: Partial<AgentFeedbackRequest>;
   try {
     body = await req.json();
@@ -69,7 +71,25 @@ export const POST = withAuth(async (req, { userId }) => {
       : {}),
   };
 
-  const provider = createAgentRuntimeProvider();
+  const target: AgentTarget = {
+    agentId: feedbackRequest.reasoningEngineId,
+    location: feedbackRequest.location,
+  };
+  const provider = createAgentRuntimeProvider(target.agentId, target.location);
+
+  if (feedbackRequest.sessionId && !isLocalSessionId(feedbackRequest.sessionId)) {
+    const ownership = await requireSessionOwner({
+      provider,
+      sessionId: feedbackRequest.sessionId,
+      target,
+      userId,
+      userEmail,
+      onUnowned: "forbidden",
+      onMissing: "allow",
+    });
+    if (ownership instanceof NextResponse) return ownership;
+  }
+
   const result = await provider.submitFeedback(feedbackRequest, userId);
 
   return NextResponse.json(result, { status: 200 });

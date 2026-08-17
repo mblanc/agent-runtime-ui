@@ -156,14 +156,25 @@ describe("Feedback API Route (POST /api/feedback)", () => {
     });
 
     it("forwards feedback payload to Vertex AI Reasoning Engine REST API", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          name: "projects/test-project/locations/us-central1/reasoningEngines/test-engine-123/feedbackEntries/fb-999",
-          createTime: "2026-08-07T12:00:00Z",
-          feedbackType: "THUMBS_UP",
-        }),
-      });
+      const mockFetch = vi
+        .fn()
+        // First call: requireSessionOwner -> getSession
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            name: "projects/test-project/locations/us-central1/reasoningEngines/test-engine-123/sessions/session-456",
+            userId: "test-user-id",
+          }),
+        })
+        // Second call: submitFeedback
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            name: "projects/test-project/locations/us-central1/reasoningEngines/test-engine-123/feedbackEntries/fb-999",
+            createTime: "2026-08-07T12:00:00Z",
+            feedbackType: "THUMBS_UP",
+          }),
+        });
       vi.spyOn(globalThis, "fetch").mockImplementation(
         mockFetch as unknown as typeof fetch
       );
@@ -193,8 +204,8 @@ describe("Feedback API Route (POST /api/feedback)", () => {
       );
       expect(data.feedbackType).toBe("THUMBS_UP");
 
-      expect(mockFetch).toHaveBeenCalledTimes(1);
-      const [calledUrl, calledOptions] = mockFetch.mock.calls[0];
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      const [calledUrl, calledOptions] = mockFetch.mock.calls[1];
       expect(calledUrl).toBe(
         "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/test-project/locations/us-central1/reasoningEngines/test-engine-123/feedbackEntries"
       );
@@ -211,11 +222,13 @@ describe("Feedback API Route (POST /api/feedback)", () => {
       expect(parsedBody.config).toBeUndefined();
     });
 
-    it("returns 500 when GCP Vertex AI responds with an error", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: false,
-        status: 503,
-        text: async () => "Service Unavailable",
+    it("returns 403 when attempting to submit feedback on another user's session (IDOR protection)", async () => {
+      const mockFetch = vi.fn().mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          name: "projects/test-project/locations/us-central1/reasoningEngines/test-engine-123/sessions/session-other",
+          userId: "other-user-id",
+        }),
       });
       vi.spyOn(globalThis, "fetch").mockImplementation(
         mockFetch as unknown as typeof fetch
@@ -229,7 +242,47 @@ describe("Feedback API Route (POST /api/feedback)", () => {
       const req = new NextRequest("http://localhost:3000/api/feedback", {
         method: "POST",
         body: JSON.stringify({
-          sessionId: "session-1",
+          sessionId:
+            "projects/test-project/locations/us-central1/reasoningEngines/test-engine-123/sessions/session-other",
+          feedbackType: "THUMBS_DOWN",
+        }),
+      });
+
+      const res = await feedbackRoute(req);
+      expect(res.status).toBe(403);
+      const data = await res.json();
+      expect(data.error).toContain("Forbidden");
+    });
+
+    it("returns 500 when GCP Vertex AI responds with an error", async () => {
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            name: "projects/test-project/locations/us-central1/reasoningEngines/test-engine-123/sessions/session-1",
+            userId: "test-user-id",
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 503,
+          text: async () => "Service Unavailable",
+        });
+      vi.spyOn(globalThis, "fetch").mockImplementation(
+        mockFetch as unknown as typeof fetch
+      );
+
+      const { VertexAiContext } = await import("@/lib/agent-runtime/services/context");
+      vi.spyOn(VertexAiContext.prototype, "getAccessToken").mockResolvedValue(
+        "mock-gcp-bearer-token"
+      );
+
+      const req = new NextRequest("http://localhost:3000/api/feedback", {
+        method: "POST",
+        body: JSON.stringify({
+          sessionId:
+            "projects/test-project/locations/us-central1/reasoningEngines/test-engine-123/sessions/session-1",
           feedbackType: "THUMBS_DOWN",
         }),
       });

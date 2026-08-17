@@ -7,7 +7,10 @@ import {
 } from "@/app/api/memory/[memoryId]/route";
 import { POST as generateMemories } from "@/app/api/memory/generate/route";
 import { auth } from "@/lib/auth";
-import { mockMemoriesStore } from "@/lib/agent-runtime/mock/mock-store";
+import {
+  mockMemoriesStore,
+  mockSessionsStore,
+} from "@/lib/agent-runtime/mock/mock-store";
 
 describe("Memory Bank API Routes", () => {
   beforeEach(() => {
@@ -317,6 +320,37 @@ describe("Memory Bank API Routes", () => {
       const data = await res.json();
       expect(data.extractedCount).toBeGreaterThan(0);
       expect(Array.isArray(data.memories)).toBe(true);
+    });
+
+    it("returns 403 when attempting to generate memories from another user's session (IDOR protection)", async () => {
+      vi.spyOn(auth.api, "getSession").mockResolvedValueOnce({
+        user: {
+          id: "test-user",
+          name: "Test User",
+          email: "test@example.com",
+        },
+        session: {
+          expiresAt: new Date(Date.now() + 86400000).toISOString(),
+        },
+      });
+
+      mockSessionsStore.set("session-other-user", {
+        id: "session-other-user",
+        name: "projects/mock-project/locations/us-central1/reasoningEngines/mock-arch-advisor/sessions/session-other-user",
+        userId: "other-user",
+        title: "Private chat",
+        createTime: new Date().toISOString(),
+        updateTime: new Date().toISOString(),
+      });
+
+      const req = new NextRequest("http://localhost:3000/api/memory/generate", {
+        method: "POST",
+        body: JSON.stringify({ sessionId: "session-other-user" }),
+      });
+      const res = await generateMemories(req);
+
+      expect(res.status).toBe(403);
+      mockSessionsStore.delete("session-other-user");
     });
 
     it("returns 400 if sessionId is missing", async () => {

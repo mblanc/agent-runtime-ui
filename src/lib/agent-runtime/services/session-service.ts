@@ -1,12 +1,21 @@
 import { AgentSession, AgentSessionEvent, SessionStateMap } from "@/types/agent";
 import { VertexAiContext } from "./context";
 import { VertexAiAgentService } from "./agent-service";
+import { TtlCache } from "./ttl-cache";
 import {
   PLACEHOLDER_SESSION_TITLE_RE,
   extractSessionIdFromResourceName,
   groupTurnSessionEvents,
   isLocalSessionId,
 } from "../event-normalizer";
+
+const sessionTargetCache = new TtlCache<{ agentId: string; location?: string }>(
+  5 * 60_000
+);
+
+export function clearSessionTargetCache(): void {
+  sessionTargetCache.clear();
+}
 
 /**
  * Maps a raw Vertex session payload to AgentSession.
@@ -233,12 +242,23 @@ export class VertexAiSessionService {
   ): Promise<AgentSession | null> {
     if (isLocalSessionId(sessionId)) return null;
 
+    let targetEngineId = customEngineId;
+    let targetLocation = customLocation;
+
+    if (!targetEngineId && !sessionId.startsWith("projects/")) {
+      const cached = sessionTargetCache.get(sessionId);
+      if (cached) {
+        targetEngineId = cached.agentId;
+        targetLocation = targetLocation || cached.location;
+      }
+    }
+
     try {
       const endpoint = await this.getSessionEndpoint(
         sessionId,
         undefined,
-        customEngineId,
-        customLocation
+        targetEngineId,
+        targetLocation
       );
       const response = await this.context.fetchWithAuth(endpoint);
 
@@ -267,12 +287,22 @@ export class VertexAiSessionService {
               const fallbackRes = await this.context.fetchWithAuth(fallbackEndpoint);
               if (!fallbackRes.ok) return null;
               const raw = (await fallbackRes.json()) as Record<string, unknown>;
-              return mapRawSession(raw, sessionId);
+              return {
+                session: mapRawSession(raw, sessionId),
+                agentId: agent.resourceName || agent.id,
+                location: agent.location,
+              };
             })
         );
 
         for (const probe of probes) {
-          if (probe.status === "fulfilled" && probe.value) return probe.value;
+          if (probe.status === "fulfilled" && probe.value) {
+            sessionTargetCache.set(sessionId, {
+              agentId: probe.value.agentId,
+              location: probe.value.location,
+            });
+            return probe.value.session;
+          }
         }
         return null;
       }
@@ -284,7 +314,14 @@ export class VertexAiSessionService {
       }
 
       const raw = (await response.json()) as Record<string, unknown>;
-      return mapRawSession(raw, sessionId);
+      const session = mapRawSession(raw, sessionId);
+      if (targetEngineId) {
+        sessionTargetCache.set(sessionId, {
+          agentId: targetEngineId,
+          location: targetLocation,
+        });
+      }
+      return session;
     } catch (err: unknown) {
       console.error("Error getting session from Agent Runtime:", err);
       throw err;
