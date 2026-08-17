@@ -5,15 +5,19 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
 import type {
+  AgentTarget,
   SessionStateMap,
   SessionStateResponse,
   SessionStateValue,
 } from "@/types/agent";
 import { useOptionalActiveAgent } from "@/lib/agent-context";
+import { throwIfNotOk, withAgentTarget } from "@/lib/api-client";
+import { isLocalSessionId } from "@/lib/agent-runtime/event-utils";
 
 export interface SessionStateContextValue {
   state: SessionStateMap;
@@ -28,6 +32,11 @@ export interface SessionStateContextValue {
   deleteVariable: (key: string) => Promise<void>;
   clearState: () => void;
   updateTime?: string;
+}
+
+/** Every request here addresses the same endpoint; only the session id moves. */
+function stateUrl(sessionId: string, target: AgentTarget): string {
+  return withAgentTarget(`/api/sessions/${encodeURIComponent(sessionId)}/state`, target);
 }
 
 const SessionStateContext = createContext<SessionStateContextValue | undefined>(
@@ -55,14 +64,17 @@ export function SessionStateProvider({
   const [error, setError] = useState<string | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
 
+  // The agent every request in this provider is addressed to. Memoised so the
+  // callbacks below can depend on one value instead of restating both halves.
+  const target: AgentTarget = useMemo(
+    () => ({ agentId: activeAgent?.id, location: activeAgent?.location }),
+    [activeAgent?.id, activeAgent?.location]
+  );
+
   const fetchState = useCallback(
     async (sessionId?: string) => {
       const targetId = sessionId || activeSessionId;
-      if (
-        !targetId ||
-        targetId.startsWith("__LOCALID_") ||
-        targetId.startsWith("local-")
-      ) {
+      if (!targetId || isLocalSessionId(targetId)) {
         setState({});
         return;
       }
@@ -71,13 +83,7 @@ export function SessionStateProvider({
         setIsLoading(true);
         setError(null);
 
-        const params = new URLSearchParams();
-        if (activeAgent?.id) params.set("agentId", activeAgent.id);
-        if (activeAgent?.location) params.set("location", activeAgent.location);
-
-        const url = params.toString()
-          ? `/api/sessions/${encodeURIComponent(targetId)}/state?${params.toString()}`
-          : `/api/sessions/${encodeURIComponent(targetId)}/state`;
+        const url = stateUrl(targetId, target);
 
         const res = await fetch(url, { cache: "no-store" });
         if (!res.ok) {
@@ -99,7 +105,7 @@ export function SessionStateProvider({
         setIsLoading(false);
       }
     },
-    [activeSessionId, activeAgent?.id, activeAgent?.location]
+    [activeSessionId, target]
   );
 
   useEffect(() => {
@@ -119,13 +125,7 @@ export function SessionStateProvider({
       setState(nextState);
 
       try {
-        const params = new URLSearchParams();
-        if (activeAgent?.id) params.set("agentId", activeAgent.id);
-        if (activeAgent?.location) params.set("location", activeAgent.location);
-
-        const url = params.toString()
-          ? `/api/sessions/${encodeURIComponent(activeSessionId)}/state?${params.toString()}`
-          : `/api/sessions/${encodeURIComponent(activeSessionId)}/state`;
+        const url = stateUrl(activeSessionId, target);
 
         const res = await fetch(url, {
           method: "PATCH",
@@ -136,10 +136,7 @@ export function SessionStateProvider({
           }),
         });
 
-        if (!res.ok) {
-          const errText = await res.text();
-          throw new Error(`Failed to update state variable (${res.status}): ${errText}`);
-        }
+        await throwIfNotOk(res, "Failed to update state variable");
 
         const data: SessionStateResponse = await res.json();
         setState(data.state || nextState);
@@ -149,7 +146,7 @@ export function SessionStateProvider({
         throw err;
       }
     },
-    [activeSessionId, state, activeAgent?.id, activeAgent?.location]
+    [activeSessionId, state, target]
   );
 
   const deleteVariable = useCallback(
@@ -162,13 +159,7 @@ export function SessionStateProvider({
       setState(nextState);
 
       try {
-        const params = new URLSearchParams();
-        if (activeAgent?.id) params.set("agentId", activeAgent.id);
-        if (activeAgent?.location) params.set("location", activeAgent.location);
-
-        const url = params.toString()
-          ? `/api/sessions/${encodeURIComponent(activeSessionId)}/state?${params.toString()}`
-          : `/api/sessions/${encodeURIComponent(activeSessionId)}/state`;
+        const url = stateUrl(activeSessionId, target);
 
         const res = await fetch(url, {
           method: "PATCH",
@@ -179,10 +170,7 @@ export function SessionStateProvider({
           }),
         });
 
-        if (!res.ok) {
-          const errText = await res.text();
-          throw new Error(`Failed to delete state variable (${res.status}): ${errText}`);
-        }
+        await throwIfNotOk(res, "Failed to delete state variable");
 
         const data: SessionStateResponse = await res.json();
         setState(data.state || nextState);
@@ -192,7 +180,7 @@ export function SessionStateProvider({
         throw err;
       }
     },
-    [activeSessionId, state, activeAgent?.id, activeAgent?.location]
+    [activeSessionId, state, target]
   );
 
   const clearState = useCallback(() => {

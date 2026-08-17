@@ -546,6 +546,20 @@ export interface AgentStreamEvent {
   error?: string;
 }
 
+/**
+ * Which agent, in which region, a request is addressed to.
+ *
+ * Both halves travel together everywhere: an agent id that is a bare id rather
+ * than a full `projects/.../locations/.../reasoningEngines/...` resource carries
+ * no region, so dropping `location` silently routes the call to the default
+ * region's host. Keeping them in one value is what stops a caller from
+ * remembering one and forgetting the other.
+ */
+export interface AgentTarget {
+  agentId?: string;
+  location?: string;
+}
+
 export interface AgentSession {
   id: string;
   name: string;

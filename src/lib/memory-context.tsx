@@ -9,8 +9,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { AgentMemory, AgentMemoryListResponse } from "@/types/agent";
+import type { AgentMemory, AgentMemoryListResponse, AgentTarget } from "@/types/agent";
 import { useOptionalActiveAgent } from "@/lib/agent-context";
+import { throwIfNotOk, withAgentTarget } from "@/lib/api-client";
 
 export interface TopicCount {
   name: string;
@@ -55,22 +56,19 @@ export function MemoryProvider({
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
 
+  // The agent every request in this provider is addressed to. Memoised so the
+  // callbacks below can depend on one value instead of restating both halves.
+  const target: AgentTarget = useMemo(
+    () => ({ agentId: activeAgent?.id, location: activeAgent?.location }),
+    [activeAgent?.id, activeAgent?.location]
+  );
+
   const fetchMemories = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
-      const queryParams = new URLSearchParams();
-      if (activeAgent?.id) {
-        queryParams.set("agentId", activeAgent.id);
-      }
-      if (activeAgent?.location) {
-        queryParams.set("location", activeAgent.location);
-      }
-      const url = queryParams.toString()
-        ? `/api/memory?${queryParams.toString()}`
-        : "/api/memory";
 
-      const res = await fetch(url, {
+      const res = await fetch(withAgentTarget("/api/memory", target), {
         cache: "no-store",
       });
 
@@ -91,7 +89,7 @@ export function MemoryProvider({
     } finally {
       setIsLoading(false);
     }
-  }, [activeAgent?.id, activeAgent?.location]);
+  }, [target]);
 
   useEffect(() => {
     if (!initialMemories) {
@@ -119,18 +117,10 @@ export function MemoryProvider({
         const res = await fetch("/api/memory", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fact,
-            topic,
-            agentId: activeAgent?.id,
-            location: activeAgent?.location,
-          }),
+          body: JSON.stringify({ fact, topic, ...target }),
         });
 
-        if (!res.ok) {
-          const errText = await res.text();
-          throw new Error(`Failed to create memory (${res.status}): ${errText}`);
-        }
+        await throwIfNotOk(res, "Failed to create memory");
 
         const created: AgentMemory = await res.json();
         setMemories((prev) => prev.map((m) => (m.id === tempId ? created : m)));
@@ -141,7 +131,7 @@ export function MemoryProvider({
         throw err;
       }
     },
-    [activeAgent?.id, activeAgent?.location]
+    [target]
   );
 
   const updateMemory = useCallback(
@@ -166,18 +156,10 @@ export function MemoryProvider({
         const res = await fetch(`/api/memory/${encodeURIComponent(memoryId)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fact,
-            topic,
-            agentId: activeAgent?.id,
-            location: activeAgent?.location,
-          }),
+          body: JSON.stringify({ fact, topic, ...target }),
         });
 
-        if (!res.ok) {
-          const errText = await res.text();
-          throw new Error(`Failed to update memory (${res.status}): ${errText}`);
-        }
+        await throwIfNotOk(res, "Failed to update memory");
 
         const updated: AgentMemory = await res.json();
         setMemories((prev) => prev.map((m) => (m.id === memoryId ? updated : m)));
@@ -188,7 +170,7 @@ export function MemoryProvider({
         throw err;
       }
     },
-    [memories, activeAgent?.id, activeAgent?.location]
+    [memories, target]
   );
 
   const deleteMemory = useCallback(
@@ -197,27 +179,22 @@ export function MemoryProvider({
       setMemories((prev) => prev.filter((m) => m.id !== memoryId));
 
       try {
-        const queryParams = new URLSearchParams();
-        if (activeAgent?.id) queryParams.set("agentId", activeAgent.id);
-        if (activeAgent?.location) queryParams.set("location", activeAgent.location);
-        const url = queryParams.toString()
-          ? `/api/memory/${encodeURIComponent(memoryId)}?${queryParams.toString()}`
-          : `/api/memory/${encodeURIComponent(memoryId)}`;
+        const url = withAgentTarget(
+          `/api/memory/${encodeURIComponent(memoryId)}`,
+          target
+        );
 
         const res = await fetch(url, {
           method: "DELETE",
         });
 
-        if (!res.ok) {
-          const errText = await res.text();
-          throw new Error(`Failed to delete memory (${res.status}): ${errText}`);
-        }
+        await throwIfNotOk(res, "Failed to delete memory");
       } catch (err) {
         setMemories(previousMemories);
         throw err;
       }
     },
-    [memories, activeAgent?.id, activeAgent?.location]
+    [memories, target]
   );
 
   const generateMemories = useCallback(
@@ -226,17 +203,10 @@ export function MemoryProvider({
         const res = await fetch("/api/memory/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sessionId,
-            agentId: activeAgent?.id,
-            location: activeAgent?.location,
-          }),
+          body: JSON.stringify({ sessionId, ...target }),
         });
 
-        if (!res.ok) {
-          const errText = await res.text();
-          throw new Error(`Failed to generate memories (${res.status}): ${errText}`);
-        }
+        await throwIfNotOk(res, "Failed to generate memories");
 
         const data = await res.json();
         const extracted: AgentMemory[] = data.memories || [];
@@ -249,7 +219,7 @@ export function MemoryProvider({
         throw err;
       }
     },
-    [activeAgent?.id, activeAgent?.location]
+    [target]
   );
 
   const topics: TopicCount[] = useMemo(() => {

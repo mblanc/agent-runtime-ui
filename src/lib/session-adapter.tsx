@@ -18,6 +18,9 @@ import {
 import { RuntimeAdapterProvider } from "@assistant-ui/react";
 import { createAssistantStream } from "assistant-stream";
 import { useAui } from "@assistant-ui/store";
+import { withAgentTarget } from "@/lib/api-client";
+import { isLocalSessionId } from "@/lib/agent-runtime/event-utils";
+import type { AgentTarget } from "@/types/agent";
 
 interface SessionApiItem {
   id: string;
@@ -163,7 +166,7 @@ export function formatRemoteMessagesToThreadMessages(
 }
 
 /**
- * Builds the query string shared by every per-session API request.
+ * The URL of a single session, addressed at the active agent.
  *
  * `location` matters as much as `agentId`: when the agent id is a bare id (not a
  * full `projects/.../locations/.../reasoningEngines/...` resource path) the server
@@ -171,12 +174,10 @@ export function formatRemoteMessagesToThreadMessages(
  * routes the request to the wrong regional host for agents deployed outside the
  * default region.
  */
-function sessionQuery(agentId?: string, location?: string): string {
-  const params = new URLSearchParams();
-  if (agentId) params.set("agentId", agentId);
-  if (location) params.set("location", location);
-  const queryStr = params.toString();
-  return queryStr ? `?${queryStr}` : "";
+function sessionUrl(sessionId: string, target: AgentTarget): string {
+  return getApiUrl(
+    withAgentTarget(`/api/sessions/${encodeURIComponent(sessionId)}`, target)
+  );
 }
 
 export function useSessionThreadHistoryAdapter(
@@ -203,18 +204,16 @@ export function useSessionThreadHistoryAdapter(
         const state = auiRef.current?.threadListItem?.getState?.();
         const remoteId = state?.remoteId;
 
-        if (
-          !remoteId ||
-          remoteId.startsWith("__LOCALID_") ||
-          remoteId.startsWith("local-")
-        ) {
+        if (!remoteId || isLocalSessionId(remoteId)) {
           return { messages: [] };
         }
 
         try {
-          const query = sessionQuery(agentIdRef.current, locationRef.current);
           const res = await fetch(
-            getApiUrl(`/api/sessions/${encodeURIComponent(remoteId)}${query}`),
+            sessionUrl(remoteId, {
+              agentId: agentIdRef.current,
+              location: locationRef.current,
+            }),
             {
               cache: "no-store",
             }
@@ -288,16 +287,13 @@ export function useSessionThreadListAdapter(
     [agentId, location]
   );
 
+  const target: AgentTarget = useMemo(() => ({ agentId, location }), [agentId, location]);
+
   return useMemo<RemoteThreadListAdapter>(() => {
     return {
       list: async () => {
         try {
-          const params = new URLSearchParams();
-          if (userId) params.set("userId", userId);
-          if (agentId) params.set("agentId", agentId);
-          if (location) params.set("location", location);
-          const queryStr = params.toString();
-          const url = getApiUrl(queryStr ? `/api/sessions?${queryStr}` : "/api/sessions");
+          const url = getApiUrl(withAgentTarget("/api/sessions", target, { userId }));
 
           const res = await fetch(url, {
             cache: "no-store",
@@ -356,13 +352,9 @@ export function useSessionThreadListAdapter(
 
       fetch: async (threadId: string) => {
         try {
-          const query = sessionQuery(agentId, location);
-          const res = await fetch(
-            getApiUrl(`/api/sessions/${encodeURIComponent(threadId)}${query}`),
-            {
-              cache: "no-store",
-            }
-          );
+          const res = await fetch(sessionUrl(threadId, target), {
+            cache: "no-store",
+          });
           if (!res.ok) {
             return {
               status: "regular" as const,
@@ -393,13 +385,9 @@ export function useSessionThreadListAdapter(
 
       delete: async (remoteId: string) => {
         try {
-          const query = sessionQuery(agentId, location);
-          await fetch(
-            getApiUrl(`/api/sessions/${encodeURIComponent(remoteId)}${query}`),
-            {
-              method: "DELETE",
-            }
-          );
+          await fetch(sessionUrl(remoteId, target), {
+            method: "DELETE",
+          });
         } catch (err) {
           console.error(`Error deleting session ${remoteId}:`, err);
         }
@@ -407,15 +395,11 @@ export function useSessionThreadListAdapter(
 
       rename: async (remoteId: string, newTitle: string) => {
         try {
-          const query = sessionQuery(agentId, location);
-          await fetch(
-            getApiUrl(`/api/sessions/${encodeURIComponent(remoteId)}${query}`),
-            {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ title: newTitle }),
-            }
-          );
+          await fetch(sessionUrl(remoteId, target), {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title: newTitle }),
+          });
         } catch (err) {
           console.error(`Error renaming session ${remoteId}:`, err);
         }
@@ -447,15 +431,11 @@ export function useSessionThreadListAdapter(
 
         // Persist the generated title to backend Session Service
         try {
-          const query = sessionQuery(agentId, location);
-          await fetch(
-            getApiUrl(`/api/sessions/${encodeURIComponent(remoteId)}${query}`),
-            {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ title }),
-            }
-          );
+          await fetch(sessionUrl(remoteId, target), {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title }),
+          });
         } catch (err) {
           console.warn(`Could not persist generated title for ${remoteId}:`, err);
         }
@@ -468,5 +448,5 @@ export function useSessionThreadListAdapter(
 
       unstable_Provider,
     };
-  }, [unstable_Provider, userId, agentId, location]);
+  }, [unstable_Provider, userId, agentId, location, target]);
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { withAuth } from "@/lib/api-handler";
+import { resolveAgentTarget, withAuth } from "@/lib/api-handler";
 import { createAgentRuntimeProvider } from "@/lib/agent-runtime/factory";
 
 export const runtime = "nodejs";
@@ -15,13 +15,11 @@ export const POST = withAuth(async (req, { userId }) => {
     );
   }
 
-  const agentId =
-    req.nextUrl.searchParams.get("agentId") ||
-    body?.agentId ||
-    body?.reasoningEngineId ||
-    undefined;
-  const location =
-    req.nextUrl.searchParams.get("location") || body?.location || undefined;
+  // See the memory collection route: `?reasoningEngineId=` has never been an
+  // accepted alias here, only the body field.
+  const { agentId, location } = resolveAgentTarget(req, body, {
+    legacyQueryAlias: false,
+  });
 
   const provider = createAgentRuntimeProvider(agentId, location);
   const memories = await provider.generateMemories(

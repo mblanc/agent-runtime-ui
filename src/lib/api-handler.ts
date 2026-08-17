@@ -2,6 +2,67 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth, AuthSession } from "@/lib/auth";
 import { InvalidRoutingParameterError } from "@/lib/agent-runtime/services/context";
 import { log, requestIdFrom } from "@/lib/logger";
+import type { AgentTarget } from "@/types/agent";
+
+/**
+ * Every route that answers with per-user state sends this. Spelled out once so a
+ * route cannot ship with a subtly weaker directive than its siblings.
+ */
+export const NO_STORE_HEADERS = {
+  "Cache-Control": "no-store, no-cache, max-age=0, must-revalidate",
+} as const;
+
+export interface ResolveAgentTargetOptions {
+  /**
+   * Accept `?reasoningEngineId=` as an alias for `?agentId=` in the query
+   * string. The memory routes that read a body have never accepted it — only
+   * the body alias — and widening them here would be a behaviour change, so
+   * they opt out instead of being quietly unified.
+   */
+  legacyQueryAlias?: boolean;
+}
+
+/**
+ * Picks the first truthy candidate, reproducing the `a || b || c || undefined`
+ * ladders these helpers replace. The values come off a query string or an
+ * unvalidated JSON body, so they are `unknown` until this narrows them; the cast
+ * is the same one the ladders made implicitly.
+ */
+function firstNonEmpty(...candidates: unknown[]): string | undefined {
+  for (const candidate of candidates) {
+    if (candidate) return candidate as string;
+  }
+  return undefined;
+}
+
+/**
+ * Resolves the agent and region a request is addressed to, from the query string
+ * first and then the parsed body.
+ *
+ * `reasoningEngineId` is the legacy alias for `agentId`. Routes without a body
+ * (GET, DELETE) simply omit `body`, which is what makes their narrower ladder
+ * the same rule rather than a different one — the divergence that let
+ * `location` go missing from one caller and stay missing for a release.
+ */
+export function resolveAgentTarget(
+  req: NextRequest,
+  body?: unknown,
+  options?: ResolveAgentTargetOptions
+): AgentTarget {
+  const query = req.nextUrl.searchParams;
+  const fields = body as Record<string, unknown> | null | undefined;
+  const legacyQueryAlias = options?.legacyQueryAlias ?? true;
+
+  return {
+    agentId: firstNonEmpty(
+      query.get("agentId"),
+      legacyQueryAlias ? query.get("reasoningEngineId") : undefined,
+      fields?.agentId,
+      fields?.reasoningEngineId
+    ),
+    location: firstNonEmpty(query.get("location"), fields?.location),
+  };
+}
 
 export interface AuthenticatedContext<TParams = Record<string, string>> {
   session: AuthSession;

@@ -11,6 +11,9 @@ export function createGeminiFeedbackAdapter(
       const feedbackType: FeedbackType =
         type === "positive" ? "THUMBS_UP" : "THUMBS_DOWN";
       const sessionId = getSessionId?.() || "default";
+      // Not `AgentTarget`/`withAgentTarget`: the feedback route reads the target
+      // out of the typed `AgentFeedbackRequest` body, where the agent id is
+      // spelled `reasoningEngineId`, and never off the query string.
       const reasoningEngineId = getAgentId?.();
       const location = getLocation?.();
 
@@ -33,6 +36,8 @@ export function createGeminiFeedbackAdapter(
           }),
         });
 
+        // Logged, not thrown (so no `throwIfNotOk`): a lost thumbs-up must not
+        // surface as an error in the thread the user was reading.
         if (!response.ok) {
           const errText = await response.text();
           console.error(

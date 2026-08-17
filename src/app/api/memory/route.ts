@@ -1,16 +1,12 @@
 import { NextResponse } from "next/server";
-import { withAuth } from "@/lib/api-handler";
+import { NO_STORE_HEADERS, resolveAgentTarget, withAuth } from "@/lib/api-handler";
 import { createAgentRuntimeProvider } from "@/lib/agent-runtime/factory";
 
 export const runtime = "nodejs";
 
 export const GET = withAuth(async (req, { userId }) => {
   const topic = req.nextUrl.searchParams.get("topic") || undefined;
-  const agentId =
-    req.nextUrl.searchParams.get("agentId") ||
-    req.nextUrl.searchParams.get("reasoningEngineId") ||
-    undefined;
-  const location = req.nextUrl.searchParams.get("location") || undefined;
+  const { agentId, location } = resolveAgentTarget(req);
 
   const provider = createAgentRuntimeProvider(agentId, location);
   const memories = await provider.listMemories(userId, topic, agentId, location);
@@ -20,11 +16,7 @@ export const GET = withAuth(async (req, { userId }) => {
       memories,
       totalCount: memories.length,
     },
-    {
-      headers: {
-        "Cache-Control": "no-store, no-cache, max-age=0, must-revalidate",
-      },
-    }
+    { headers: NO_STORE_HEADERS }
   );
 });
 
@@ -40,13 +32,11 @@ export const POST = withAuth(async (req, { userId }) => {
     );
   }
 
-  const agentId =
-    req.nextUrl.searchParams.get("agentId") ||
-    body?.agentId ||
-    body?.reasoningEngineId ||
-    undefined;
-  const location =
-    req.nextUrl.searchParams.get("location") || body?.location || undefined;
+  // `legacyQueryAlias: false` preserves this route's narrower ladder: it has
+  // never accepted `?reasoningEngineId=`, only the body field of that name.
+  const { agentId, location } = resolveAgentTarget(req, body, {
+    legacyQueryAlias: false,
+  });
 
   const provider = createAgentRuntimeProvider(agentId, location);
   const newMemory = await provider.createMemory(

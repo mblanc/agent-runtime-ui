@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { withAuthDynamic } from "@/lib/api-handler";
+import { NO_STORE_HEADERS, resolveAgentTarget, withAuthDynamic } from "@/lib/api-handler";
 import { createAgentRuntimeProvider } from "@/lib/agent-runtime/factory";
-import { isSessionOwnedBy } from "@/lib/session-ownership";
+import { isLocalSessionId } from "@/lib/agent-runtime/event-utils";
+import { requireSessionOwner } from "@/lib/session-ownership";
 import type { SessionStateMap } from "@/types/agent";
 
 export const runtime = "nodejs";
@@ -14,42 +15,31 @@ export const GET = withAuthDynamic<SessionParams>(
   async (req, { userId, userEmail, params }) => {
     const sessionId = params?.sessionId;
 
-    if (
-      !sessionId ||
-      sessionId.startsWith("__LOCALID_") ||
-      sessionId.startsWith("local-")
-    ) {
+    if (!sessionId || isLocalSessionId(sessionId)) {
       return NextResponse.json(
         { sessionId: sessionId || "", state: {} },
-        {
-          headers: {
-            "Cache-Control": "no-store, no-cache, max-age=0, must-revalidate",
-          },
-        }
+        { headers: NO_STORE_HEADERS }
       );
     }
 
-    const agentId =
-      req.nextUrl.searchParams.get("agentId") ||
-      req.nextUrl.searchParams.get("reasoningEngineId") ||
-      undefined;
-    const location = req.nextUrl.searchParams.get("location") || undefined;
+    const target = resolveAgentTarget(req);
+    const provider = createAgentRuntimeProvider(target.agentId, target.location);
 
-    const provider = createAgentRuntimeProvider(agentId, location);
-    const sessionDetails = await provider.getSession(sessionId, agentId, location);
+    const sessionDetails = await requireSessionOwner({
+      provider,
+      sessionId,
+      target,
+      userId,
+      userEmail,
+      onUnowned: "forbidden",
+    });
+    if (sessionDetails instanceof NextResponse) return sessionDetails;
 
-    if (!sessionDetails) {
-      return NextResponse.json({ error: "Session not found" }, { status: 404 });
-    }
-
-    if (!isSessionOwnedBy(sessionDetails, userId, userEmail)) {
-      return NextResponse.json(
-        { error: "Forbidden. You do not own this session." },
-        { status: 403 }
-      );
-    }
-
-    const state = await provider.getSessionState(sessionId, agentId, location);
+    const state = await provider.getSessionState(
+      sessionId,
+      target.agentId,
+      target.location
+    );
 
     return NextResponse.json(
       {
@@ -57,11 +47,7 @@ export const GET = withAuthDynamic<SessionParams>(
         state,
         updateTime: sessionDetails.updateTime,
       },
-      {
-        headers: {
-          "Cache-Control": "no-store, no-cache, max-age=0, must-revalidate",
-        },
-      }
+      { headers: NO_STORE_HEADERS }
     );
   }
 );
@@ -70,37 +56,23 @@ export const PATCH = withAuthDynamic<SessionParams>(
   async (req, { userId, userEmail, params }) => {
     const sessionId = params?.sessionId;
 
-    if (
-      !sessionId ||
-      sessionId.startsWith("__LOCALID_") ||
-      sessionId.startsWith("local-")
-    ) {
+    if (!sessionId || isLocalSessionId(sessionId)) {
       return NextResponse.json({ sessionId: sessionId || "", state: {} });
     }
 
     const body = await req.json().catch(() => ({}));
-    const agentId =
-      req.nextUrl.searchParams.get("agentId") ||
-      req.nextUrl.searchParams.get("reasoningEngineId") ||
-      body?.agentId ||
-      body?.reasoningEngineId ||
-      undefined;
-    const location =
-      req.nextUrl.searchParams.get("location") || body?.location || undefined;
+    const target = resolveAgentTarget(req, body);
+    const provider = createAgentRuntimeProvider(target.agentId, target.location);
 
-    const provider = createAgentRuntimeProvider(agentId, location);
-    const sessionDetails = await provider.getSession(sessionId, agentId, location);
-
-    if (!sessionDetails) {
-      return NextResponse.json({ error: "Session not found" }, { status: 404 });
-    }
-
-    if (!isSessionOwnedBy(sessionDetails, userId, userEmail)) {
-      return NextResponse.json(
-        { error: "Forbidden. You do not own this session." },
-        { status: 403 }
-      );
-    }
+    const sessionDetails = await requireSessionOwner({
+      provider,
+      sessionId,
+      target,
+      userId,
+      userEmail,
+      onUnowned: "forbidden",
+    });
+    if (sessionDetails instanceof NextResponse) return sessionDetails;
 
     const rawState = body?.state;
     if (!rawState || typeof rawState !== "object" || Array.isArray(rawState)) {
@@ -115,8 +87,8 @@ export const PATCH = withAuthDynamic<SessionParams>(
       sessionId,
       rawState as SessionStateMap,
       mode,
-      agentId,
-      location
+      target.agentId,
+      target.location
     );
 
     return NextResponse.json({

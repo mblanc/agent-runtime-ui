@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { withAuthDynamic } from "@/lib/api-handler";
+import { resolveAgentTarget, withAuthDynamic } from "@/lib/api-handler";
 import { createAgentRuntimeProvider } from "@/lib/agent-runtime/factory";
 
 export const runtime = "nodejs";
@@ -26,13 +26,11 @@ export const PATCH = withAuthDynamic<MemoryParams>(async (req, { userId, params 
     );
   }
 
-  const agentId =
-    req.nextUrl.searchParams.get("agentId") ||
-    body?.agentId ||
-    body?.reasoningEngineId ||
-    undefined;
-  const location =
-    req.nextUrl.searchParams.get("location") || body?.location || undefined;
+  // See the memory collection route: `?reasoningEngineId=` has never been an
+  // accepted alias here, only the body field.
+  const { agentId, location } = resolveAgentTarget(req, body, {
+    legacyQueryAlias: false,
+  });
 
   try {
     const provider = createAgentRuntimeProvider(agentId, location);
@@ -65,11 +63,7 @@ export const DELETE = withAuthDynamic<MemoryParams>(async (req, { userId, params
     return NextResponse.json({ error: "Memory ID is required" }, { status: 400 });
   }
 
-  const agentId =
-    req.nextUrl.searchParams.get("agentId") ||
-    req.nextUrl.searchParams.get("reasoningEngineId") ||
-    undefined;
-  const location = req.nextUrl.searchParams.get("location") || undefined;
+  const { agentId, location } = resolveAgentTarget(req);
 
   try {
     const provider = createAgentRuntimeProvider(agentId, location);

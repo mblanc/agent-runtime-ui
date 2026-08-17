@@ -1,29 +1,21 @@
 import { NextResponse } from "next/server";
-import { withAuth } from "@/lib/api-handler";
+import { NO_STORE_HEADERS, resolveAgentTarget, withAuth } from "@/lib/api-handler";
 import { createAgentRuntimeProvider } from "@/lib/agent-runtime/factory";
 
 export const runtime = "nodejs";
 
 export const GET = withAuth(async (req, { userId, userEmail }) => {
-  const agentId =
-    req.nextUrl.searchParams.get("agentId") ||
-    req.nextUrl.searchParams.get("reasoningEngineId") ||
-    undefined;
-  const location = req.nextUrl.searchParams.get("location") || undefined;
+  const { agentId, location } = resolveAgentTarget(req);
 
   const provider = createAgentRuntimeProvider(agentId, location);
   const sessions = await provider.listSessions(userId, userEmail, agentId);
 
-  return NextResponse.json(
-    { sessions },
-    {
-      headers: {
-        "Cache-Control": "no-store, no-cache, max-age=0, must-revalidate",
-      },
-    }
-  );
+  return NextResponse.json({ sessions }, { headers: NO_STORE_HEADERS });
 });
 
+// Body-only by design, so no `resolveAgentTarget`: this route has never read the
+// target off the query string, and the title it parses out of the same body
+// makes the parse worth keeping in one place.
 export const POST = withAuth(async (req, { userId }) => {
   let title: string | undefined;
   let agentId: string | undefined;

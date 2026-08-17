@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-handler";
 import { createAgentRuntimeProvider } from "@/lib/agent-runtime/factory";
-import { isSessionOwnedBy } from "@/lib/session-ownership";
-import { ChatRequestBody } from "@/types/agent";
+import { isLocalSessionId } from "@/lib/agent-runtime/event-utils";
+import { requireSessionOwner } from "@/lib/session-ownership";
+import { AgentTarget, ChatRequestBody } from "@/types/agent";
 import { log } from "@/lib/logger";
 
 export const runtime = "nodejs";
@@ -19,32 +20,30 @@ export const POST = withAuth(async (req, { userId, userEmail, requestId }) => {
     return NextResponse.json({ error: "Invalid messages array" }, { status: 400 });
   }
 
-  const customEngineId =
-    req.headers.get("x-reasoning-engine-id") || body.reasoningEngineId;
-  const customLocation = req.headers.get("x-location") || body.location;
-  const provider = createAgentRuntimeProvider(customEngineId, customLocation);
+  // Unlike every other route, the target arrives in headers as well as the body:
+  // the e2e harness sets `x-reasoning-engine-id` to pick an agent without
+  // rewriting the streamed body. `resolveAgentTarget` reads the query string,
+  // which this route has never accepted, so the ladder stays local here.
+  const target: AgentTarget = {
+    agentId: req.headers.get("x-reasoning-engine-id") || body.reasoningEngineId,
+    location: req.headers.get("x-location") || body.location,
+  };
+  const provider = createAgentRuntimeProvider(target.agentId, target.location);
 
   // Validate session ownership for non-local persisted sessions
-  if (
-    body.sessionId &&
-    !body.sessionId.startsWith("__LOCALID_") &&
-    !body.sessionId.startsWith("local-")
-  ) {
-    // A null result means the session does not exist upstream yet, which is the
-    // legitimate new-session case and proceeds to streamQuery. A *thrown* error
-    // is not: swallowing it let a transient failure of the ownership lookup
-    // wave the request through unchecked, so it propagates to a 500 instead.
-    const sessionDetails = await provider.getSession(
-      body.sessionId,
-      customEngineId,
-      customLocation
-    );
-    if (sessionDetails && !isSessionOwnedBy(sessionDetails, userId, userEmail)) {
-      return NextResponse.json(
-        { error: "Forbidden. You do not own this session." },
-        { status: 403 }
-      );
-    }
+  if (body.sessionId && !isLocalSessionId(body.sessionId)) {
+    // A missing session is the legitimate new-session case and proceeds to
+    // streamQuery, so it is allowed through rather than answered 404.
+    const ownership = await requireSessionOwner({
+      provider,
+      sessionId: body.sessionId,
+      target,
+      userId,
+      userEmail,
+      onUnowned: "forbidden",
+      onMissing: "allow",
+    });
+    if (ownership instanceof NextResponse) return ownership;
   }
 
   let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
