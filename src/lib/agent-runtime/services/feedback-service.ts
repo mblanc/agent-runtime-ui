@@ -1,19 +1,32 @@
 import { AgentFeedbackRequest, AgentFeedbackResponse, FeedbackType } from "@/types/agent";
-import { VertexAiContext } from "./context";
+import { VertexAiContext, assertValidLocation } from "./context";
+import { VertexAiAgentService } from "./agent-service";
 import { VertexAiSessionService } from "./session-service";
 import { extractSessionIdFromResourceName } from "../event-normalizer";
 
 export class VertexAiFeedbackService {
   constructor(
     private context: VertexAiContext,
-    private sessionService: VertexAiSessionService
+    private sessionService: VertexAiSessionService,
+    private agentService: VertexAiAgentService = new VertexAiAgentService(context)
   ) {}
 
+  /**
+   * Resolve the engine first, then take the host region from what was resolved.
+   * The engine may be addressed by display name, which `resolveEngineIdAsync`
+   * maps onto a full resource path that can live in a region other than the
+   * context default — deriving the host from the *unresolved* value left the
+   * host on the default region while the path named the resolved one.
+   *
+   * Deliberately not an `async` method: a hostile `customLocation` must still
+   * throw synchronously, before any resolution round trip is issued on its
+   * behalf, exactly as it did when this builder was fully synchronous.
+   */
   getFeedbackBaseUrl(
     sessionId?: string,
     customEngineId?: string,
     customLocation?: string
-  ): string {
+  ): Promise<string> {
     if (sessionId?.startsWith("projects/")) {
       const match = sessionId.match(
         /^projects\/([^/]+)\/locations\/([^/]+)\/reasoningEngines\/([^/]+)/
@@ -22,11 +35,22 @@ export class VertexAiFeedbackService {
         const [, proj, rawLoc, engine] = match;
         // `sessionId` is client-supplied, so its location segment reaches the host.
         const loc = this.context.resolveLocation(rawLoc);
-        return `https://${loc}-aiplatform.googleapis.com/v1beta1/projects/${proj}/locations/${loc}/reasoningEngines/${engine}/feedbackEntries`;
+        return Promise.resolve(
+          `https://${loc}-aiplatform.googleapis.com/v1beta1/projects/${proj}/locations/${loc}/reasoningEngines/${engine}/feedbackEntries`
+        );
       }
     }
 
-    const targetEngine = customEngineId || this.context.reasoningEngineId;
+    if (customLocation) assertValidLocation(customLocation);
+    return this.buildFeedbackBaseUrl(customEngineId, customLocation);
+  }
+
+  private async buildFeedbackBaseUrl(
+    customEngineId?: string,
+    customLocation?: string
+  ): Promise<string> {
+    const resolved = await this.agentService.resolveEngineIdAsync(customEngineId);
+    const targetEngine = resolved || this.context.reasoningEngineId;
     const loc = this.context.resolveLocationForResource(targetEngine, customLocation);
     return `https://${loc}-aiplatform.googleapis.com/v1beta1/${this.context.getNormalizedEngineResource(targetEngine, loc)}/feedbackEntries`;
   }
@@ -36,7 +60,7 @@ export class VertexAiFeedbackService {
     userId: string
   ): Promise<AgentFeedbackResponse> {
     try {
-      const endpoint = this.getFeedbackBaseUrl(
+      const endpoint = await this.getFeedbackBaseUrl(
         request.sessionId,
         request.reasoningEngineId,
         request.location

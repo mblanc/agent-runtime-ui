@@ -42,8 +42,8 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
     this.context = new VertexAiContext(overrideEngineId, overrideLocation, tokenGetter);
     this.agents = new VertexAiAgentService(this.context);
     this.sessions = new VertexAiSessionService(this.context, this.agents);
-    this.memories = new VertexAiMemoryService(this.context);
-    this.feedback = new VertexAiFeedbackService(this.context, this.sessions);
+    this.memories = new VertexAiMemoryService(this.context, this.agents);
+    this.feedback = new VertexAiFeedbackService(this.context, this.sessions, this.agents);
     this.streaming = new VertexAiStreamingService(this.context);
   }
 
@@ -63,11 +63,13 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
     return this.sessions.getSessionsBaseUrl(customEngineId);
   }
 
+  // Not `async`: these forward the sub-service's promise so that an invalid
+  // routing parameter still throws synchronously rather than rejecting later.
   getFeedbackBaseUrl(
     sessionId?: string,
     customEngineId?: string,
     customLocation?: string
-  ): string {
+  ): Promise<string> {
     return this.feedback.getFeedbackBaseUrl(sessionId, customEngineId, customLocation);
   }
 
@@ -85,7 +87,7 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
     );
   }
 
-  getMemoriesBaseUrl(customEngineId?: string, customLocation?: string): string {
+  getMemoriesBaseUrl(customEngineId?: string, customLocation?: string): Promise<string> {
     return this.memories.getMemoriesBaseUrl(customEngineId, customLocation);
   }
 
@@ -93,7 +95,7 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
     memoryId: string,
     customEngineId?: string,
     customLocation?: string
-  ): string {
+  ): Promise<string> {
     return this.memories.getMemoryEndpoint(memoryId, customEngineId, customLocation);
   }
 

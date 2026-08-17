@@ -1,5 +1,6 @@
 import { AgentMemory, MemoryRetrievalItem } from "@/types/agent";
-import { VertexAiContext } from "./context";
+import { VertexAiContext, assertValidLocation } from "./context";
+import { VertexAiAgentService } from "./agent-service";
 import { extractSessionIdFromResourceName } from "../event-normalizer";
 
 export function buildVertexTopicsPayload(
@@ -121,19 +122,43 @@ export function normalizeMemoryRecord(
 }
 
 export class VertexAiMemoryService {
-  constructor(private context: VertexAiContext) {}
+  constructor(
+    private context: VertexAiContext,
+    private agentService: VertexAiAgentService = new VertexAiAgentService(context)
+  ) {}
 
-  getMemoriesBaseUrl(customEngineId?: string, customLocation?: string): string {
-    const targetEngine = customEngineId || this.context.reasoningEngineId;
+  /**
+   * Resolve the engine first, then take the host region from what was resolved.
+   * The engine may be addressed by display name, which `resolveEngineIdAsync`
+   * maps onto a full resource path that can live in a region other than the
+   * context default — deriving the host from the *unresolved* value left the
+   * host on the default region while the path named the resolved one.
+   *
+   * Deliberately not an `async` method: a hostile `customLocation` must still
+   * throw synchronously, before any resolution round trip is issued on its
+   * behalf, exactly as it did when this builder was fully synchronous.
+   */
+  getMemoriesBaseUrl(customEngineId?: string, customLocation?: string): Promise<string> {
+    if (customLocation) assertValidLocation(customLocation);
+    return this.buildMemoriesBaseUrl(customEngineId, customLocation);
+  }
+
+  private async buildMemoriesBaseUrl(
+    customEngineId?: string,
+    customLocation?: string
+  ): Promise<string> {
+    const resolved = await this.agentService.resolveEngineIdAsync(customEngineId);
+    const targetEngine = resolved || this.context.reasoningEngineId;
     const loc = this.context.resolveLocationForResource(targetEngine, customLocation);
     return `https://${loc}-aiplatform.googleapis.com/v1beta1/${this.context.getNormalizedEngineResource(targetEngine, loc)}/memories`;
   }
 
+  /** Same shape as `getMemoriesBaseUrl`: sync validation, async resolution. */
   getMemoryEndpoint(
     memoryId: string,
     customEngineId?: string,
     customLocation?: string
-  ): string {
+  ): Promise<string> {
     if (memoryId.startsWith("projects/")) {
       const match = memoryId.match(
         /^projects\/([^/]+)\/locations\/([^/]+)\/reasoningEngines\/([^/]+)\/memories\/([^/]+)/
@@ -142,10 +167,22 @@ export class VertexAiMemoryService {
         const [, proj, rawLoc, engine, mId] = match;
         // `memoryId` is client-supplied, so its location segment reaches the host.
         const loc = this.context.resolveLocation(rawLoc);
-        return `https://${loc}-aiplatform.googleapis.com/v1beta1/projects/${proj}/locations/${loc}/reasoningEngines/${engine}/memories/${encodeURIComponent(mId)}`;
+        return Promise.resolve(
+          `https://${loc}-aiplatform.googleapis.com/v1beta1/projects/${proj}/locations/${loc}/reasoningEngines/${engine}/memories/${encodeURIComponent(mId)}`
+        );
       }
     }
-    return `${this.getMemoriesBaseUrl(customEngineId, customLocation)}/${encodeURIComponent(memoryId)}`;
+    if (customLocation) assertValidLocation(customLocation);
+    return this.buildMemoryEndpoint(memoryId, customEngineId, customLocation);
+  }
+
+  private async buildMemoryEndpoint(
+    memoryId: string,
+    customEngineId?: string,
+    customLocation?: string
+  ): Promise<string> {
+    const base = await this.buildMemoriesBaseUrl(customEngineId, customLocation);
+    return `${base}/${encodeURIComponent(memoryId)}`;
   }
 
   /**
@@ -159,7 +196,7 @@ export class VertexAiMemoryService {
     agentId?: string,
     location?: string
   ): Promise<Record<string, unknown> | null> {
-    const endpoint = this.getMemoryEndpoint(memoryId, agentId, location);
+    const endpoint = await this.getMemoryEndpoint(memoryId, agentId, location);
     const response = await this.context.fetchWithAuth(endpoint, { method: "GET" });
 
     if (response.status === 404) return null;
@@ -198,7 +235,7 @@ export class VertexAiMemoryService {
     location?: string
   ): Promise<AgentMemory[]> {
     try {
-      const memoriesBaseUrl = this.getMemoriesBaseUrl(agentId, location);
+      const memoriesBaseUrl = await this.getMemoriesBaseUrl(agentId, location);
       const retrievedMap = new Map<string, AgentMemory>();
 
       // Strategy 1: Attempt Scope-based retrieve endpoint (POST :retrieve) with ADK app scope
@@ -279,7 +316,7 @@ export class VertexAiMemoryService {
     location?: string
   ): Promise<AgentMemory> {
     try {
-      const endpoint = this.getMemoriesBaseUrl(agentId, location);
+      const endpoint = await this.getMemoriesBaseUrl(agentId, location);
       const topicsPayload = buildVertexTopicsPayload(topic);
 
       const response = await this.context.fetchWithAuth(endpoint, {
@@ -319,7 +356,9 @@ export class VertexAiMemoryService {
       }
       this.assertOwnedBy(existing, userId);
 
-      const endpointUrl = new URL(this.getMemoryEndpoint(memoryId, agentId, location));
+      const endpointUrl = new URL(
+        await this.getMemoryEndpoint(memoryId, agentId, location)
+      );
       const topicsPayload = buildVertexTopicsPayload(topic);
       endpointUrl.searchParams.set("updateMask", topicsPayload ? "fact,topics" : "fact");
 
@@ -357,7 +396,7 @@ export class VertexAiMemoryService {
       if (!existing) return;
       this.assertOwnedBy(existing, userId);
 
-      const endpoint = this.getMemoryEndpoint(memoryId, agentId, location);
+      const endpoint = await this.getMemoryEndpoint(memoryId, agentId, location);
       const response = await this.context.fetchWithAuth(endpoint, {
         method: "DELETE",
       });
@@ -379,7 +418,7 @@ export class VertexAiMemoryService {
     location?: string
   ): Promise<AgentMemory[]> {
     try {
-      const endpoint = `${this.getMemoriesBaseUrl(agentId, location)}:generate`;
+      const endpoint = `${await this.getMemoriesBaseUrl(agentId, location)}:generate`;
       const cleanSessionId = extractSessionIdFromResourceName(sessionId);
       const response = await this.context.fetchWithAuth(endpoint, {
         method: "POST",
@@ -412,7 +451,7 @@ export class VertexAiMemoryService {
     location?: string
   ): Promise<MemoryRetrievalItem[]> {
     try {
-      const endpoint = `${this.getMemoriesBaseUrl(agentId, location)}:retrieve`;
+      const endpoint = `${await this.getMemoriesBaseUrl(agentId, location)}:retrieve`;
       const scopesToTry = [{ user_id: userId, app_name: "app" }, { user_id: userId }];
       const resultsMap = new Map<string, MemoryRetrievalItem>();
 
