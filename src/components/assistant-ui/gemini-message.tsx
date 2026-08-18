@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { useState, memo } from "react";
 import type {
+  AgentCodeExecutionBlock,
   GroundingMetadata,
   MemoryRetrievalItem,
   ReasoningTraceEntry,

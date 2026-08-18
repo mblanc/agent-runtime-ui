@@ -7,6 +7,31 @@ export interface GcsFileDataPart {
   };
 }
 
+export type CodeExecutionLanguage = "PYTHON" | "JAVASCRIPT" | (string & {});
+
+export type CodeExecutionOutcome =
+  "OUTCOME_OK" | "OUTCOME_FAILED" | "OUTCOME_DEADLINE_EXCEEDED" | (string & {});
+
+export interface ExecutableCodeData {
+  language: CodeExecutionLanguage;
+  code: string;
+}
+
+export interface CodeExecutionResultData {
+  outcome: CodeExecutionOutcome;
+  output: string;
+  durationMs?: number;
+  generatedImages?: string[];
+}
+
+export interface AgentCodeExecutionBlock {
+  id: string;
+  language: CodeExecutionLanguage;
+  code: string;
+  result?: CodeExecutionResultData;
+  status: "running" | "complete" | "error";
+}
+
 export interface BaseAgentMessagePart {
   type?:
     | "text"
@@ -15,7 +40,10 @@ export interface BaseAgentMessagePart {
     | "image"
     | "file"
     | "function_call"
-    | "function_response";
+    | "function_response"
+    | "executable_code"
+    | "code_execution_result"
+    | "code_execution_block";
   text?: string;
   thought?: boolean;
   file_data?: {
@@ -60,6 +88,12 @@ export interface BaseAgentMessagePart {
   groundingMetadata?: GroundingMetadata;
   thought_signature?: string;
   thoughtSignature?: string;
+  executable_code?: ExecutableCodeData;
+  executableCode?: ExecutableCodeData;
+  code_execution_result?: CodeExecutionResultData;
+  codeExecutionResult?: CodeExecutionResultData;
+  code_execution_block?: AgentCodeExecutionBlock;
+  codeExecutionBlock?: AgentCodeExecutionBlock;
 }
 
 export interface AgentTextPart extends BaseAgentMessagePart {
@@ -114,6 +148,24 @@ export interface AgentFunctionResponsePart extends BaseAgentMessagePart {
   };
 }
 
+export interface AgentExecutableCodePart extends BaseAgentMessagePart {
+  type?: "executable_code";
+  executable_code: ExecutableCodeData;
+  executableCode?: ExecutableCodeData;
+}
+
+export interface AgentCodeExecutionResultPart extends BaseAgentMessagePart {
+  type?: "code_execution_result";
+  code_execution_result: CodeExecutionResultData;
+  codeExecutionResult?: CodeExecutionResultData;
+}
+
+export interface AgentCodeExecutionBlockPart extends BaseAgentMessagePart {
+  type?: "code_execution_block";
+  code_execution_block: AgentCodeExecutionBlock;
+  codeExecutionBlock?: AgentCodeExecutionBlock;
+}
+
 export type AgentMessagePart = BaseAgentMessagePart;
 
 export function isTextPart(part: AgentMessagePart): part is AgentTextPart {
@@ -144,15 +196,81 @@ export function isFunctionResponsePart(
   return Boolean(part.function_response || part.functionResponse);
 }
 
+export function isExecutableCodePart(
+  part: AgentMessagePart
+): part is AgentExecutableCodePart {
+  return Boolean(part.executable_code || part.executableCode);
+}
+
+export function isCodeExecutionResultPart(
+  part: AgentMessagePart
+): part is AgentCodeExecutionResultPart {
+  return Boolean(part.code_execution_result || part.codeExecutionResult);
+}
+
+export function isCodeExecutionBlockPart(
+  part: AgentMessagePart
+): part is AgentCodeExecutionBlockPart {
+  return Boolean(part.code_execution_block || part.codeExecutionBlock);
+}
+
 export function normalizeAgentMessagePart(
   raw: Record<string, unknown>
 ): AgentMessagePart {
+  const execCode = (raw.executable_code || raw.executableCode) as
+    Record<string, unknown> | undefined;
+  if (execCode) {
+    const codeData: ExecutableCodeData = {
+      language: String(execCode.language || "PYTHON") as CodeExecutionLanguage,
+      code: String(execCode.code || ""),
+    };
+    return {
+      type: "executable_code",
+      executable_code: codeData,
+      executableCode: codeData,
+    };
+  }
+
+  const codeResult = (raw.code_execution_result || raw.codeExecutionResult) as
+    Record<string, unknown> | undefined;
+  if (codeResult) {
+    const resultData: CodeExecutionResultData = {
+      outcome: String(codeResult.outcome || "OUTCOME_OK") as CodeExecutionOutcome,
+      output: String(codeResult.output || ""),
+      ...(typeof codeResult.durationMs === "number"
+        ? { durationMs: codeResult.durationMs }
+        : {}),
+      ...(Array.isArray(codeResult.generatedImages)
+        ? { generatedImages: codeResult.generatedImages as string[] }
+        : {}),
+    };
+    return {
+      type: "code_execution_result",
+      code_execution_result: resultData,
+      codeExecutionResult: resultData,
+    };
+  }
+
+  const codeBlock = (raw.code_execution_block || raw.codeExecutionBlock) as
+    AgentCodeExecutionBlock | undefined;
+  if (codeBlock) {
+    return {
+      type: "code_execution_block",
+      code_execution_block: codeBlock,
+      codeExecutionBlock: codeBlock,
+    };
+  }
+
   if (
     typeof raw.text === "string" &&
     !raw.function_call &&
     !raw.functionCall &&
     !raw.file_data &&
-    !raw.fileData
+    !raw.fileData &&
+    !raw.executable_code &&
+    !raw.executableCode &&
+    !raw.code_execution_result &&
+    !raw.codeExecutionResult
   ) {
     if (raw.thought === true) {
       return { type: "reasoning", text: raw.text, thought: true };

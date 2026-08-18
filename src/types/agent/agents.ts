@@ -1,4 +1,9 @@
-import type { AgentMessagePart } from "./message-parts";
+import type {
+  AgentCodeExecutionBlock,
+  AgentMessagePart,
+  CodeExecutionResultData,
+  ExecutableCodeData,
+} from "./message-parts";
 import type { ReasoningTraceEntry, SubAgentExecution } from "./messages";
 import type { GroundingMetadata } from "./grounding";
 import type { AgentActionsDelta, AgentNodeInfo, AgentUsageMetadata } from "./metadata";
@@ -77,6 +82,12 @@ export interface AgentSessionEvent {
     name: string;
     result: Record<string, unknown>;
   };
+  executable_code?: ExecutableCodeData;
+  executableCode?: ExecutableCodeData;
+  code_execution_result?: CodeExecutionResultData;
+  codeExecutionResult?: CodeExecutionResultData;
+  code_execution_blocks?: AgentCodeExecutionBlock[];
+  codeExecutionBlocks?: AgentCodeExecutionBlock[];
   grounding_metadata?: GroundingMetadata;
   groundingMetadata?: GroundingMetadata;
   usageMetadata?: AgentUsageMetadata;

@@ -111,14 +111,13 @@ function ChatContent() {
   const speechAdapter = useMemo(() => createWebSpeechSynthesisAdapter(), []);
 
   const sessionState = useOptionalSessionState();
+  const setActiveSessionIdRef = useRef(sessionState?.setActiveSessionId);
+  setActiveSessionIdRef.current = sessionState?.setActiveSessionId;
 
-  const handleThreadIdChange = useCallback(
-    (newId: string | undefined) => {
-      activeThreadIdRef.current = newId;
-      sessionState?.setActiveSessionId(newId);
-    },
-    [sessionState]
-  );
+  const handleThreadIdChange = useCallback((newId: string | undefined) => {
+    activeThreadIdRef.current = newId;
+    setActiveSessionIdRef.current?.(newId);
+  }, []);
 
   const runtime = useRemoteThreadListRuntime({
     runtimeHook: function useRuntimeHook() {

@@ -1,4 +1,8 @@
-import { AgentSessionEvent, ReasoningTraceEntry } from "@/types/agent";
+import {
+  AgentCodeExecutionBlock,
+  AgentSessionEvent,
+  ReasoningTraceEntry,
+} from "@/types/agent";
 import { formatAgentDisplayName } from "@/lib/utils";
 import {
   extractGroundingMetadata,
@@ -273,9 +277,6 @@ export function groupTurnSessionEvents(
       reasoningTrace.push({ type: "thought", text: finalEvent.thought.trim() });
     }
 
-    const unifiedThought =
-      reasoningTrace.length > 0 ? formatReasoningTrace(reasoningTrace) : undefined;
-
     const finalEventToolCalls = getEventToolCalls(finalEvent);
     const finalEventToolResults = getEventToolResults(finalEvent);
 
@@ -343,11 +344,66 @@ export function groupTurnSessionEvents(
     const actions =
       finalEvent.actions || turn.assistantEvents.find((e) => e.actions)?.actions;
 
+    const finishEvent = turn.assistantEvents.find(
+      (e) => e.finishReason || e.finish_reason
+    );
     const finishReason =
       finalEvent.finishReason ||
       finalEvent.finish_reason ||
-      turn.assistantEvents.find((e) => e.finishReason || e.finish_reason)?.finishReason ||
-      turn.assistantEvents.find((e) => e.finishReason || e.finish_reason)?.finish_reason;
+      finishEvent?.finishReason ||
+      finishEvent?.finish_reason;
+
+    const aggregatedCodeBlocks: AgentCodeExecutionBlock[] = [];
+    for (const event of turn.assistantEvents) {
+      const blocks = event.codeExecutionBlocks || event.code_execution_blocks || [];
+      for (const block of blocks) {
+        if (block.code && !block.result) {
+          aggregatedCodeBlocks.push({ ...block });
+        } else if (!block.code && block.result) {
+          const pending = aggregatedCodeBlocks
+            .slice()
+            .reverse()
+            .find((b) => b.code && !b.result);
+          if (pending) {
+            pending.result = block.result;
+            pending.status =
+              block.result.outcome === "OUTCOME_FAILED" ||
+              block.result.outcome === "OUTCOME_DEADLINE_EXCEEDED"
+                ? "error"
+                : "complete";
+          } else {
+            aggregatedCodeBlocks.push({ ...block });
+          }
+        } else {
+          const existingIdx = aggregatedCodeBlocks.findIndex((b) => b.id === block.id);
+          if (existingIdx !== -1) {
+            aggregatedCodeBlocks[existingIdx] = { ...block };
+          } else {
+            aggregatedCodeBlocks.push({ ...block });
+          }
+        }
+      }
+    }
+
+    for (const b of aggregatedCodeBlocks) {
+      if (b.status === "running" && b.result) {
+        b.status =
+          b.result.outcome === "OUTCOME_FAILED" ||
+          b.result.outcome === "OUTCOME_DEADLINE_EXCEEDED"
+            ? "error"
+            : "complete";
+      }
+      reasoningTrace.push({
+        type: "code_execution",
+        block: b,
+      });
+    }
+
+    const unifiedThought =
+      reasoningTrace.length > 0 ? formatReasoningTrace(reasoningTrace) : undefined;
+
+    const codeExecutionBlocks =
+      aggregatedCodeBlocks.length > 0 ? aggregatedCodeBlocks : undefined;
 
     result.push({
       id: finalEvent.id,
@@ -371,6 +427,12 @@ export function groupTurnSessionEvents(
         : {}),
       ...(finalEvent.tool_call ? { tool_call: finalEvent.tool_call } : {}),
       ...(finalEvent.tool_result ? { tool_result: finalEvent.tool_result } : {}),
+      ...(codeExecutionBlocks && codeExecutionBlocks.length > 0
+        ? {
+            codeExecutionBlocks,
+            code_execution_blocks: codeExecutionBlocks,
+          }
+        : {}),
       ...(groundingMeta
         ? { groundingMetadata: groundingMeta, grounding_metadata: groundingMeta }
         : {}),

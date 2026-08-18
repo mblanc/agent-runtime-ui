@@ -1,6 +1,11 @@
 import type { GroundingMetadata } from "./grounding";
 import type { AgentActionsDelta, AgentNodeInfo, AgentUsageMetadata } from "./metadata";
 import type { MemoryRetrievalItem } from "./memory";
+import type {
+  AgentCodeExecutionBlock,
+  CodeExecutionResultData,
+  ExecutableCodeData,
+} from "./message-parts";
 
 /**
  * A streaming event after normalisation, and the only stream shape that exists
@@ -33,6 +38,8 @@ export interface AgentStreamEvent {
     | "agent_response"
     | "tool_call"
     | "tool_result"
+    | "executable_code"
+    | "code_execution_result"
     | "error"
     | "done";
   eventId?: string;
@@ -65,6 +72,12 @@ export interface AgentStreamEvent {
     name: string;
     result: Record<string, unknown>;
   };
+  executable_code?: ExecutableCodeData;
+  executableCode?: ExecutableCodeData;
+  code_execution_result?: CodeExecutionResultData;
+  codeExecutionResult?: CodeExecutionResultData;
+  code_execution_block?: AgentCodeExecutionBlock;
+  codeExecutionBlock?: AgentCodeExecutionBlock;
   retrieved_memories?: MemoryRetrievalItem[];
   groundingMetadata?: GroundingMetadata;
   /**

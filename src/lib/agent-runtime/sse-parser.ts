@@ -728,7 +728,71 @@ export async function* parseSseStream(
               partThoughtSig
             );
           }
+
+          const execCode = part.executable_code || part.executableCode;
+          if (execCode && typeof execCode === "object") {
+            yield withEventMeta(
+              {
+                event_type: "executable_code",
+                executable_code: {
+                  language: String(execCode.language || "PYTHON"),
+                  code: String(execCode.code || ""),
+                },
+              },
+              partPartial,
+              partThoughtSig
+            );
+          }
+
+          const codeRes = part.code_execution_result || part.codeExecutionResult;
+          if (codeRes && typeof codeRes === "object") {
+            yield withEventMeta(
+              {
+                event_type: "code_execution_result",
+                code_execution_result: {
+                  outcome: String(codeRes.outcome || "OUTCOME_OK"),
+                  output: String(codeRes.output || ""),
+                  ...(typeof codeRes.durationMs === "number"
+                    ? { durationMs: codeRes.durationMs }
+                    : {}),
+                  ...(Array.isArray(codeRes.generatedImages)
+                    ? { generatedImages: codeRes.generatedImages as string[] }
+                    : {}),
+                },
+              },
+              partPartial,
+              partThoughtSig
+            );
+          }
         }
+      } else if (parsed.executable_code || parsed.executableCode) {
+        const execCode = (parsed.executable_code || parsed.executableCode) as Record<
+          string,
+          unknown
+        >;
+        yield withEventMeta({
+          event_type: "executable_code",
+          executable_code: {
+            language: String(execCode.language || "PYTHON"),
+            code: String(execCode.code || ""),
+          },
+        });
+      } else if (parsed.code_execution_result || parsed.codeExecutionResult) {
+        const codeRes = (parsed.code_execution_result ||
+          parsed.codeExecutionResult) as Record<string, unknown>;
+        yield withEventMeta({
+          event_type: "code_execution_result",
+          code_execution_result: {
+            outcome: String(codeRes.outcome || "OUTCOME_OK"),
+            output: String(codeRes.output || ""),
+            ...(typeof codeRes.durationMs === "number"
+              ? { durationMs: codeRes.durationMs }
+              : {}),
+            ...(Array.isArray(codeRes.generatedImages)
+              ? { generatedImages: codeRes.generatedImages as string[] }
+              : {}),
+          },
+        });
       } else if (parsed.text) {
         const isRoot = isRootWorkflowOutput(parsed);
         const isSubAgent = !isRoot && isSubagentNode(parsed);

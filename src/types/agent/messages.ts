@@ -1,4 +1,4 @@
-import type { AgentMessagePart } from "./message-parts";
+import type { AgentCodeExecutionBlock, AgentMessagePart } from "./message-parts";
 
 export interface AgentMessage {
   role: "user" | "model" | "assistant" | "system";
@@ -69,4 +69,8 @@ export type ReasoningTraceEntry =
       status: "running" | "complete";
       /** Source event id, present only on history replay. */
       id?: string;
+    }
+  | {
+      type: "code_execution";
+      block: AgentCodeExecutionBlock;
     };

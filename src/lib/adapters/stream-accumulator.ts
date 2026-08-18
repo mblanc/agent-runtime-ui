@@ -1,10 +1,13 @@
 import type { ChatModelRunResult, ThreadMessage } from "@assistant-ui/react";
 import type {
   AgentActionsDelta,
+  AgentCodeExecutionBlock,
   AgentMessageInfoMetadata,
   AgentNodeInfo,
   AgentStreamEvent,
   AgentUsageMetadata,
+  CodeExecutionResultData,
+  ExecutableCodeData,
   GroundingMetadata,
   MemoryRetrievalItem,
   ReasoningTraceEntry,
@@ -13,6 +16,7 @@ import {
   extractGroundingMetadata,
   mergeGroundingMetadata,
 } from "@/lib/grounding/citation-parser";
+import { parseCodeExecutionOutput } from "@/lib/code-execution/output-parser";
 import { formatAgentDisplayName } from "@/lib/utils";
 import { formatReasoningTrace } from "@/lib/agent-runtime/reasoning-directives";
 
@@ -52,9 +56,10 @@ interface SubagentStreamItem {
 // copies of a mutating record.
 type StreamReasoningEntry =
   | Extract<ReasoningTraceEntry, { type: "thought" } | { type: "tool" }>
-  | { type: "subagent"; agentName: string };
+  | { type: "subagent"; agentName: string }
+  | { type: "code_execution"; blockId: string };
 
-const STREAM_YIELD_THROTTLE_MS = 25;
+const STREAM_YIELD_THROTTLE_MS = 50;
 
 /**
  * The state machine of a streaming turn: everything an assistant message
@@ -69,6 +74,7 @@ const STREAM_YIELD_THROTTLE_MS = 25;
 export class StreamAccumulator {
   private readonly subagentsMap = new Map<string, SubagentStreamItem>();
   private readonly reasoningEntries: StreamReasoningEntry[] = [];
+  private readonly codeExecutionBlocks: AgentCodeExecutionBlock[] = [];
   private activeSubagentName: string | null = null;
 
   private accumulatedText = "";
@@ -119,11 +125,6 @@ export class StreamAccumulator {
     // only remembers the last value seen, because a field the
     // backend sends on the final chunk has to survive onto the
     // snapshots yielded before it.
-    //
-    // This block used to re-derive twelve of these fields from the
-    // raw JSON, duplicating the parser's knowledge client-side —
-    // which meant a field added to the parser was silently dropped
-    // on the live path until it was added here too.
     this.latestEventId = parsed.eventId || this.latestEventId;
     this.latestInvocationId = parsed.invocationId || this.latestInvocationId;
     this.latestModelVersion = parsed.modelVersion || this.latestModelVersion;
@@ -180,22 +181,26 @@ export class StreamAccumulator {
       return this.handleToolCall(parsed.tool_call);
     } else if (parsed.event_type === "tool_result" && parsed.tool_result) {
       return this.handleToolResult(parsed.tool_result);
+    } else if (
+      parsed.event_type === "executable_code" &&
+      (parsed.executable_code || parsed.executableCode)
+    ) {
+      return this.handleExecutableCode(
+        (parsed.executable_code || parsed.executableCode)!
+      );
+    } else if (
+      parsed.event_type === "code_execution_result" &&
+      (parsed.code_execution_result || parsed.codeExecutionResult)
+    ) {
+      return this.handleCodeExecutionResult(
+        (parsed.code_execution_result || parsed.codeExecutionResult)!
+      );
     } else if (parsed.event_type === "error" && parsed.error) {
       return this.handleError(parsed.error);
     } else if (parsed.event_type === "done") {
       this.completeTerminalState();
       return "final";
     } else if (extractedMeta) {
-      // Metadata-only event: nothing else to handle, so force a yield
-      // so the citations surface immediately.
-      //
-      // This must stay BELOW the terminal cases. It is keyed on the
-      // metadata rather than on event_type, so while it sat above
-      // `error` and `done` it captured any terminal event that also
-      // carried groundingMetadata — which is exactly what a grounded
-      // final event carries. That skipped the `done` branch's tool
-      // and subagent finalisation, leaving spinners running forever,
-      // and swallowed backend errors entirely.
       return "yield";
     }
 
@@ -204,11 +209,6 @@ export class StreamAccumulator {
 
   /**
    * The end of a stream that closed without a terminal event.
-   *
-   * Deliberately narrower than `completeTerminalState()`: it flushes the text
-   * segment and nothing else. Subagent and tool spinners are only completed by
-   * an explicit `done`/`[DONE]`, because a stream that just stopped has not
-   * told us those steps finished.
    */
   finalize(): void {
     this.flushCurrentTextSegment();
@@ -217,21 +217,6 @@ export class StreamAccumulator {
 
   /**
    * The current message-in-progress as a yieldable result.
-   *
-   * Every yield in the dispatch loop passed the same seven expressions in
-   * the same order — eleven identical argument lists. Adding a metadata
-   * channel now means editing this one function instead of all of them.
-   *
-   * The trace is built here rather than accumulated into a variable that
-   * every branch had to remember to refresh before yielding. One branch
-   * (the error path) did not, and shipped a stale trace; deriving both
-   * representations from the entries at yield time makes that impossible
-   * and guarantees the string and the array describe the same trace.
-   *
-   * It also makes the finalise-then-snapshot ordering automatic rather than
-   * remembered: a branch that flips subagents to complete and then returns
-   * cannot yield the pre-finalisation state, which is how spinners used to
-   * run forever after a terminal event.
    */
   snapshot(): ChatModelRunResult {
     const reasoningTrace = this.buildReasoningTrace();
@@ -240,6 +225,7 @@ export class StreamAccumulator {
       reasoningTrace,
       text: this.accumulatedText,
       toolCalls: Array.from(this.toolCallsMap.values()),
+      codeExecutionBlocks: this.codeExecutionBlocks.map((b) => ({ ...b })),
       eventId: this.latestEventId,
       retrievedMemories: this.retrievedMemoriesList,
       groundingMetadata: this.latestGroundingMetadata,
@@ -543,6 +529,57 @@ export class StreamAccumulator {
     return "yield";
   }
 
+  private handleExecutableCode(execCode: ExecutableCodeData): HandleOutcome {
+    this.finalizeAllSubagents();
+    const blockId = `exec-${this.codeExecutionBlocks.length}`;
+    this.codeExecutionBlocks.push({
+      id: blockId,
+      language: execCode.language || "PYTHON",
+      code: execCode.code || "",
+      status: "running",
+    });
+    this.reasoningEntries.push({
+      type: "code_execution",
+      blockId,
+    });
+    return "yield";
+  }
+
+  private handleCodeExecutionResult(codeRes: CodeExecutionResultData): HandleOutcome {
+    this.finalizeAllSubagents();
+    const parsedOut = parseCodeExecutionOutput(codeRes.output);
+    const resultData: CodeExecutionResultData = {
+      outcome: codeRes.outcome || "OUTCOME_OK",
+      output: codeRes.output || "",
+      ...(codeRes.durationMs !== undefined ? { durationMs: codeRes.durationMs } : {}),
+      generatedImages: codeRes.generatedImages || parsedOut.images,
+    };
+    const isError =
+      resultData.outcome === "OUTCOME_FAILED" ||
+      resultData.outcome === "OUTCOME_DEADLINE_EXCEEDED";
+    const status = isError ? "error" : "complete";
+
+    const lastBlock = this.codeExecutionBlocks[this.codeExecutionBlocks.length - 1];
+    if (lastBlock && !lastBlock.result) {
+      lastBlock.result = resultData;
+      lastBlock.status = status;
+    } else {
+      const blockId = `exec-res-${this.codeExecutionBlocks.length}`;
+      this.codeExecutionBlocks.push({
+        id: blockId,
+        language: "PYTHON",
+        code: "",
+        result: resultData,
+        status,
+      });
+      this.reasoningEntries.push({
+        type: "code_execution",
+        blockId,
+      });
+    }
+    return "yield";
+  }
+
   /**
    * The error text is appended to the accumulated message, and the subagents
    * are finalised *before* the caller takes its snapshot — the snapshot is
@@ -572,11 +609,13 @@ export class StreamAccumulator {
       }
     }
     for (const entry of this.reasoningEntries) {
-      // A field flip, where this used to be a string replaceAll over
-      // rendered markdown that would also have rewritten the literal
-      // text status="running" appearing inside a tool result.
       if (entry.type === "tool" && entry.status === "running") {
         entry.status = "complete";
+      }
+    }
+    for (const block of this.codeExecutionBlocks) {
+      if (block.status === "running") {
+        block.status = block.result ? "complete" : "error";
       }
     }
     this.accumulatedText = this.finalizedTextPrefix;
@@ -658,6 +697,9 @@ export class StreamAccumulator {
       } else if (entry.type === "subagent") {
         const sub = this.subagentsMap.get(entry.agentName);
         if (sub) trace.push({ type: "subagent", ...sub });
+      } else if (entry.type === "code_execution") {
+        const block = this.codeExecutionBlocks.find((b) => b.id === entry.blockId);
+        if (block) trace.push({ type: "code_execution", block: { ...block } });
       } else {
         // Copied, not referenced. Tool entries are mutated in place as
         // results arrive, so handing out the live object would make an

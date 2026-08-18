@@ -154,6 +154,10 @@ export function formatReasoningTrace(entries: readonly ReasoningTraceEntry[]): s
       if (trimmed) parts.push(trimmed);
     } else if (entry.type === "subagent") {
       parts.push(formatSubagentDirective(entry));
+    } else if (entry.type === "code_execution") {
+      parts.push(
+        `:::code_execution[Python Sandbox]{status="${entry.block.status}"}\n\`\`\`python\n${entry.block.code || ""}\n\`\`\`\n:::`
+      );
     } else {
       parts.push(formatToolDirective(entry));
     }

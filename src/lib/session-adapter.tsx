@@ -37,14 +37,19 @@ interface SessionApiItem {
  * so history replay and streaming cannot drift into rendering differently — the
  * failure mode this whole representation change exists to remove.
  */
-function mergeReasoningTraceIntoMetadata(
+function mergeCustomMetadata(
   metadata: { custom?: Record<string, unknown> },
-  reasoningTrace: unknown[] | undefined
+  reasoningTrace: unknown[] | undefined,
+  codeExecutionBlocks: unknown[] | undefined
 ): Record<string, unknown> {
-  if (!reasoningTrace) return metadata as Record<string, unknown>;
+  const custom = { ...(metadata.custom || {}) };
+  if (reasoningTrace) custom.reasoningTrace = reasoningTrace;
+  if (codeExecutionBlocks && !custom.codeExecutionBlocks) {
+    custom.codeExecutionBlocks = codeExecutionBlocks;
+  }
   return {
     ...metadata,
-    custom: { ...(metadata.custom || {}), reasoningTrace },
+    custom,
   };
 }
 
@@ -69,6 +74,11 @@ export function formatRemoteMessagesToThreadMessages(
     // a session persisted before the field existed, simply has none and the
     // renderer falls back to parsing `thoughtStr`.
     const reasoningTrace = Array.isArray(m.reasoningTrace) ? m.reasoningTrace : undefined;
+    const codeExecutionBlocks = Array.isArray(m.codeExecutionBlocks)
+      ? m.codeExecutionBlocks
+      : Array.isArray(m.code_execution_blocks)
+        ? (m.code_execution_blocks as unknown[])
+        : undefined;
 
     // Extract tool calls from session message
     const toolCalls =
@@ -155,11 +165,12 @@ export function formatRemoteMessagesToThreadMessages(
             },
           }
         : {}),
-      metadata: mergeReasoningTraceIntoMetadata(
+      metadata: mergeCustomMetadata(
         (m.metadata as { custom?: Record<string, unknown> } | undefined) || {
           custom: { ...(m.id ? { eventId: m.id } : {}) },
         },
-        reasoningTrace
+        reasoningTrace,
+        codeExecutionBlocks
       ),
     } as unknown as ThreadMessageLike;
   });

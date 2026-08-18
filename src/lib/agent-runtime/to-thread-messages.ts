@@ -53,6 +53,9 @@ export function formatSessionEventsToThreadMessages(
       } else {
         traceCoversEveryThought = false;
       }
+    } else if (e.reasoningTrace?.length) {
+      accumulatedTrace.push(...e.reasoningTrace);
+      accumulatedThoughts.push("Thinking Process");
     }
 
     if (e.role === "user") {
@@ -80,12 +83,18 @@ export function formatSessionEventsToThreadMessages(
       continue;
     }
 
+    const codeExecutionBlocks = e.codeExecutionBlocks || e.code_execution_blocks;
+    const hasCodeExecution = Boolean(
+      codeExecutionBlocks && codeExecutionBlocks.length > 0
+    );
+
     if (
       content ||
       thought ||
       accumulatedThoughts.length > 0 ||
       hasToolCalls ||
       hasToolResults ||
+      hasCodeExecution ||
       groundingMetadata
     ) {
       threadMessages.push({
@@ -104,6 +113,7 @@ export function formatSessionEventsToThreadMessages(
         toolResults: e.tool_results,
         toolCall: e.tool_call,
         toolResult: e.tool_result,
+        ...(hasCodeExecution ? { codeExecutionBlocks } : {}),
         metadata: {
           custom: {
             ...(e.id ? { eventId: e.id } : {}),
@@ -118,6 +128,7 @@ export function formatSessionEventsToThreadMessages(
             ...(finishReason ? { finishReason } : {}),
             ...(timestamp !== undefined ? { timestamp } : {}),
             ...(groundingMetadata ? { groundingMetadata } : {}),
+            ...(hasCodeExecution ? { codeExecutionBlocks } : {}),
           },
         },
       });

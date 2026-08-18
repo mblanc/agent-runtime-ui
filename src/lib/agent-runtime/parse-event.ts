@@ -1,10 +1,15 @@
 import {
   AgentActionsDelta,
+  AgentCodeExecutionBlock,
   AgentNodeInfo,
   AgentSessionEvent,
   AgentUsageMetadata,
+  CodeExecutionLanguage,
+  CodeExecutionOutcome,
+  CodeExecutionResultData,
 } from "@/types/agent";
 import { extractGroundingMetadata } from "@/lib/grounding/citation-parser";
+import { parseCodeExecutionOutput } from "@/lib/code-execution/output-parser";
 import { extractToolCall, extractToolResult, safeParseJson } from "./event-utils";
 
 /**
@@ -73,6 +78,7 @@ export function parseRawSessionEvent(
     id?: string;
     result: Record<string, unknown>;
   }> = [];
+  const parsedCodeBlocks: AgentCodeExecutionBlock[] = [];
 
   const visitedObjects = new Set<unknown>();
 
@@ -135,6 +141,55 @@ export function parseRawSessionEvent(
 
             const tr = extractToolResult(p.functionResponse || p.function_response);
             if (tr) parsedToolResults.push(tr);
+
+            const execCode = (p.executable_code || p.executableCode) as
+              Record<string, unknown> | undefined;
+            if (execCode && typeof execCode === "object") {
+              const code = String(execCode.code || "");
+              const language = String(
+                execCode.language || "PYTHON"
+              ) as CodeExecutionLanguage;
+              parsedCodeBlocks.push({
+                id: `code-${sessionId}-${parsedCodeBlocks.length}`,
+                language,
+                code,
+                status: "running",
+              });
+            }
+
+            const codeRes = (p.code_execution_result || p.codeExecutionResult) as
+              Record<string, unknown> | undefined;
+            if (codeRes && typeof codeRes === "object") {
+              const parsedOutput = parseCodeExecutionOutput(String(codeRes.output || ""));
+              const resData: CodeExecutionResultData = {
+                outcome: String(codeRes.outcome || "OUTCOME_OK") as CodeExecutionOutcome,
+                output: String(codeRes.output || ""),
+                ...(typeof codeRes.durationMs === "number"
+                  ? { durationMs: codeRes.durationMs }
+                  : {}),
+                generatedImages: Array.isArray(codeRes.generatedImages)
+                  ? (codeRes.generatedImages as string[])
+                  : parsedOutput.images,
+              };
+              const isError =
+                resData.outcome === "OUTCOME_FAILED" ||
+                resData.outcome === "OUTCOME_DEADLINE_EXCEEDED";
+              const blockStatus = isError ? "error" : "complete";
+
+              const lastBlock = parsedCodeBlocks[parsedCodeBlocks.length - 1];
+              if (lastBlock && !lastBlock.result) {
+                lastBlock.result = resData;
+                lastBlock.status = blockStatus;
+              } else {
+                parsedCodeBlocks.push({
+                  id: `code-res-${sessionId}-${parsedCodeBlocks.length}`,
+                  language: "PYTHON",
+                  code: "",
+                  result: resData,
+                  status: blockStatus,
+                });
+              }
+            }
           }
         }
         return;
@@ -191,6 +246,19 @@ export function parseRawSessionEvent(
         }
       }
 
+      if (
+        Array.isArray(record.codeExecutionBlocks) ||
+        Array.isArray(record.code_execution_blocks)
+      ) {
+        const blocks = (record.codeExecutionBlocks ||
+          record.code_execution_blocks) as AgentCodeExecutionBlock[];
+        for (const block of blocks) {
+          if (!parsedCodeBlocks.some((b) => b.id === block.id)) {
+            parsedCodeBlocks.push(block);
+          }
+        }
+      }
+
       if (typeof record.query === "string" && record.query.trim()) {
         textPieces.push(record.query.trim());
       }
@@ -240,6 +308,18 @@ export function parseRawSessionEvent(
   if (root.tool_result) {
     const extracted = extractToolResult(root.tool_result);
     if (extracted) parsedToolResults.push(extracted);
+  }
+  if (
+    Array.isArray(root.code_execution_blocks) ||
+    Array.isArray(root.codeExecutionBlocks)
+  ) {
+    const blocks = (root.code_execution_blocks ||
+      root.codeExecutionBlocks) as AgentCodeExecutionBlock[];
+    for (const block of blocks) {
+      if (!parsedCodeBlocks.some((b) => b.id === block.id)) {
+        parsedCodeBlocks.push(block);
+      }
+    }
   }
 
   if (textPieces.length === 0) {
@@ -578,6 +658,12 @@ export function parseRawSessionEvent(
     ...(uniqueToolResults.length > 0 ? { tool_results: uniqueToolResults } : {}),
     ...(uniqueToolCalls.length > 0 ? { tool_call: uniqueToolCalls[0] } : {}),
     ...(uniqueToolResults.length > 0 ? { tool_result: uniqueToolResults[0] } : {}),
+    ...(parsedCodeBlocks.length > 0
+      ? {
+          codeExecutionBlocks: parsedCodeBlocks,
+          code_execution_blocks: parsedCodeBlocks,
+        }
+      : {}),
     ...(groundingMeta
       ? { groundingMetadata: groundingMeta, grounding_metadata: groundingMeta }
       : {}),

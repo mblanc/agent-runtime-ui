@@ -1,5 +1,6 @@
 import type { ChatModelRunResult } from "@assistant-ui/react";
 import type {
+  AgentCodeExecutionBlock,
   AgentMessageInfoMetadata,
   GroundingMetadata,
   MemoryRetrievalItem,
@@ -47,6 +48,7 @@ export interface YieldContentFields {
   reasoningTrace?: ReasoningTraceEntry[];
   text: string;
   toolCalls?: ToolCallYieldItem[];
+  codeExecutionBlocks?: AgentCodeExecutionBlock[];
   eventId?: string;
   retrievedMemories?: MemoryRetrievalItem[];
   groundingMetadata?: GroundingMetadata;
@@ -58,6 +60,7 @@ export function createYieldContent({
   reasoningTrace,
   text,
   toolCalls,
+  codeExecutionBlocks,
   eventId,
   retrievedMemories,
   groundingMetadata,
@@ -92,6 +95,7 @@ export function createYieldContent({
     ...(eventId ||
     (retrievedMemories && retrievedMemories.length > 0) ||
     (reasoningTrace && reasoningTrace.length > 0) ||
+    (codeExecutionBlocks && codeExecutionBlocks.length > 0) ||
     groundingMetadata ||
     messageInfo
       ? {
@@ -99,6 +103,9 @@ export function createYieldContent({
             custom: {
               ...(eventId ? { eventId } : {}),
               ...(reasoningTrace && reasoningTrace.length > 0 ? { reasoningTrace } : {}),
+              ...(codeExecutionBlocks && codeExecutionBlocks.length > 0
+                ? { codeExecutionBlocks }
+                : {}),
               ...(retrievedMemories && retrievedMemories.length > 0
                 ? { retrievedMemories }
                 : {}),

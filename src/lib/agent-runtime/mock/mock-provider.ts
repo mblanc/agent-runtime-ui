@@ -1,4 +1,5 @@
 import {
+  AgentCodeExecutionBlock,
   AgentFeedbackRequest,
   AgentFeedbackResponse,
   AgentMemory,
@@ -684,6 +685,74 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
       await mockDelay(60, signal);
     }
 
+    // 6. Python Code Execution Sandbox: Simulate for code/math/plot/fibonacci queries
+    const isCodeExecutionTrigger =
+      lowerPrompt.includes("code") ||
+      lowerPrompt.includes("python") ||
+      lowerPrompt.includes("calculate") ||
+      lowerPrompt.includes("fibonacci") ||
+      lowerPrompt.includes("plot") ||
+      lowerPrompt.includes("chart") ||
+      lowerPrompt.includes("sandbox") ||
+      lowerPrompt.includes("execute");
+
+    let simulatedCodeBlocks: AgentCodeExecutionBlock[] | undefined;
+
+    if (isCodeExecutionTrigger && !hasAttachments) {
+      const isPlotting = lowerPrompt.includes("plot") || lowerPrompt.includes("chart");
+      const dummyPlotBase64 =
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+      const codeToRun = isPlotting
+        ? `import matplotlib.pyplot as plt\nimport numpy as np\n\nx = np.linspace(0, 10, 100)\ny = np.sin(x)\n\nplt.figure(figsize=(8, 4))\nplt.plot(x, y, label='sin(x)', color='#1a73e8')\nplt.title('Trigonometric Waveform')\nplt.xlabel('x')\nplt.ylabel('sin(x)')\nplt.grid(True)\nplt.show()`
+        : `def calculate_fibonacci(n: int) -> list[int]:\n    fib = [0, 1]\n    for i in range(2, n):\n        fib.append(fib[i-1] + fib[i-2])\n    return fib[:n]\n\nresult = calculate_fibonacci(10)\nprint(f"Fibonacci Sequence (first 10 terms): {result}")`;
+
+      const outputText = isPlotting
+        ? `Plot generated successfully.\n${dummyPlotBase64}`
+        : "Fibonacci Sequence (first 10 terms): [0, 1, 1, 2, 3, 5, 8, 13, 21, 34]\n";
+
+      yield {
+        event_type: "thought",
+        thought: `Generating and executing Python code sandbox to solve "${lastPrompt}" in secure Vertex AI environment...`,
+      };
+      await mockDelay(60, signal);
+
+      yield {
+        event_type: "executable_code",
+        executable_code: {
+          language: "PYTHON",
+          code: codeToRun,
+        },
+      };
+      await mockDelay(100, signal);
+
+      yield {
+        event_type: "code_execution_result",
+        code_execution_result: {
+          outcome: "OUTCOME_OK",
+          output: outputText,
+          durationMs: isPlotting ? 145 : 35,
+          generatedImages: isPlotting ? [dummyPlotBase64] : [],
+        },
+      };
+      await mockDelay(60, signal);
+
+      simulatedCodeBlocks = [
+        {
+          id: `code-mock-${Date.now()}`,
+          language: "PYTHON",
+          code: codeToRun,
+          status: "complete",
+          result: {
+            outcome: "OUTCOME_OK",
+            output: outputText,
+            durationMs: isPlotting ? 145 : 35,
+            generatedImages: isPlotting ? [dummyPlotBase64] : [],
+          },
+        },
+      ];
+    }
+
     yield {
       event_type: "thought",
       thought: hasAttachments
@@ -719,9 +788,11 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
     // Streaming content chunks
     const responseText = hasAttachments
       ? `I have successfully analyzed the attached multimodal attachment (\`${fileUris || "file"}\`).\n\n### Document Analysis Summary\n- **Status:** Verified and ingested via Cloud Storage.\n- **Content Assessment:** Document contains structured engineering specifications and architectural requirements.\n- **Recommendation:** Integrate with Google Cloud Agent Runtime using Vertex AI Reasoning Engines.`
-      : simulatedGroundingMetadata
-        ? `Vertex AI Agent Runtime provides managed auto-scaling and native session persistence [1]. It supports sub-second cold starts [2] and private VPC connectivity via Private Service Connect [3].\n\n### Architecture Highlights\n1. **Stateless BFF Layer**: Next.js App Router with Web Crypto JWT tokens.\n2. **Reasoning Engine Backend**: Fully managed agent runtime on Google Cloud.\n3. **Enterprise Grounding**: Direct verification against official Google documentation and private corporate knowledge base [1, 3].`
-        : `Based on your request regarding **${lastPrompt}**, here is the recommended architecture:\n\n1. **Stateless BFF Layer**: Built using Next.js App Router and Edge/Serverless runtimes with Web Crypto JWT tokens.\n2. **Vertex AI Reasoning Engines**: Managed agent execution environment providing automatic session persistence.\n3. **Google Identity Auth**: Seamless OAuth 2.0 PKCE flow guaranteeing secure enterprise user scoping.\n\n\`\`\`typescript\n// Example: Initializing Vertex AI Agent Runtime Provider\nconst provider = createAgentRuntimeProvider();\nconst response = await provider.streamQuery({ messages }, userId);\n\`\`\``;
+      : simulatedCodeBlocks
+        ? `I have executed the Python script in the secure Vertex AI Code Execution Sandbox.\n\n### Execution Summary\n- **Status:** Successfully executed with zero errors.\n- **Output:** The computation finished and produced clean results.\n- **Sandbox Environment:** Python 3.10 with NumPy, Pandas, and Matplotlib.`
+        : simulatedGroundingMetadata
+          ? `Vertex AI Agent Runtime provides managed auto-scaling and native session persistence [1]. It supports sub-second cold starts [2] and private VPC connectivity via Private Service Connect [3].\n\n### Architecture Highlights\n1. **Stateless BFF Layer**: Next.js App Router with Web Crypto JWT tokens.\n2. **Reasoning Engine Backend**: Fully managed agent runtime on Google Cloud.\n3. **Enterprise Grounding**: Direct verification against official Google documentation and private corporate knowledge base [1, 3].`
+          : `Based on your request regarding **${lastPrompt}**, here is the recommended architecture:\n\n1. **Stateless BFF Layer**: Built using Next.js App Router and Edge/Serverless runtimes with Web Crypto JWT tokens.\n2. **Vertex AI Reasoning Engines**: Managed agent execution environment providing automatic session persistence.\n3. **Google Identity Auth**: Seamless OAuth 2.0 PKCE flow guaranteeing secure enterprise user scoping.\n\n\`\`\`typescript\n// Example: Initializing Vertex AI Agent Runtime Provider\nconst provider = createAgentRuntimeProvider();\nconst response = await provider.streamQuery({ messages }, userId);\n\`\`\``;
 
     const invocationId = `e-mock-${Math.random().toString(36).substring(2, 9)}`;
     const modelVersion = "gemini-2.5-flash";
@@ -857,6 +928,12 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
           thought_signature: thoughtSignature,
           groundingMetadata: simulatedGroundingMetadata,
           grounding_metadata: simulatedGroundingMetadata,
+          ...(simulatedCodeBlocks
+            ? {
+                codeExecutionBlocks: simulatedCodeBlocks,
+                code_execution_blocks: simulatedCodeBlocks,
+              }
+            : {}),
           invocationId,
           invocation_id: invocationId,
           modelVersion,

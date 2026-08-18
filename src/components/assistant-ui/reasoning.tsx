@@ -8,12 +8,14 @@ import { SubAgentCollapsible } from "./subagent-collapsible";
 import { ToolCollapsible } from "./tool-collapsible";
 import { ThoughtCollapsible } from "./thought-collapsible";
 import { ThoughtSignatureBadge } from "./thought-signature-badge";
+import { CodeExecutionCard } from "@/components/code-execution";
 
 export {
   SubAgentCollapsible,
   ToolCollapsible,
   ThoughtCollapsible,
   ThoughtSignatureBadge,
+  CodeExecutionCard,
 };
 
 interface ReasoningRootProps {
@@ -460,6 +462,16 @@ function ReasoningTraceBlocks({
               args={entry.argsJson}
               result={entry.resultJson}
               status={entry.status}
+              defaultOpen={defaultOpen}
+            />
+          );
+        }
+
+        if (entry.type === "code_execution") {
+          return (
+            <CodeExecutionCard
+              key={`code-${entry.block.id || idx}`}
+              block={entry.block}
               defaultOpen={defaultOpen}
             />
           );

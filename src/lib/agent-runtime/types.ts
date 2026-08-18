@@ -134,6 +134,7 @@ export interface FormattedSessionThreadMessage {
     name: string;
     result: Record<string, unknown>;
   };
+  codeExecutionBlocks?: import("@/types/agent").AgentCodeExecutionBlock[];
   thought?: string;
   /**
    * The trace behind `thought`, as data. Serialised into the session GET
