@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { useState, memo } from "react";
 import type {
-  AgentCodeExecutionBlock,
+  ArtifactStreamPayload,
   GroundingMetadata,
   MemoryRetrievalItem,
   ReasoningTraceEntry,
@@ -42,6 +42,7 @@ import { MemoryRetrievalBadge } from "@/components/memory/memory-retrieval-badge
 import { GroundingFooter } from "@/components/grounding/grounding-footer";
 import { GroundingProvider } from "@/components/grounding/grounding-context";
 import { StateDeltaChip } from "@/components/session-state/state-delta-chip";
+import { ArtifactChip } from "@/components/artifacts/artifact-chip";
 
 const MESSAGE_GROUP_BY = groupPartByType({
   reasoning: ["group-reasoning"],
@@ -79,6 +80,30 @@ function AssistantMessageGrounding() {
   return <GroundingFooter metadata={groundingMetadata} />;
 }
 
+function AssistantMessageArtifacts() {
+  const artifacts = useAuiState(
+    (s: {
+      message?: {
+        metadata?: {
+          custom?: {
+            artifacts?: ArtifactStreamPayload[];
+          };
+        };
+      };
+    }) => ("message" in s ? s.message?.metadata?.custom?.artifacts : undefined)
+  );
+
+  if (!artifacts || artifacts.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-2 my-2.5">
+      {artifacts.map((art) => (
+        <ArtifactChip key={art.filename} artifact={art} />
+      ))}
+    </div>
+  );
+}
+
 /**
  * A reasoning part, rendered from the structured trace when the message has one.
  *
@@ -104,7 +129,11 @@ function AssistantReasoningPart({ text }: { text: string }) {
   );
 
   return (
-    <ReasoningText text={text} trace={reasoningPartCount === 1 ? trace : undefined} />
+    <ReasoningText
+      text={text}
+      trace={reasoningPartCount === 1 ? trace : undefined}
+      defaultOpen={true}
+    />
   );
 }
 
@@ -324,6 +353,9 @@ function ChatMessageImpl() {
 
             {/* Grounding & Source Citations Footer */}
             <AssistantMessageGrounding />
+
+            {/* Agent Platform Workspace Artifacts */}
+            <AssistantMessageArtifacts />
 
             {/* ADK Session State Delta Chip */}
             <StateDeltaChip />

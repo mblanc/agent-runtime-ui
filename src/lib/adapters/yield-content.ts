@@ -2,6 +2,7 @@ import type { ChatModelRunResult } from "@assistant-ui/react";
 import type {
   AgentCodeExecutionBlock,
   AgentMessageInfoMetadata,
+  ArtifactStreamPayload,
   GroundingMetadata,
   MemoryRetrievalItem,
   ReasoningTraceEntry,
@@ -53,6 +54,8 @@ export interface YieldContentFields {
   retrievedMemories?: MemoryRetrievalItem[];
   groundingMetadata?: GroundingMetadata;
   messageInfo?: AgentMessageInfoMetadata;
+  artifacts?: ArtifactStreamPayload[];
+  artifactEvent?: ArtifactStreamPayload;
 }
 
 export function createYieldContent({
@@ -65,6 +68,8 @@ export function createYieldContent({
   retrievedMemories,
   groundingMetadata,
   messageInfo,
+  artifacts,
+  artifactEvent,
 }: YieldContentFields): ChatModelRunResult {
   const hasRequiresAction = (toolCalls || []).some(
     (tc) => tc.status?.type === "requires-action" && tc.result === undefined
@@ -96,6 +101,8 @@ export function createYieldContent({
     (retrievedMemories && retrievedMemories.length > 0) ||
     (reasoningTrace && reasoningTrace.length > 0) ||
     (codeExecutionBlocks && codeExecutionBlocks.length > 0) ||
+    (artifacts && artifacts.length > 0) ||
+    artifactEvent ||
     groundingMetadata ||
     messageInfo
       ? {
@@ -109,6 +116,8 @@ export function createYieldContent({
               ...(retrievedMemories && retrievedMemories.length > 0
                 ? { retrievedMemories }
                 : {}),
+              ...(artifacts && artifacts.length > 0 ? { artifacts } : {}),
+              ...(artifactEvent ? { artifactEvent } : {}),
               ...(groundingMetadata ? { groundingMetadata } : {}),
               ...(messageInfo?.invocationId
                 ? { invocationId: messageInfo.invocationId }

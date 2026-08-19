@@ -6,6 +6,7 @@ import type {
   CodeExecutionResultData,
   ExecutableCodeData,
 } from "./message-parts";
+import type { ArtifactStreamPayload } from "./artifacts";
 
 /**
  * A streaming event after normalisation, and the only stream shape that exists
@@ -40,6 +41,8 @@ export interface AgentStreamEvent {
     | "tool_result"
     | "executable_code"
     | "code_execution_result"
+    | "artifact_created"
+    | "artifact_updated"
     | "error"
     | "done";
   eventId?: string;
@@ -80,6 +83,7 @@ export interface AgentStreamEvent {
   codeExecutionBlock?: AgentCodeExecutionBlock;
   retrieved_memories?: MemoryRetrievalItem[];
   groundingMetadata?: GroundingMetadata;
+  artifact?: ArtifactStreamPayload;
   /**
    * Still dual-spelled *inside*: `AgentUsageMetadata` is shared with
    * `AgentSessionEvent`, which takes it straight from the Sessions REST API in

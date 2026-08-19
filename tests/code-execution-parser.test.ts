@@ -4,8 +4,16 @@ import { ansiToHtml } from "@/lib/code-execution/ansi-to-html";
 
 describe("parseCodeExecutionOutput", () => {
   it("returns empty stdout and images when given empty or undefined input", () => {
-    expect(parseCodeExecutionOutput()).toEqual({ stdout: "", images: [] });
-    expect(parseCodeExecutionOutput("")).toEqual({ stdout: "", images: [] });
+    expect(parseCodeExecutionOutput()).toEqual({
+      stdout: "",
+      images: [],
+      savedArtifacts: [],
+    });
+    expect(parseCodeExecutionOutput("")).toEqual({
+      stdout: "",
+      images: [],
+      savedArtifacts: [],
+    });
   });
 
   it("extracts pure stdout when no images are present", () => {
@@ -43,6 +51,13 @@ describe("parseCodeExecutionOutput", () => {
 
     const result = parseCodeExecutionOutput(raw);
     expect(result.images).toEqual([img1, img2]);
+  });
+
+  it("extracts saved artifact filenames from sandbox stdout like Saved artifacts:\\noutput_2026-08-18-13-50-21-330452.png", () => {
+    const raw =
+      "Saved artifacts:\noutput_2026-08-18-13-50-21-330452.png\n\nExecution completed successfully.";
+    const result = parseCodeExecutionOutput(raw);
+    expect(result.savedArtifacts).toContain("output_2026-08-18-13-50-21-330452.png");
   });
 });
 

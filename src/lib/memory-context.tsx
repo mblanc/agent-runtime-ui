@@ -253,30 +253,46 @@ export function MemoryProvider({
     });
   }, [memories, activeTopic, searchQuery]);
 
-  return (
-    <MemoryContext.Provider
-      value={{
-        memories,
-        filteredMemories,
-        topics,
-        isLoading,
-        error,
-        activeTopic,
-        searchQuery,
-        isDrawerOpen,
-        setIsDrawerOpen,
-        setTopic: setActiveTopic,
-        setSearchQuery,
-        refreshMemories: fetchMemories,
-        createMemory,
-        updateMemory,
-        deleteMemory,
-        generateMemories,
-      }}
-    >
-      {children}
-    </MemoryContext.Provider>
+  const value = useMemo<MemoryContextValue>(
+    () => ({
+      memories,
+      filteredMemories,
+      topics,
+      isLoading,
+      error,
+      activeTopic,
+      searchQuery,
+      isDrawerOpen,
+      setIsDrawerOpen,
+      setTopic: setActiveTopic,
+      setSearchQuery,
+      refreshMemories: fetchMemories,
+      createMemory,
+      updateMemory,
+      deleteMemory,
+      generateMemories,
+    }),
+    [
+      memories,
+      filteredMemories,
+      topics,
+      isLoading,
+      error,
+      activeTopic,
+      searchQuery,
+      isDrawerOpen,
+      setIsDrawerOpen,
+      setActiveTopic,
+      setSearchQuery,
+      fetchMemories,
+      createMemory,
+      updateMemory,
+      deleteMemory,
+      generateMemories,
+    ]
   );
+
+  return <MemoryContext.Provider value={value}>{children}</MemoryContext.Provider>;
 }
 
 export function useMemory(): MemoryContextValue {

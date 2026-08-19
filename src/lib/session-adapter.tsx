@@ -40,12 +40,16 @@ interface SessionApiItem {
 function mergeCustomMetadata(
   metadata: { custom?: Record<string, unknown> },
   reasoningTrace: unknown[] | undefined,
-  codeExecutionBlocks: unknown[] | undefined
+  codeExecutionBlocks: unknown[] | undefined,
+  artifacts?: unknown[] | undefined
 ): Record<string, unknown> {
   const custom = { ...(metadata.custom || {}) };
   if (reasoningTrace) custom.reasoningTrace = reasoningTrace;
   if (codeExecutionBlocks && !custom.codeExecutionBlocks) {
     custom.codeExecutionBlocks = codeExecutionBlocks;
+  }
+  if (artifacts && !custom.artifacts) {
+    custom.artifacts = artifacts;
   }
   return {
     ...metadata,
@@ -64,10 +68,6 @@ export function formatRemoteMessagesToThreadMessages(
     const thoughtStr = typeof m.thought === "string" ? m.thought.trim() : "";
     const contentStr = typeof m.content === "string" ? m.content.trim() : "";
 
-    if (thoughtStr) {
-      parts.push({ type: "reasoning", text: thoughtStr });
-    }
-
     // The structured trace behind `thought`. This side of the pipe is typed as
     // `Record<string, unknown>` because it is raw JSON off the session API, so
     // the only check worth making is that it is an array — an older backend, or
@@ -79,6 +79,11 @@ export function formatRemoteMessagesToThreadMessages(
       : Array.isArray(m.code_execution_blocks)
         ? (m.code_execution_blocks as unknown[])
         : undefined;
+    const artifacts = Array.isArray(m.artifacts) ? m.artifacts : undefined;
+
+    if (thoughtStr) {
+      parts.push({ type: "reasoning", text: thoughtStr });
+    }
 
     // Extract tool calls from session message
     const toolCalls =
@@ -170,7 +175,8 @@ export function formatRemoteMessagesToThreadMessages(
           custom: { ...(m.id ? { eventId: m.id } : {}) },
         },
         reasoningTrace,
-        codeExecutionBlocks
+        codeExecutionBlocks,
+        artifacts
       ),
     } as unknown as ThreadMessageLike;
   });

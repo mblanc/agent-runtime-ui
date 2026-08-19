@@ -13,3 +13,4 @@ export * from "./event-utils";
 export * from "./group-turns";
 export * from "./to-thread-messages";
 export * from "./parse-event";
+export * from "@/lib/artifacts/artifact-extractor";

@@ -106,8 +106,28 @@ export function extractTextFromQueryOutput(output: unknown): {
           text += (text ? "\n" : "") + part;
         } else if (part && typeof part === "object") {
           const p = part as Record<string, unknown>;
-          if (p.thought) thoughts.push(String(p.thought));
-          if (p.text) text += (text ? "\n" : "") + String(p.text);
+          const isThought =
+            p.thought === true ||
+            (typeof p.thought === "string" && Boolean(p.thought.trim())) ||
+            (p.thought && typeof p.thought === "object");
+
+          if (isThought) {
+            const thoughtText =
+              typeof p.thought === "string" && p.thought.trim() && p.thought !== "true"
+                ? p.thought.trim()
+                : typeof p.text === "string"
+                  ? p.text.trim()
+                  : p.thought &&
+                      typeof p.thought === "object" &&
+                      typeof (p.thought as Record<string, unknown>).text === "string"
+                    ? ((p.thought as Record<string, unknown>).text as string).trim()
+                    : "";
+            if (thoughtText) {
+              thoughts.push(thoughtText);
+            }
+          } else if (p.text) {
+            text += (text ? "\n" : "") + String(p.text);
+          }
 
           // Both casings, as everywhere else that reads parts off the wire.
           // This helper only ever looked at `functionCall`, so a snake_case

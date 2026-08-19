@@ -451,3 +451,41 @@ describe("StreamAccumulator — prior-message tool results", () => {
     expect(toolCalls(acc.snapshot())).toHaveLength(0);
   });
 });
+
+describe("StreamAccumulator — streamed content artifact extraction", () => {
+  it("extracts HTML artifact from streamed markdown content in interactive mode", () => {
+    const acc = new StreamAccumulator();
+    acc.handle({
+      event_type: "content",
+      content:
+        "Here is the presentation page:\n\n```html\n<!DOCTYPE html>\n<html>\n<head><title>Gemini Enterprise Agent Platform</title></head>\n<body><h1>Welcome</h1></body>\n</html>\n```",
+    });
+
+    const arts = acc.getArtifacts();
+    expect(arts).toHaveLength(1);
+    expect(arts[0].filename).toBe("index.html");
+    expect(arts[0].title).toBe("Gemini Enterprise Agent Platform");
+    expect(arts[0].mimeType).toBe("text/html");
+    expect(arts[0].content).toContain("<h1>Welcome</h1>");
+
+    const snap = acc.snapshot();
+    const snapCustom = snap.metadata?.custom as { artifacts?: typeof arts } | undefined;
+    expect(snapCustom?.artifacts).toHaveLength(1);
+    expect(snapCustom?.artifacts?.[0].filename).toBe("index.html");
+  });
+
+  it("extracts SVG artifact from streamed markdown content", () => {
+    const acc = new StreamAccumulator();
+    acc.handle({
+      event_type: "content",
+      content:
+        'Here is the icon **elephant.svg**:\n\n```xml\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path d="M10 10" /></svg>\n```',
+    });
+
+    const arts = acc.getArtifacts();
+    expect(arts).toHaveLength(1);
+    expect(arts[0].filename).toBe("elephant.svg");
+    expect(arts[0].mimeType).toBe("image/svg+xml");
+    expect(arts[0].content).toContain("<svg");
+  });
+});

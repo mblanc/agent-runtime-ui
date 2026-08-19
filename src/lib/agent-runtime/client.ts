@@ -1,10 +1,12 @@
 import {
+  AgentArtifact,
   AgentFeedbackRequest,
   AgentFeedbackResponse,
   AgentMemory,
   AgentSession,
   AgentSessionEvent,
   AgentStreamEvent,
+  ArtifactVersion,
   ChatRequestBody,
   ListAgentsResponse,
   MemoryRetrievalItem,
@@ -13,6 +15,7 @@ import {
 import { IAgentRuntimeProvider } from "./types";
 import {
   VertexAiAgentService,
+  VertexAiArtifactService,
   VertexAiContext,
   VertexAiFeedbackService,
   VertexAiMemoryService,
@@ -30,6 +33,7 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
   private context: VertexAiContext;
   private agents: VertexAiAgentService;
   private sessions: VertexAiSessionService;
+  private artifacts: VertexAiArtifactService;
   private memories: VertexAiMemoryService;
   private feedback: VertexAiFeedbackService;
   private streaming: VertexAiStreamingService;
@@ -42,6 +46,11 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
     this.context = new VertexAiContext(overrideEngineId, overrideLocation, tokenGetter);
     this.agents = new VertexAiAgentService(this.context);
     this.sessions = new VertexAiSessionService(this.context, this.agents);
+    this.artifacts = new VertexAiArtifactService(
+      this.context,
+      this.sessions,
+      this.agents
+    );
     this.memories = new VertexAiMemoryService(this.context, this.agents);
     this.feedback = new VertexAiFeedbackService(this.context, this.sessions, this.agents);
     this.streaming = new VertexAiStreamingService(this.context);
@@ -253,6 +262,35 @@ export class VertexAiReasoningEngineProvider implements IAgentRuntimeProvider {
     location?: string
   ): Promise<MemoryRetrievalItem[]> {
     return this.memories.retrieveMemories(userId, query, agentId, location);
+  }
+
+  // --- Domain: Artifacts ---
+
+  async listArtifacts(
+    sessionId: string,
+    userId: string,
+    agentId?: string,
+    location?: string
+  ): Promise<AgentArtifact[]> {
+    return this.artifacts.listArtifacts(sessionId, userId, agentId, location);
+  }
+
+  async getArtifact(
+    sessionId: string,
+    filename: string,
+    version?: number,
+    userId?: string,
+    agentId?: string,
+    location?: string
+  ): Promise<{ artifact: AgentArtifact; selectedVersion: ArtifactVersion } | null> {
+    return this.artifacts.getArtifact(
+      sessionId,
+      filename,
+      version,
+      userId,
+      agentId,
+      location
+    );
   }
 
   // --- Domain: Query Streaming ---

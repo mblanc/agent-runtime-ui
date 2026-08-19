@@ -1,6 +1,11 @@
-import { AgentSessionEvent, ReasoningTraceEntry } from "@/types/agent";
+import {
+  AgentSessionEvent,
+  ArtifactStreamPayload,
+  ReasoningTraceEntry,
+} from "@/types/agent";
 import { FormattedSessionThreadMessage } from "./types";
 import { extractGroundingMetadata } from "@/lib/grounding/citation-parser";
+import { extractArtifactsFromSessionEvent } from "@/lib/artifacts/artifact-extractor";
 
 /**
  * Shapes grouped session events into assistant-ui thread messages.
@@ -27,6 +32,7 @@ export function formatSessionEventsToThreadMessages(
     const e = events[i];
     const content = (e.content || "").trim();
     const thought = (e.thought || "").trim();
+
     const hasToolCalls = Boolean(
       (e.tool_calls && e.tool_calls.length > 0) || e.tool_call
     );
@@ -46,8 +52,10 @@ export function formatSessionEventsToThreadMessages(
     const finishReason = e.finishReason || e.finish_reason;
     const timestamp = e.timestamp;
 
-    if (thought) {
-      accumulatedThoughts.push(thought);
+    const effectiveThought = thought && thought !== content ? thought : "";
+
+    if (effectiveThought) {
+      accumulatedThoughts.push(effectiveThought);
       if (e.reasoningTrace?.length) {
         accumulatedTrace.push(...e.reasoningTrace);
       } else {
@@ -87,6 +95,17 @@ export function formatSessionEventsToThreadMessages(
     const hasCodeExecution = Boolean(
       codeExecutionBlocks && codeExecutionBlocks.length > 0
     );
+    const extractedArtifacts = [
+      ...extractArtifactsFromSessionEvent(e),
+      ...((e.artifacts as unknown as ArtifactStreamPayload[]) || []),
+    ];
+    const uniqueArtifacts: ArtifactStreamPayload[] = [];
+    for (const a of extractedArtifacts) {
+      if (!uniqueArtifacts.some((existing) => existing.filename === a.filename)) {
+        uniqueArtifacts.push(a);
+      }
+    }
+    const hasArtifacts = uniqueArtifacts.length > 0;
 
     if (
       content ||
@@ -95,6 +114,7 @@ export function formatSessionEventsToThreadMessages(
       hasToolCalls ||
       hasToolResults ||
       hasCodeExecution ||
+      hasArtifacts ||
       groundingMetadata
     ) {
       threadMessages.push({
@@ -114,6 +134,7 @@ export function formatSessionEventsToThreadMessages(
         toolCall: e.tool_call,
         toolResult: e.tool_result,
         ...(hasCodeExecution ? { codeExecutionBlocks } : {}),
+        ...(hasArtifacts ? { artifacts: uniqueArtifacts } : {}),
         metadata: {
           custom: {
             ...(e.id ? { eventId: e.id } : {}),
@@ -129,6 +150,7 @@ export function formatSessionEventsToThreadMessages(
             ...(timestamp !== undefined ? { timestamp } : {}),
             ...(groundingMetadata ? { groundingMetadata } : {}),
             ...(hasCodeExecution ? { codeExecutionBlocks } : {}),
+            ...(hasArtifacts ? { artifacts: uniqueArtifacts } : {}),
           },
         },
       });

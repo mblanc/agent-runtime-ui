@@ -1,10 +1,12 @@
 import type {
+  AgentArtifact,
   AgentFeedbackRequest,
   AgentFeedbackResponse,
   AgentMemory,
   AgentSession,
   AgentSessionEvent,
   AgentStreamEvent,
+  ArtifactVersion,
   ChatRequestBody,
   ListAgentsResponse,
   MemoryRetrievalItem,
@@ -93,6 +95,20 @@ export interface IAgentRuntimeProvider {
     agentId?: string,
     location?: string
   ): Promise<MemoryRetrievalItem[]>;
+  listArtifacts(
+    sessionId: string,
+    userId: string,
+    agentId?: string,
+    location?: string
+  ): Promise<AgentArtifact[]>;
+  getArtifact(
+    sessionId: string,
+    filename: string,
+    version?: number,
+    userId?: string,
+    agentId?: string,
+    location?: string
+  ): Promise<{ artifact: AgentArtifact; selectedVersion: ArtifactVersion } | null>;
   streamQuery(
     request: ChatRequestBody,
     userId: string,

@@ -78,12 +78,15 @@ export interface AgentNodeInfo {
 export interface AgentActionsDelta {
   state_delta?: SessionStateMap;
   stateDelta?: SessionStateMap;
+  artifact?: unknown;
+  artifacts?: unknown[];
   artifact_delta?: Record<string, unknown>;
   artifactDelta?: Record<string, unknown>;
   requested_auth_configs?: Record<string, unknown>;
   requestedAuthConfigs?: Record<string, unknown>;
   requested_tool_confirmations?: Record<string, unknown>;
   requestedToolConfirmations?: Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 export interface AgentMessageInfoMetadata {

@@ -11,6 +11,7 @@ import {
 import { extractGroundingMetadata } from "@/lib/grounding/citation-parser";
 import { parseCodeExecutionOutput } from "@/lib/code-execution/output-parser";
 import { extractToolCall, extractToolResult, safeParseJson } from "./event-utils";
+import { extractArtifactsFromSessionEvent } from "@/lib/artifacts/artifact-extractor";
 
 /**
  * Defensive parsing of a single untyped Vertex session event.
@@ -118,7 +119,10 @@ export function parseRawSessionEvent(
             const p = part as Record<string, unknown>;
             const isPartThought =
               p.thought === true ||
-              (typeof p.thought === "string" && Boolean(p.thought.trim())) ||
+              (typeof p.thought === "string" &&
+                p.thought.trim().toLowerCase() !== "false" &&
+                p.thought.trim() !== "0" &&
+                Boolean(p.thought.trim())) ||
               (p.thought && typeof p.thought === "object");
 
             if (isPartThought) {
@@ -149,12 +153,15 @@ export function parseRawSessionEvent(
               const language = String(
                 execCode.language || "PYTHON"
               ) as CodeExecutionLanguage;
-              parsedCodeBlocks.push({
-                id: `code-${sessionId}-${parsedCodeBlocks.length}`,
-                language,
-                code,
-                status: "running",
-              });
+              const existing = parsedCodeBlocks.find((b) => b.code === code);
+              if (!existing) {
+                parsedCodeBlocks.push({
+                  id: `code-${sessionId}-${parsedCodeBlocks.length}`,
+                  language,
+                  code,
+                  status: "running",
+                });
+              }
             }
 
             const codeRes = (p.code_execution_result || p.codeExecutionResult) as
@@ -176,11 +183,16 @@ export function parseRawSessionEvent(
                 resData.outcome === "OUTCOME_DEADLINE_EXCEEDED";
               const blockStatus = isError ? "error" : "complete";
 
-              const lastBlock = parsedCodeBlocks[parsedCodeBlocks.length - 1];
-              if (lastBlock && !lastBlock.result) {
-                lastBlock.result = resData;
-                lastBlock.status = blockStatus;
-              } else {
+              const pendingBlock = parsedCodeBlocks
+                .slice()
+                .reverse()
+                .find((b) => b.code && !b.result);
+              if (pendingBlock) {
+                pendingBlock.result = resData;
+                pendingBlock.status = blockStatus;
+              } else if (
+                !parsedCodeBlocks.some((b) => b.result?.output === resData.output)
+              ) {
                 parsedCodeBlocks.push({
                   id: `code-res-${sessionId}-${parsedCodeBlocks.length}`,
                   language: "PYTHON",
@@ -195,30 +207,32 @@ export function parseRawSessionEvent(
         return;
       }
 
-      const isRecordThought =
-        record.thought === true ||
-        (typeof record.thought === "string" && Boolean(record.thought.trim())) ||
-        (record.thought && typeof record.thought === "object") ||
-        (typeof record.reasoning === "string" && Boolean(record.reasoning.trim()));
-
-      if (isRecordThought) {
-        if (typeof record.thought === "string" && record.thought.trim()) {
-          thoughtPieces.push(record.thought.trim());
-        } else if (record.thought && typeof record.thought === "object") {
-          const t = record.thought as Record<string, unknown>;
-          if (typeof t.text === "string" && t.text.trim()) {
-            thoughtPieces.push(t.text.trim());
-          }
-        } else if (typeof record.reasoning === "string" && record.reasoning.trim()) {
-          thoughtPieces.push(record.reasoning.trim());
-        } else if (typeof record.text === "string" && record.text.trim()) {
-          thoughtPieces.push(record.text.trim());
-        } else if (typeof record.content === "string" && record.content.trim()) {
-          thoughtPieces.push(record.content.trim());
+      if (
+        typeof record.thought === "string" &&
+        record.thought.trim() &&
+        record.thought !== "true"
+      ) {
+        thoughtPieces.push(record.thought.trim());
+      } else if (record.thought && typeof record.thought === "object") {
+        const t = record.thought as Record<string, unknown>;
+        if (typeof t.text === "string" && t.text.trim()) {
+          thoughtPieces.push(t.text.trim());
         }
-      } else {
-        if (typeof record.text === "string" && record.text.trim()) {
+      } else if (typeof record.reasoning === "string" && record.reasoning.trim()) {
+        thoughtPieces.push(record.reasoning.trim());
+      }
+
+      if (typeof record.text === "string" && record.text.trim()) {
+        if (record.thought === true && !record.content) {
+          thoughtPieces.push(record.text.trim());
+        } else {
           textPieces.push(record.text.trim());
+        }
+      } else if (typeof record.content === "string" && record.content.trim()) {
+        if (record.thought === true) {
+          thoughtPieces.push(record.content.trim());
+        } else {
+          textPieces.push(record.content.trim());
         }
       }
 
@@ -253,7 +267,11 @@ export function parseRawSessionEvent(
         const blocks = (record.codeExecutionBlocks ||
           record.code_execution_blocks) as AgentCodeExecutionBlock[];
         for (const block of blocks) {
-          if (!parsedCodeBlocks.some((b) => b.id === block.id)) {
+          if (
+            !parsedCodeBlocks.some(
+              (b) => b.id === block.id || (b.code && b.code === block.code)
+            )
+          ) {
             parsedCodeBlocks.push(block);
           }
         }
@@ -280,11 +298,17 @@ export function parseRawSessionEvent(
     }
   };
 
-  if (config.content) inspectObject(config.content);
-  if (config.raw_event || config.rawEvent)
+  if (root.thought) inspectObject({ thought: root.thought });
+  if (config.thought) inspectObject({ thought: config.thought });
+  if (root.content) {
+    inspectObject(root.content);
+  } else if (config.content) {
+    inspectObject(config.content);
+  } else if (root.raw_event || root.rawEvent) {
+    inspectObject(root.raw_event || root.rawEvent);
+  } else if (config.raw_event || config.rawEvent) {
     inspectObject(config.raw_event || config.rawEvent);
-  if (root.content && root.content !== config.content) inspectObject(root.content);
-  if (root.raw_event || root.rawEvent) inspectObject(root.raw_event || root.rawEvent);
+  }
   if (root.userQuery || root.user_query) inspectObject(root.userQuery || root.user_query);
   if (root.modelResponse || root.model_response)
     inspectObject(root.modelResponse || root.model_response);
@@ -680,6 +704,19 @@ export function parseRawSessionEvent(
       ? { finishReason: finishReasonStr, finish_reason: finishReasonStr }
       : {}),
     ...(timestampVal !== undefined ? { timestamp: timestampVal } : {}),
+    ...(() => {
+      const extractedArts = extractArtifactsFromSessionEvent({
+        ...root,
+        content,
+        tool_calls: uniqueToolCalls,
+        tool_results: uniqueToolResults,
+        actions: actionsObj,
+        rawEvent,
+      });
+      return extractedArts.length > 0
+        ? { artifacts: extractedArts, artifact: extractedArts[0] }
+        : {};
+    })(),
     rawEvent: Object.keys(rawEvent).length > 0 ? rawEvent : root,
   };
 }

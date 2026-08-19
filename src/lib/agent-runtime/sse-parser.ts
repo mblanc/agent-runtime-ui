@@ -12,6 +12,13 @@ import {
   isSubagentNode,
 } from "./event-normalizer";
 import { extractGroundingMetadata } from "@/lib/grounding/citation-parser";
+import {
+  extractArtifactFromObject,
+  extractArtifactFromTool,
+  inferMimeType,
+  deriveArtifactTitle,
+} from "@/lib/artifacts/artifact-extractor";
+import { parseCodeExecutionOutput } from "@/lib/code-execution/output-parser";
 
 /**
  * An event exactly as it arrived from Vertex AI: any spelling, any nesting.
@@ -22,6 +29,20 @@ import { extractGroundingMetadata } from "@/lib/grounding/citation-parser";
  * `raw_event.invocationId` depending on endpoint and API version.
  * `AgentStreamEvent` is what they produce, and it has exactly one spelling.
  */
+function formatImageContent(img: string): string {
+  if (
+    !img ||
+    img.startsWith("data:") ||
+    img.startsWith("gs://") ||
+    img.startsWith("http://") ||
+    img.startsWith("https://") ||
+    img.startsWith("/")
+  ) {
+    return img;
+  }
+  return `data:image/png;base64,${img}`;
+}
+
 type RawUpstreamEvent = Record<string, unknown>;
 
 function extractEventId(parsed: RawUpstreamEvent): string | undefined {
@@ -707,26 +728,61 @@ export async function* parseSseStream(
 
           const fnCall = part.function_call || part.functionCall;
           if (fnCall) {
+            const parsedTc = parseToolCall(fnCall);
             yield withEventMeta(
               {
                 event_type: "tool_call",
-                tool_call: parseToolCall(fnCall),
+                tool_call: parsedTc,
               },
               partPartial,
               partThoughtSig
             );
+
+            if (parsedTc && parsedTc.name && parsedTc.args) {
+              const art = extractArtifactFromTool(parsedTc.name, parsedTc.args);
+              if (art) {
+                yield withEventMeta(
+                  {
+                    event_type: "artifact_created",
+                    artifact: art,
+                  },
+                  partPartial,
+                  partThoughtSig
+                );
+              }
+            }
           }
 
           const fnResp = part.function_response || part.functionResponse;
           if (fnResp) {
+            const parsedTr = parseToolResult(fnResp);
             yield withEventMeta(
               {
                 event_type: "tool_result",
-                tool_result: parseToolResult(fnResp),
+                tool_result: parsedTr,
               },
               partPartial,
               partThoughtSig
             );
+
+            if (parsedTr && parsedTr.name && parsedTr.result) {
+              const art = extractArtifactFromTool(
+                parsedTr.name,
+                typeof parsedTr.result === "object" && parsedTr.result !== null
+                  ? (parsedTr.result as Record<string, unknown>)
+                  : { output: String(parsedTr.result) }
+              );
+              if (art) {
+                yield withEventMeta(
+                  {
+                    event_type: "artifact_created",
+                    artifact: art,
+                  },
+                  partPartial,
+                  partThoughtSig
+                );
+              }
+            }
           }
 
           const execCode = part.executable_code || part.executableCode;
@@ -746,18 +802,99 @@ export async function* parseSseStream(
 
           const codeRes = part.code_execution_result || part.codeExecutionResult;
           if (codeRes && typeof codeRes === "object") {
+            const rawOutput = String(codeRes.output || "");
+            const parsedOut = parseCodeExecutionOutput(rawOutput);
+            const explicitImgs = Array.isArray(codeRes.generatedImages)
+              ? (codeRes.generatedImages as string[])
+              : [];
+            const allImages = Array.from(new Set([...explicitImgs, ...parsedOut.images]));
+
             yield withEventMeta(
               {
                 event_type: "code_execution_result",
                 code_execution_result: {
                   outcome: String(codeRes.outcome || "OUTCOME_OK"),
-                  output: String(codeRes.output || ""),
+                  output: rawOutput,
                   ...(typeof codeRes.durationMs === "number"
                     ? { durationMs: codeRes.durationMs }
                     : {}),
-                  ...(Array.isArray(codeRes.generatedImages)
-                    ? { generatedImages: codeRes.generatedImages as string[] }
-                    : {}),
+                  ...(allImages.length > 0 ? { generatedImages: allImages } : {}),
+                },
+              },
+              partPartial,
+              partThoughtSig
+            );
+
+            if (parsedOut.savedArtifacts && parsedOut.savedArtifacts.length > 0) {
+              for (let sIdx = 0; sIdx < parsedOut.savedArtifacts.length; sIdx++) {
+                const savedFile = parsedOut.savedArtifacts[sIdx];
+                const mime = inferMimeType(savedFile);
+                const imgData = allImages[sIdx] || allImages[0] || "";
+                yield withEventMeta(
+                  {
+                    event_type: "artifact_created",
+                    artifact: {
+                      filename: savedFile,
+                      title: deriveArtifactTitle(savedFile, "Generated Artifact"),
+                      mimeType: mime,
+                      version: 0,
+                      content: mime.startsWith("image/")
+                        ? formatImageContent(imgData)
+                        : "",
+                      ...(imgData.startsWith("gs://") ? { gcsUri: imgData } : {}),
+                      isComplete: true,
+                    },
+                  },
+                  partPartial,
+                  partThoughtSig
+                );
+              }
+            } else {
+              for (let imgIdx = 0; imgIdx < allImages.length; imgIdx++) {
+                const imgData = allImages[imgIdx];
+                if (imgData) {
+                  const filename = `graph_${imgIdx + 1}.png`;
+                  yield withEventMeta(
+                    {
+                      event_type: "artifact_created",
+                      artifact: {
+                        filename,
+                        title: deriveArtifactTitle(filename, "Generated Plot"),
+                        mimeType: "image/png",
+                        version: 0,
+                        content: formatImageContent(imgData),
+                        ...(imgData.startsWith("gs://") ? { gcsUri: imgData } : {}),
+                        isComplete: true,
+                      },
+                    },
+                    partPartial,
+                    partThoughtSig
+                  );
+                }
+              }
+            }
+          }
+
+          const inlineData = (part.inline_data || part.inlineData) as
+            Record<string, unknown> | undefined;
+          if (inlineData && inlineData.data) {
+            const mimeType = String(
+              inlineData.mime_type || inlineData.mimeType || "image/png"
+            );
+            const base64Data = String(inlineData.data);
+            const content = base64Data.startsWith("data:")
+              ? base64Data
+              : `data:${mimeType};base64,${base64Data}`;
+            yield withEventMeta(
+              {
+                event_type: "artifact_created",
+                artifact: {
+                  filename: "generated_plot.png",
+                  title: "Generated Plot",
+                  mimeType,
+                  version: 0,
+                  content,
+                  isComplete: true,
                 },
               },
               partPartial,
@@ -780,19 +917,63 @@ export async function* parseSseStream(
       } else if (parsed.code_execution_result || parsed.codeExecutionResult) {
         const codeRes = (parsed.code_execution_result ||
           parsed.codeExecutionResult) as Record<string, unknown>;
+        const rawOutput = String(codeRes.output || "");
+        const parsedOut = parseCodeExecutionOutput(rawOutput);
+        const explicitImgs = Array.isArray(codeRes.generatedImages)
+          ? (codeRes.generatedImages as string[])
+          : [];
+        const allImages = Array.from(new Set([...explicitImgs, ...parsedOut.images]));
+
         yield withEventMeta({
           event_type: "code_execution_result",
           code_execution_result: {
             outcome: String(codeRes.outcome || "OUTCOME_OK"),
-            output: String(codeRes.output || ""),
+            output: rawOutput,
             ...(typeof codeRes.durationMs === "number"
               ? { durationMs: codeRes.durationMs }
               : {}),
-            ...(Array.isArray(codeRes.generatedImages)
-              ? { generatedImages: codeRes.generatedImages as string[] }
-              : {}),
+            ...(allImages.length > 0 ? { generatedImages: allImages } : {}),
           },
         });
+
+        if (parsedOut.savedArtifacts && parsedOut.savedArtifacts.length > 0) {
+          for (let sIdx = 0; sIdx < parsedOut.savedArtifacts.length; sIdx++) {
+            const savedFile = parsedOut.savedArtifacts[sIdx];
+            const mime = inferMimeType(savedFile);
+            const imgData = allImages[sIdx] || allImages[0] || "";
+            yield withEventMeta({
+              event_type: "artifact_created",
+              artifact: {
+                filename: savedFile,
+                title: deriveArtifactTitle(savedFile, "Generated Artifact"),
+                mimeType: mime,
+                version: 0,
+                content: mime.startsWith("image/") ? formatImageContent(imgData) : "",
+                ...(imgData.startsWith("gs://") ? { gcsUri: imgData } : {}),
+                isComplete: true,
+              },
+            });
+          }
+        } else {
+          for (let imgIdx = 0; imgIdx < allImages.length; imgIdx++) {
+            const imgData = allImages[imgIdx];
+            if (imgData) {
+              const filename = `graph_${imgIdx + 1}.png`;
+              yield withEventMeta({
+                event_type: "artifact_created",
+                artifact: {
+                  filename,
+                  title: deriveArtifactTitle(filename, "Generated Plot"),
+                  mimeType: "image/png",
+                  version: 0,
+                  content: formatImageContent(imgData),
+                  ...(imgData.startsWith("gs://") ? { gcsUri: imgData } : {}),
+                  isComplete: true,
+                },
+              });
+            }
+          }
+        }
       } else if (parsed.text) {
         const isRoot = isRootWorkflowOutput(parsed);
         const isSubAgent = !isRoot && isSubagentNode(parsed);
@@ -832,27 +1013,105 @@ export async function* parseSseStream(
           thought: thoughtStr,
         });
       } else if (parsed.function_call || parsed.functionCall) {
+        const parsedTc = parseToolCall(parsed.function_call || parsed.functionCall);
         yield withEventMeta({
           event_type: "tool_call",
-          tool_call: parseToolCall(parsed.function_call || parsed.functionCall),
+          tool_call: parsedTc,
         });
+        if (parsedTc && parsedTc.name && parsedTc.args) {
+          const art = extractArtifactFromTool(parsedTc.name, parsedTc.args);
+          if (art) {
+            yield withEventMeta({
+              event_type: "artifact_created",
+              artifact: art,
+            });
+          }
+        }
       } else if (parsed.function_response || parsed.functionResponse) {
+        const parsedTr = parseToolResult(
+          parsed.function_response || parsed.functionResponse
+        );
         yield withEventMeta({
           event_type: "tool_result",
-          tool_result: parseToolResult(
-            parsed.function_response || parsed.functionResponse
-          ),
+          tool_result: parsedTr,
         });
+        if (parsedTr && parsedTr.name && parsedTr.result) {
+          const art = extractArtifactFromTool(
+            parsedTr.name,
+            typeof parsedTr.result === "object" && parsedTr.result !== null
+              ? (parsedTr.result as Record<string, unknown>)
+              : { output: String(parsedTr.result) }
+          );
+          if (art) {
+            yield withEventMeta({
+              event_type: "artifact_created",
+              artifact: art,
+            });
+          }
+        }
       } else if (parsed.tool_call) {
         yield withEventMeta({
           event_type: "tool_call",
           tool_call: parsed.tool_call,
         });
+        if (parsed.tool_call.name && parsed.tool_call.args) {
+          const art = extractArtifactFromTool(
+            parsed.tool_call.name,
+            parsed.tool_call.args
+          );
+          if (art) {
+            yield withEventMeta({
+              event_type: "artifact_created",
+              artifact: art,
+            });
+          }
+        }
       } else if (parsed.tool_result) {
         yield withEventMeta({
           event_type: "tool_result",
           tool_result: parsed.tool_result,
         });
+        if (parsed.tool_result.name && parsed.tool_result.result) {
+          const art = extractArtifactFromTool(
+            parsed.tool_result.name,
+            typeof parsed.tool_result.result === "object" &&
+              parsed.tool_result.result !== null
+              ? (parsed.tool_result.result as Record<string, unknown>)
+              : { output: String(parsed.tool_result.result) }
+          );
+          if (art) {
+            yield withEventMeta({
+              event_type: "artifact_created",
+              artifact: art,
+            });
+          }
+        }
+      } else if (
+        parsed.event_type === "artifact_created" ||
+        parsed.event_type === "artifact_updated"
+      ) {
+        yield withEventMeta({
+          event_type: parsed.event_type,
+          artifact: parsed.artifact
+            ? (extractArtifactFromObject(parsed.artifact) ?? parsed.artifact)
+            : undefined,
+        });
+      } else if (parsed.artifact) {
+        const art = extractArtifactFromObject(parsed.artifact);
+        if (art) {
+          yield withEventMeta({
+            event_type: "artifact_created",
+            artifact: art,
+          });
+        }
+      } else if (meta.actions?.artifact || meta.actions?.artifacts) {
+        const actionArt = extractArtifactFromObject(meta.actions?.artifact);
+        if (actionArt) {
+          yield withEventMeta({
+            event_type: "artifact_created",
+            artifact: actionArt,
+          });
+        }
       } else if (parsed.error || parsed.error_message) {
         const errStr =
           typeof parsed.error === "string"

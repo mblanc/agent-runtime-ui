@@ -19,12 +19,14 @@ import { GeminiThread } from "@/components/assistant-ui/gemini-thread";
 import { AgentHeaderSelector } from "@/components/agent-switcher/agent-header-selector";
 import { MemoryHeaderButton } from "@/components/memory/memory-header-button";
 import { SessionStateHeaderButton } from "@/components/session-state/session-state-header-button";
+import { ArtifactsHeaderButton } from "@/components/artifacts/artifacts-header-button";
 import { AgentProvider, useActiveAgent } from "@/lib/agent-context";
 import { MemoryProvider } from "@/lib/memory-context";
 import {
   SessionStateProvider,
   useOptionalSessionState,
 } from "@/lib/session-state/state-context";
+import { ArtifactProvider, useOptionalArtifacts } from "@/lib/artifacts/artifact-context";
 import { useSession } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
@@ -40,6 +42,11 @@ const SessionStateDrawer = dynamic(
     import("@/components/session-state/session-state-drawer").then(
       (m) => m.SessionStateDrawer
     ),
+  { ssr: false }
+);
+
+const ArtifactsCanvas = dynamic(
+  () => import("@/components/artifacts/artifacts-canvas").then((m) => m.ArtifactsCanvas),
   { ssr: false }
 );
 
@@ -85,13 +92,24 @@ function ChatContent() {
     }
   }, []);
 
+  const sessionState = useOptionalSessionState();
+  const setActiveSessionIdRef = useRef(sessionState?.setActiveSessionId);
+  setActiveSessionIdRef.current = sessionState?.setActiveSessionId;
+
+  const artifactsContext = useOptionalArtifacts();
+  const setArtifactsSessionIdRef = useRef(artifactsContext?.setActiveSessionId);
+  setArtifactsSessionIdRef.current = artifactsContext?.setActiveSessionId;
+  const ingestStreamArtifactRef = useRef(artifactsContext?.ingestStreamArtifact);
+  ingestStreamArtifactRef.current = artifactsContext?.ingestStreamArtifact;
+
   const chatAdapter = useMemo(
     () =>
       createGeminiChatAdapter(
         () => activeThreadIdRef.current,
         () => activeAgentIdRef.current,
         () => activeLocationRef.current,
-        getThreadMessages
+        getThreadMessages,
+        (art) => ingestStreamArtifactRef.current?.(art)
       ),
     [getThreadMessages]
   );
@@ -110,13 +128,10 @@ function ChatContent() {
   const dictationAdapter = useMemo(() => createWebSpeechDictationAdapter(), []);
   const speechAdapter = useMemo(() => createWebSpeechSynthesisAdapter(), []);
 
-  const sessionState = useOptionalSessionState();
-  const setActiveSessionIdRef = useRef(sessionState?.setActiveSessionId);
-  setActiveSessionIdRef.current = sessionState?.setActiveSessionId;
-
   const handleThreadIdChange = useCallback((newId: string | undefined) => {
     activeThreadIdRef.current = newId;
     setActiveSessionIdRef.current?.(newId);
+    setArtifactsSessionIdRef.current?.(newId);
   }, []);
 
   const runtime = useRemoteThreadListRuntime({
@@ -142,6 +157,10 @@ function ChatContent() {
     runtime.threads.switchToNewThread();
   }, [runtime]);
 
+  const isCanvasOpen = Boolean(artifactsContext?.isOpen);
+  const isFullscreen = Boolean(artifactsContext?.isFullscreen);
+  const splitRatio = artifactsContext?.splitRatio ?? 0.5;
+
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <div className="flex h-screen w-full overflow-hidden bg-[#fdfcfc] text-[#1f1f1f] dark:bg-[#0c0c0c] dark:text-[#e3e3e3]">
@@ -150,17 +169,38 @@ function ChatContent() {
 
         {/* Main Gemini Thread Area with Top Header */}
         <main className="flex flex-1 flex-col overflow-hidden">
-          {/* Top Header with Agent Switcher, Memory Bank & Session State Button */}
+          {/* Top Header with Agent Switcher, Memory Bank, Session State & Artifacts Canvas Button */}
           <header className="flex h-14 shrink-0 items-center justify-between border-b border-border/40 px-4 bg-background/50 backdrop-blur-xs">
             <div className="flex items-center gap-2">
               <AgentHeaderSelector onAgentChange={handleAgentChange} />
               <MemoryHeaderButton />
               <SessionStateHeaderButton />
+              <ArtifactsHeaderButton />
             </div>
           </header>
 
-          <div className="flex-1 overflow-hidden">
-            <GeminiThread />
+          <div className="flex flex-1 overflow-hidden relative">
+            {/* Chat Thread Viewport */}
+            <div
+              className="flex-1 flex flex-col h-full overflow-hidden transition-all"
+              style={
+                isCanvasOpen && !isFullscreen
+                  ? { width: `${(1 - splitRatio) * 100}%`, flex: "none" }
+                  : undefined
+              }
+            >
+              <GeminiThread />
+            </div>
+
+            {/* Split-Pane Artifacts Canvas */}
+            {isCanvasOpen && (
+              <div
+                className="h-full flex shrink-0"
+                style={isFullscreen ? undefined : { width: `${splitRatio * 100}%` }}
+              >
+                <ArtifactsCanvas />
+              </div>
+            )}
           </div>
         </main>
 
@@ -179,7 +219,9 @@ export default function ChatPage() {
     <AgentProvider>
       <MemoryProvider>
         <SessionStateProvider>
-          <ChatContent />
+          <ArtifactProvider>
+            <ChatContent />
+          </ArtifactProvider>
         </SessionStateProvider>
       </MemoryProvider>
     </AgentProvider>

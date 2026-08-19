@@ -11,6 +11,7 @@ import {
   normalizeEventMetadata,
   parseSseStream,
 } from "../sse-parser";
+import { extractArtifactsFromSessionEvent } from "@/lib/artifacts/artifact-extractor";
 
 export function buildStreamQueryInput(
   body: ChatRequestBody,
@@ -275,6 +276,23 @@ export class VertexAiStreamingService {
             yield {
               event_type: "tool_result",
               tool_result: toolResult,
+              ...identity,
+            };
+          }
+
+          // Extract and yield any artifacts produced by the query execution
+          const queryArtifacts = extractArtifactsFromSessionEvent({
+            ...rawObj,
+            content: parsed.text,
+            tool_calls: parsed.toolCalls,
+            tool_results: parsed.toolResults,
+            actions: meta.actions,
+          });
+
+          for (const artifact of queryArtifacts) {
+            yield {
+              event_type: "artifact_created",
+              artifact,
               ...identity,
             };
           }

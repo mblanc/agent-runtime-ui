@@ -21,3 +21,4 @@ export * from "./agent/stream";
 export * from "./agent/agents";
 export * from "./agent/feedback";
 export * from "./agent/memory";
+export * from "./agent/artifacts";

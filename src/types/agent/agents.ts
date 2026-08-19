@@ -7,6 +7,7 @@ import type {
 import type { ReasoningTraceEntry, SubAgentExecution } from "./messages";
 import type { GroundingMetadata } from "./grounding";
 import type { AgentActionsDelta, AgentNodeInfo, AgentUsageMetadata } from "./metadata";
+import type { ArtifactStreamPayload } from "./artifacts";
 
 /**
  * Which agent, in which region, a request is addressed to.
@@ -99,6 +100,8 @@ export interface AgentSessionEvent {
   nodePath?: string;
   node_path?: string;
   actions?: AgentActionsDelta;
+  artifacts?: ArtifactStreamPayload[];
+  artifact?: ArtifactStreamPayload;
   finishReason?: string;
   finish_reason?: string;
   timestamp?: number | string;

@@ -188,25 +188,39 @@ export function SessionStateProvider({
     setError(null);
   }, []);
 
+  const value = useMemo<SessionStateContextValue>(
+    () => ({
+      state,
+      isLoading,
+      error,
+      isDrawerOpen,
+      setIsDrawerOpen,
+      activeSessionId,
+      setActiveSessionId,
+      refreshState: () => fetchState(),
+      updateVariable,
+      deleteVariable,
+      clearState,
+      updateTime,
+    }),
+    [
+      state,
+      isLoading,
+      error,
+      isDrawerOpen,
+      setIsDrawerOpen,
+      activeSessionId,
+      setActiveSessionId,
+      fetchState,
+      updateVariable,
+      deleteVariable,
+      clearState,
+      updateTime,
+    ]
+  );
+
   return (
-    <SessionStateContext.Provider
-      value={{
-        state,
-        isLoading,
-        error,
-        isDrawerOpen,
-        setIsDrawerOpen,
-        activeSessionId,
-        setActiveSessionId,
-        refreshState: () => fetchState(),
-        updateVariable,
-        deleteVariable,
-        clearState,
-        updateTime,
-      }}
-    >
-      {children}
-    </SessionStateContext.Provider>
+    <SessionStateContext.Provider value={value}>{children}</SessionStateContext.Provider>
   );
 }
 

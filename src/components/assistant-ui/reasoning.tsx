@@ -426,15 +426,15 @@ export function parseLegacyToolTraces(text: string): string {
  * the same ones the string path feeds, so the two render identically for any
  * trace both can express.
  */
-function ReasoningTraceBlocks({
+export function ReasoningTraceBlocks({
   trace,
-  streaming,
+  streaming = false,
   defaultOpen,
   className,
 }: {
   trace: readonly ReasoningTraceEntry[];
-  streaming: boolean;
-  defaultOpen: boolean;
+  streaming?: boolean;
+  defaultOpen?: boolean;
   className?: string;
 }) {
   return (
@@ -449,7 +449,7 @@ function ReasoningTraceBlocks({
               status={entry.status}
               callInput={entry.input}
               output={entry.response}
-              defaultOpen={defaultOpen}
+              defaultOpen={defaultOpen ?? false}
             />
           );
         }
@@ -462,7 +462,7 @@ function ReasoningTraceBlocks({
               args={entry.argsJson}
               result={entry.resultJson}
               status={entry.status}
-              defaultOpen={defaultOpen}
+              defaultOpen={defaultOpen ?? false}
             />
           );
         }
@@ -472,7 +472,7 @@ function ReasoningTraceBlocks({
             <CodeExecutionCard
               key={`code-${entry.block.id || idx}`}
               block={entry.block}
-              defaultOpen={defaultOpen}
+              defaultOpen={defaultOpen ?? false}
             />
           );
         }
@@ -486,7 +486,7 @@ function ReasoningTraceBlocks({
             title="Thought"
             thought={entry.text}
             status={streaming && idx === trace.length - 1 ? "running" : "complete"}
-            defaultOpen={defaultOpen}
+            defaultOpen={defaultOpen ?? false}
           />
         );
       })}
@@ -498,7 +498,7 @@ export function ReasoningText({
   text,
   trace,
   children,
-  defaultOpen = false,
+  defaultOpen,
   className,
 }: {
   text?: string;
@@ -570,7 +570,7 @@ export function ReasoningText({
               }
               callInput={input || block.meta?.input}
               output={output}
-              defaultOpen={defaultOpen}
+              defaultOpen={defaultOpen ?? false}
             />
           );
         }
@@ -584,7 +584,7 @@ export function ReasoningText({
               args={args}
               result={result}
               status={block.meta?.status || (isBlockRunning ? "running" : "complete")}
-              defaultOpen={defaultOpen}
+              defaultOpen={defaultOpen ?? false}
             />
           );
         }
@@ -595,7 +595,7 @@ export function ReasoningText({
             title={block.title || "Thought"}
             thought={block.content}
             status={block.meta?.status || (isBlockRunning ? "running" : "complete")}
-            defaultOpen={defaultOpen}
+            defaultOpen={defaultOpen ?? false}
           />
         );
       })}

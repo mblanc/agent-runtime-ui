@@ -1,4 +1,5 @@
 import {
+  AgentArtifact,
   AgentCodeExecutionBlock,
   AgentFeedbackRequest,
   AgentFeedbackResponse,
@@ -6,6 +7,7 @@ import {
   AgentSession,
   AgentSessionEvent,
   AgentStreamEvent,
+  ArtifactVersion,
   ChatRequestBody,
   GroundingMetadata,
   ListAgentsResponse,
@@ -15,6 +17,7 @@ import {
 import { IAgentRuntimeProvider } from "../types";
 import {
   mockAgentsStore,
+  mockArtifactsStore,
   mockSessionsStore,
   mockSessionEventsStore,
   mockMemoriesStore,
@@ -484,6 +487,63 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
     return scored.sort((a, b) => b.relevanceScore - a.relevanceScore).slice(0, 4);
   }
 
+  async listArtifacts(
+    sessionId: string,
+    userId: string,
+    _agentId?: string,
+    _location?: string
+  ): Promise<AgentArtifact[]> {
+    const cleanSessionId = extractSessionIdFromResourceName(sessionId);
+    const sessionArtifacts = mockArtifactsStore.get(cleanSessionId) || [];
+
+    const isMockUser = userId === "test-user" || userId === "mock-user";
+    const userScopedArtifacts: AgentArtifact[] = [];
+    for (const [sId, arts] of mockArtifactsStore.entries()) {
+      if (sId !== cleanSessionId) {
+        for (const art of arts) {
+          if (
+            art.scope === "user" &&
+            (art.userId === userId ||
+              (isMockUser && (art.userId === "test-user" || art.userId === "mock-user")))
+          ) {
+            userScopedArtifacts.push(art);
+          }
+        }
+      }
+    }
+
+    return [...sessionArtifacts, ...userScopedArtifacts];
+  }
+
+  async getArtifact(
+    sessionId: string,
+    filename: string,
+    version?: number,
+    userId?: string,
+    _agentId?: string,
+    _location?: string
+  ): Promise<{ artifact: AgentArtifact; selectedVersion: ArtifactVersion } | null> {
+    const artifacts = await this.listArtifacts(sessionId, userId || "");
+    const cleanFilename = decodeURIComponent(filename);
+    const artifact = artifacts.find(
+      (a) => a.filename === cleanFilename || a.id === cleanFilename
+    );
+    if (!artifact) return null;
+
+    const requestedVersion =
+      version !== undefined
+        ? artifact.versions.find((v) => v.version === version)
+        : artifact.versions.find((v) => v.version === artifact.currentVersion) ||
+          artifact.versions[artifact.versions.length - 1];
+
+    if (!requestedVersion) return null;
+
+    return {
+      artifact,
+      selectedVersion: requestedVersion,
+    };
+  }
+
   async *streamQuery(
     body: ChatRequestBody,
     _userId: string,
@@ -685,7 +745,14 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
       await mockDelay(60, signal);
     }
 
-    // 6. Python Code Execution Sandbox: Simulate for code/math/plot/fibonacci queries
+    let simulatedArtifactFilename: string | undefined;
+
+    // 6. Python Code Execution Sandbox: Simulate for code/math/plot/fibonacci/weather queries
+    const isWeatherPrompt =
+      lowerPrompt.includes("weather") ||
+      lowerPrompt.includes("marseille") ||
+      lowerPrompt.includes("meteo");
+
     const isCodeExecutionTrigger =
       lowerPrompt.includes("code") ||
       lowerPrompt.includes("python") ||
@@ -693,19 +760,27 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
       lowerPrompt.includes("fibonacci") ||
       lowerPrompt.includes("plot") ||
       lowerPrompt.includes("chart") ||
+      lowerPrompt.includes("graph") ||
       lowerPrompt.includes("sandbox") ||
-      lowerPrompt.includes("execute");
+      lowerPrompt.includes("execute") ||
+      isWeatherPrompt;
 
     let simulatedCodeBlocks: AgentCodeExecutionBlock[] | undefined;
 
     if (isCodeExecutionTrigger && !hasAttachments) {
-      const isPlotting = lowerPrompt.includes("plot") || lowerPrompt.includes("chart");
+      const isPlotting =
+        lowerPrompt.includes("plot") ||
+        lowerPrompt.includes("chart") ||
+        lowerPrompt.includes("graph") ||
+        isWeatherPrompt;
       const dummyPlotBase64 =
         "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 
-      const codeToRun = isPlotting
-        ? `import matplotlib.pyplot as plt\nimport numpy as np\n\nx = np.linspace(0, 10, 100)\ny = np.sin(x)\n\nplt.figure(figsize=(8, 4))\nplt.plot(x, y, label='sin(x)', color='#1a73e8')\nplt.title('Trigonometric Waveform')\nplt.xlabel('x')\nplt.ylabel('sin(x)')\nplt.grid(True)\nplt.show()`
-        : `def calculate_fibonacci(n: int) -> list[int]:\n    fib = [0, 1]\n    for i in range(2, n):\n        fib.append(fib[i-1] + fib[i-2])\n    return fib[:n]\n\nresult = calculate_fibonacci(10)\nprint(f"Fibonacci Sequence (first 10 terms): {result}")`;
+      const codeToRun = isWeatherPrompt
+        ? `import matplotlib.pyplot as plt\n\ndays = ['Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']\ntemps = [24, 26, 27, 25, 26, 28]\n\nplt.figure(figsize=(8, 4))\nplt.plot(days, temps, marker='o', color='#1a73e8', linewidth=2.5, label='Temperature (°C)')\nplt.title('Marseille Weather Forecast - Next 6 Days')\nplt.xlabel('Day')\nplt.ylabel('Temperature (°C)')\nplt.grid(True, linestyle='--', alpha=0.6)\nplt.legend()\nplt.tight_layout()\nplt.show()`
+        : isPlotting
+          ? `import matplotlib.pyplot as plt\nimport numpy as np\n\nx = np.linspace(0, 10, 100)\ny = np.sin(x)\n\nplt.figure(figsize=(8, 4))\nplt.plot(x, y, label='sin(x)', color='#1a73e8')\nplt.title('Trigonometric Waveform')\nplt.xlabel('x')\nplt.ylabel('sin(x)')\nplt.grid(True)\nplt.show()`
+          : `def calculate_fibonacci(n: int) -> list[int]:\n    fib = [0, 1]\n    for i in range(2, n):\n        fib.append(fib[i-1] + fib[i-2])\n    return fib[:n]\n\nresult = calculate_fibonacci(10)\nprint(f"Fibonacci Sequence (first 10 terms): {result}")`;
 
       const outputText = isPlotting
         ? `Plot generated successfully.\n${dummyPlotBase64}`
@@ -713,7 +788,9 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
 
       yield {
         event_type: "thought",
-        thought: `Generating and executing Python code sandbox to solve "${lastPrompt}" in secure Vertex AI environment...`,
+        thought: isWeatherPrompt
+          ? `Looking up weather forecast for Marseille and executing Python code to plot temperature trends...`
+          : `Generating and executing Python code sandbox to solve "${lastPrompt}" in secure Vertex AI environment...`,
       };
       await mockDelay(60, signal);
 
@@ -737,6 +814,27 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
       };
       await mockDelay(60, signal);
 
+      if (isPlotting) {
+        simulatedArtifactFilename = isWeatherPrompt
+          ? "marseille_weather_forecast.png"
+          : "weather_forecast_graph.png";
+
+        yield {
+          event_type: "artifact_created",
+          artifact: {
+            filename: simulatedArtifactFilename,
+            title: isWeatherPrompt
+              ? "Marseille Weather Forecast Graph"
+              : "Weather Forecast Graph",
+            mimeType: "image/png",
+            version: 0,
+            content: dummyPlotBase64,
+            isComplete: true,
+          },
+        };
+        await mockDelay(40, signal);
+      }
+
       simulatedCodeBlocks = [
         {
           id: `code-mock-${Date.now()}`,
@@ -751,6 +849,217 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
           },
         },
       ];
+    }
+
+    // 7. Agent Platform Artifacts: Simulate for dashboard/canvas/artifact/html/csv/svg queries
+    const isArtifactTrigger =
+      lowerPrompt.includes("sales dashboard") ||
+      lowerPrompt.includes("artifact") ||
+      lowerPrompt.includes("dashboard") ||
+      lowerPrompt.includes("canvas") ||
+      lowerPrompt.includes("csv") ||
+      lowerPrompt.includes("svg") ||
+      lowerPrompt.includes("data table");
+
+    if (
+      isArtifactTrigger &&
+      !hasAttachments &&
+      !isConfirmationTrigger &&
+      !simulatedCodeBlocks
+    ) {
+      const isCsv = lowerPrompt.includes("csv") || lowerPrompt.includes("data table");
+      const isSvg = lowerPrompt.includes("svg") || lowerPrompt.includes("diagram");
+
+      if (isCsv) {
+        simulatedArtifactFilename = "quarterly_revenue.csv";
+        yield {
+          event_type: "thought",
+          thought: `Synthesizing quarterly financial dataset and generating CSV artifact "${simulatedArtifactFilename}"...`,
+        };
+        await mockDelay(60, signal);
+
+        const csvContent = `Quarter,Region,Product_Line,Target_Revenue_USD,Actual_Revenue_USD,Growth_Pct
+Q1-2026,North America,Cloud AI Agents,120000,145000,20.8
+Q1-2026,EMEA,Cloud AI Agents,85000,92000,8.2
+Q1-2026,APAC,Cloud AI Agents,60000,78000,30.0
+Q2-2026,North America,Reasoning Engines,150000,185000,23.3
+Q2-2026,EMEA,Reasoning Engines,110000,128000,16.4
+Q2-2026,APAC,Reasoning Engines,80000,99000,23.8
+Q3-2026,North America,Enterprise Search,90000,105000,16.7
+Q3-2026,EMEA,Enterprise Search,75000,82000,9.3`;
+
+        yield {
+          event_type: "artifact_created",
+          artifact: {
+            filename: "quarterly_revenue.csv",
+            title: "Q1-Q4 Revenue Breakdown by Product & Region",
+            mimeType: "text/csv",
+            version: 0,
+            content: csvContent,
+            isComplete: true,
+          },
+        };
+        await mockDelay(60, signal);
+      } else if (isSvg) {
+        simulatedArtifactFilename = "system_architecture.svg";
+        yield {
+          event_type: "thought",
+          thought: `Rendering system architecture vector diagram as SVG artifact "${simulatedArtifactFilename}"...`,
+        };
+        await mockDelay(60, signal);
+
+        const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400" width="100%" height="100%">
+  <defs>
+    <linearGradient id="gcpGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a73e8"/>
+      <stop offset="100%" stop-color="#4285f4"/>
+    </linearGradient>
+    <linearGradient id="bffGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f9d58"/>
+      <stop offset="100%" stop-color="#34a853"/>
+    </linearGradient>
+  </defs>
+  <rect width="100%" height="100%" fill="#f8f9fa" rx="12"/>
+  <text x="400" y="40" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="18" font-weight="bold" fill="#202124">Agent Runtime UI System Architecture</text>
+  <rect x="60" y="100" width="200" height="220" rx="10" fill="url(#bffGrad)" opacity="0.9"/>
+  <text x="160" y="130" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="16" font-weight="bold" fill="#ffffff">Next.js App Router (BFF)</text>
+  <text x="160" y="165" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="12" fill="#e8f0fe">• Web Crypto JWT Auth</text>
+  <text x="160" y="195" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="12" fill="#e8f0fe">• SSE Streaming Proxy</text>
+  <text x="160" y="225" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="12" fill="#e8f0fe">• Artifacts & Sessions API</text>
+  <text x="160" y="255" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="12" fill="#e8f0fe">• Memory & State Sync</text>
+  <line x1="270" y1="210" x2="520" y2="210" stroke="#5f6368" stroke-width="3" stroke-dasharray="6,6"/>
+  <polygon points="530,210 515,202 515,218" fill="#5f6368"/>
+  <text x="395" y="195" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="12" font-weight="600" fill="#5f6368">REST / SSE :streamQuery</text>
+  <rect x="540" y="100" width="200" height="220" rx="10" fill="url(#gcpGrad)" opacity="0.95"/>
+  <text x="640" y="130" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="16" font-weight="bold" fill="#ffffff">Google Cloud Agent Runtime</text>
+  <text x="640" y="165" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="12" fill="#e8f0fe">• Vertex AI Reasoning Engine</text>
+  <text x="640" y="195" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="12" fill="#e8f0fe">• ADK Agent Orchestration</text>
+  <text x="640" y="225" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="12" fill="#e8f0fe">• GCS Artifact Storage</text>
+  <text x="640" y="255" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="12" fill="#e8f0fe">• Context Caching Service</text>
+</svg>`;
+
+        yield {
+          event_type: "artifact_created",
+          artifact: {
+            filename: "system_architecture.svg",
+            title: "Agent Platform Cloud Architecture",
+            mimeType: "image/svg+xml",
+            version: 0,
+            content: svgContent,
+            isComplete: true,
+          },
+        };
+        await mockDelay(60, signal);
+      } else {
+        simulatedArtifactFilename = "sales_dashboard.html";
+        yield {
+          event_type: "thought",
+          thought: `Designing and compiling interactive web application artifact "${simulatedArtifactFilename}" (v0 initial layout)...`,
+        };
+        await mockDelay(60, signal);
+
+        yield {
+          event_type: "artifact_created",
+          artifact: {
+            filename: "sales_dashboard.html",
+            title: "Quarterly Sales Performance Dashboard",
+            mimeType: "text/html",
+            version: 0,
+            content: `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Sales Dashboard</title><style>body{font-family:sans-serif;padding:20px;background:#f8fafc;} .card{background:#fff;padding:20px;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.1);}</style></head><body><h1>Quarterly Sales Overview</h1><div class="card"><h2>Total: $124,500</h2></div></body></html>`,
+            isComplete: false,
+          },
+        };
+        await mockDelay(80, signal);
+
+        yield {
+          event_type: "thought",
+          thought: `Upgrading artifact "${simulatedArtifactFilename}" to v1: integrating responsive KPI cards and Chart.js telemetry visuals...`,
+        };
+        await mockDelay(80, signal);
+
+        const v1Html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sales Performance Workspace</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root { --bg: #f8fafc; --card: #ffffff; --text: #0f172a; --text-muted: #64748b; --primary: #2563eb; --accent: #10b981; --border: #e2e8f0; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --text-muted: #94a3b8; --primary: #60a5fa; --accent: #34d399; --border: #334155; }
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); padding: 24px; margin: 0; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+    .title { font-size: 24px; font-weight: 700; }
+    .badge { background: rgba(37,99,235,0.1); color: var(--primary); padding: 4px 12px; border-radius: 9999px; font-size: 13px; font-weight: 600; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .kpi-card { background: var(--card); border: 1px solid var(--border); padding: 20px; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+    .kpi-label { font-size: 13px; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; }
+    .kpi-value { font-size: 32px; font-weight: 800; color: var(--text); margin: 8px 0; }
+    .kpi-change { font-size: 13px; color: var(--accent); font-weight: 600; display: flex; align-items: center; gap: 4px; }
+    .chart-container { background: var(--card); border: 1px solid var(--border); padding: 24px; border-radius: 16px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="title">Enterprise Sales Performance Dashboard</div>
+    <div class="badge">Live Sync Active</div>
+  </div>
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-label">Quarterly Revenue</div>
+      <div class="kpi-value">$154,200</div>
+      <div class="kpi-change">↑ +18.4% vs last quarter</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Target Attainment</div>
+      <div class="kpi-value">123.5%</div>
+      <div class="kpi-change">↑ Exceeded target</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Average Deal Size</div>
+      <div class="kpi-value">$14,800</div>
+      <div class="kpi-change">↑ +5.2% expansion</div>
+    </div>
+  </div>
+  <div class="chart-container">
+    <canvas id="mainChart" height="120"></canvas>
+  </div>
+  <script>
+    const ctx = document.getElementById('mainChart').getContext('2d');
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4', 'Week 5', 'Week 6'],
+        datasets: [{
+          label: 'Booked Revenue ($k)',
+          data: [18, 42, 68, 95, 128, 154.2],
+          borderColor: '#2563eb',
+          backgroundColor: 'rgba(37,99,235,0.1)',
+          fill: true,
+          tension: 0.4
+        }]
+      },
+      options: { responsive: true, plugins: { legend: { position: 'top' } } }
+    });
+  </script>
+</body>
+</html>`;
+
+        yield {
+          event_type: "artifact_updated",
+          artifact: {
+            filename: "sales_dashboard.html",
+            title: "Quarterly Sales Performance Dashboard",
+            mimeType: "text/html",
+            version: 1,
+            content: v1Html,
+            isComplete: true,
+          },
+        };
+        await mockDelay(60, signal);
+      }
     }
 
     yield {
@@ -788,11 +1097,15 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
     // Streaming content chunks
     const responseText = hasAttachments
       ? `I have successfully analyzed the attached multimodal attachment (\`${fileUris || "file"}\`).\n\n### Document Analysis Summary\n- **Status:** Verified and ingested via Cloud Storage.\n- **Content Assessment:** Document contains structured engineering specifications and architectural requirements.\n- **Recommendation:** Integrate with Google Cloud Agent Runtime using Vertex AI Reasoning Engines.`
-      : simulatedCodeBlocks
-        ? `I have executed the Python script in the secure Vertex AI Code Execution Sandbox.\n\n### Execution Summary\n- **Status:** Successfully executed with zero errors.\n- **Output:** The computation finished and produced clean results.\n- **Sandbox Environment:** Python 3.10 with NumPy, Pandas, and Matplotlib.`
-        : simulatedGroundingMetadata
-          ? `Vertex AI Agent Runtime provides managed auto-scaling and native session persistence [1]. It supports sub-second cold starts [2] and private VPC connectivity via Private Service Connect [3].\n\n### Architecture Highlights\n1. **Stateless BFF Layer**: Next.js App Router with Web Crypto JWT tokens.\n2. **Reasoning Engine Backend**: Fully managed agent runtime on Google Cloud.\n3. **Enterprise Grounding**: Direct verification against official Google documentation and private corporate knowledge base [1, 3].`
-          : `Based on your request regarding **${lastPrompt}**, here is the recommended architecture:\n\n1. **Stateless BFF Layer**: Built using Next.js App Router and Edge/Serverless runtimes with Web Crypto JWT tokens.\n2. **Vertex AI Reasoning Engines**: Managed agent execution environment providing automatic session persistence.\n3. **Google Identity Auth**: Seamless OAuth 2.0 PKCE flow guaranteeing secure enterprise user scoping.\n\n\`\`\`typescript\n// Example: Initializing Vertex AI Agent Runtime Provider\nconst provider = createAgentRuntimeProvider();\nconst response = await provider.streamQuery({ messages }, userId);\n\`\`\``;
+      : isWeatherPrompt
+        ? `Here is the weather forecast for Marseille for the next days:\n\n- **Tuesday**: 24°C, Sunny ☀️\n- **Wednesday**: 26°C, Clear ☀️\n- **Thursday**: 27°C, Sunny ☀️\n- **Friday**: 25°C, Partly Cloudy ⛅\n- **Saturday**: 26°C, Sunny ☀️\n- **Sunday**: 28°C, Clear ☀️\n\nI have executed Python code to generate a temperature graph visualizing the forecast above.`
+        : simulatedArtifactFilename && !simulatedCodeBlocks
+          ? `I have created the interactive workspace artifact **${simulatedArtifactFilename}** [📄 ${simulatedArtifactFilename} • v1]. You can preview the live asset, inspect its code or data, switch versions, and export it using the workspace canvas on the right.`
+          : simulatedCodeBlocks
+            ? `I have executed the Python script in the secure Vertex AI Code Execution Sandbox.\n\n### Execution Summary\n- **Status:** Successfully executed with zero errors.\n- **Output:** The computation finished and produced clean results.\n- **Sandbox Environment:** Python 3.10 with NumPy, Pandas, and Matplotlib.`
+            : simulatedGroundingMetadata
+              ? `Vertex AI Agent Runtime provides managed auto-scaling and native session persistence [1]. It supports sub-second cold starts [2] and private VPC connectivity via Private Service Connect [3].\n\n### Architecture Highlights\n1. **Stateless BFF Layer**: Next.js App Router with Web Crypto JWT tokens.\n2. **Reasoning Engine Backend**: Fully managed agent runtime on Google Cloud.\n3. **Enterprise Grounding**: Direct verification against official Google documentation and private corporate knowledge base [1, 3].`
+              : `Based on your request regarding **${lastPrompt}**, here is the recommended architecture:\n\n1. **Stateless BFF Layer**: Built using Next.js App Router and Edge/Serverless runtimes with Web Crypto JWT tokens.\n2. **Vertex AI Reasoning Engines**: Managed agent execution environment providing automatic session persistence.\n3. **Google Identity Auth**: Seamless OAuth 2.0 PKCE flow guaranteeing secure enterprise user scoping.\n\n\`\`\`typescript\n// Example: Initializing Vertex AI Agent Runtime Provider\nconst provider = createAgentRuntimeProvider();\nconst response = await provider.streamQuery({ messages }, userId);\n\`\`\``;
 
     const invocationId = `e-mock-${Math.random().toString(36).substring(2, 9)}`;
     const modelVersion = "gemini-2.5-flash";
@@ -907,6 +1220,44 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
           ...simulatedStateDelta,
         });
       }
+      if (simulatedArtifactFilename) {
+        const arts = mockArtifactsStore.get(cleanId) || [];
+        if (!arts.some((a) => a.filename === simulatedArtifactFilename)) {
+          const dummyPlotBase64 =
+            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+          arts.push({
+            id: simulatedArtifactFilename,
+            sessionId: cleanId,
+            userId: _userId,
+            filename: simulatedArtifactFilename,
+            title: isWeatherPrompt
+              ? "Marseille Weather Forecast Graph"
+              : "Weather Forecast Graph",
+            mimeType: simulatedArtifactFilename.endsWith(".svg")
+              ? "image/svg+xml"
+              : simulatedArtifactFilename.endsWith(".html")
+                ? "text/html"
+                : simulatedArtifactFilename.endsWith(".csv")
+                  ? "text/csv"
+                  : "image/png",
+            scope: "session",
+            currentVersion: 0,
+            versions: [
+              {
+                version: 0,
+                content: dummyPlotBase64,
+                mimeType: "image/png",
+                sizeBytes: dummyPlotBase64.length,
+                createTime: new Date().toISOString(),
+              },
+            ],
+            createTime: new Date().toISOString(),
+            updateTime: new Date().toISOString(),
+          });
+          mockArtifactsStore.set(cleanId, arts);
+        }
+      }
+
       const events = mockSessionEventsStore.get(cleanId) || [];
       events.push(
         {
@@ -928,6 +1279,23 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
           thought_signature: thoughtSignature,
           groundingMetadata: simulatedGroundingMetadata,
           grounding_metadata: simulatedGroundingMetadata,
+          ...(simulatedArtifactFilename
+            ? {
+                artifacts: [
+                  {
+                    filename: simulatedArtifactFilename,
+                    title: isWeatherPrompt
+                      ? "Marseille Weather Forecast Graph"
+                      : "Weather Forecast Graph",
+                    mimeType: "image/png",
+                    version: 0,
+                    content:
+                      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                    isComplete: true,
+                  },
+                ],
+              }
+            : {}),
           ...(simulatedCodeBlocks
             ? {
                 codeExecutionBlocks: simulatedCodeBlocks,

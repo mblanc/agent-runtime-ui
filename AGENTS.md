@@ -83,6 +83,8 @@ Use this index to quickly locate specific subsystems and implementations across 
 - [`src/app/api/sessions/route.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/api/sessions/route.ts): List user sessions (`GET`) and create new session (`POST`).
 - [`src/app/api/sessions/[sessionId]/route.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/api/sessions/[sessionId]/route.ts): Fetch session event history (`GET`) and delete session (`DELETE`).
 - [`src/app/api/sessions/[sessionId]/state/route.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/api/sessions/[sessionId]/state/route.ts): Fetch and mutate ADK session state map (`GET`, `PATCH`).
+- [`src/app/api/sessions/[sessionId]/artifacts/route.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/api/sessions/[sessionId]/artifacts/route.ts): List session and user-scoped artifacts (`GET`).
+- [`src/app/api/sessions/[sessionId]/artifacts/[filename]/route.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/api/sessions/[sessionId]/artifacts/[filename]/route.ts): Get artifact by filename with version resolution (`GET`).
 - [`src/app/api/auth/sign-in/google/route.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/api/auth/sign-in/google/route.ts): Initiates Google OAuth 2.0 PKCE flow.
 - [`src/app/api/auth/callback/google/route.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/api/auth/callback/google/route.ts): Handles OAuth redirect, issues signed JWT session cookie.
 - [`src/app/api/auth/session/route.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/app/api/auth/session/route.ts): Validates JWT session cookie and returns user profile.
@@ -120,6 +122,18 @@ Use this index to quickly locate specific subsystems and implementations across 
 - [`src/components/grounding/grounding-sources-accordion.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/grounding/grounding-sources-accordion.tsx): Expandable sources list detailing search queries, web source links, and corporate RAG documents.
 - [`src/components/grounding/enterprise-rag-drawer.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/grounding/enterprise-rag-drawer.tsx): Slide-over drawer for deep inspection of enterprise RAG document text excerpts and GCS metadata.
 - [`src/components/grounding/grounding-footer.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/grounding/grounding-footer.tsx): Composite footer component integrating sources accordion, search widget, and RAG drawer.
+
+### Workspace Canvas & Artifacts Components
+
+- [`src/components/artifacts/artifacts-canvas.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/artifacts/artifacts-canvas.tsx): Side-by-side interactive split-pane workspace canvas container with tab switcher, version selector, and actions.
+- [`src/components/artifacts/version-selector.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/artifacts/version-selector.tsx): Multi-version scrubbing dropdown selector displaying timestamps and size.
+- [`src/components/artifacts/artifact-chip.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/artifacts/artifact-chip.tsx): Inline card in assistant chat messages for previewing and opening generated artifacts.
+- [`src/components/artifacts/artifacts-header-button.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/artifacts/artifacts-header-button.tsx): Header shelf button with live artifact count badge and dropdown.
+- [`src/components/artifacts/renderers/html-iframe-renderer.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/artifacts/renderers/html-iframe-renderer.tsx): Sandboxed HTML execution iframe renderer.
+- [`src/components/artifacts/renderers/code-artifact-renderer.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/artifacts/renderers/code-artifact-renderer.tsx): Shiki syntax highlighter code artifact renderer.
+- [`src/components/artifacts/renderers/csv-table-renderer.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/artifacts/renderers/csv-table-renderer.tsx): Interactive CSV/TSV table renderer with sorting, search, and pagination.
+- [`src/components/artifacts/renderers/svg-diagram-renderer.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/artifacts/renderers/svg-diagram-renderer.tsx): SVG vector diagram renderer with zoom and export.
+- [`src/components/artifacts/renderers/markdown-artifact-renderer.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/artifacts/renderers/markdown-artifact-renderer.tsx): Formatted markdown document renderer.
 
 ### Auth & UI Primitives
 

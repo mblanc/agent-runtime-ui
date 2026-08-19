@@ -6,6 +6,7 @@ import type {
   AgentNodeInfo,
   AgentStreamEvent,
   AgentUsageMetadata,
+  ArtifactStreamPayload,
   CodeExecutionResultData,
   ExecutableCodeData,
   GroundingMetadata,
@@ -17,6 +18,12 @@ import {
   mergeGroundingMetadata,
 } from "@/lib/grounding/citation-parser";
 import { parseCodeExecutionOutput } from "@/lib/code-execution/output-parser";
+import {
+  inferMimeType,
+  deriveArtifactTitle,
+  extractArtifactFromTool,
+  extractArtifactsFromContent,
+} from "@/lib/artifacts/artifact-extractor";
 import { formatAgentDisplayName } from "@/lib/utils";
 import { formatReasoningTrace } from "@/lib/agent-runtime/reasoning-directives";
 
@@ -75,6 +82,8 @@ export class StreamAccumulator {
   private readonly subagentsMap = new Map<string, SubagentStreamItem>();
   private readonly reasoningEntries: StreamReasoningEntry[] = [];
   private readonly codeExecutionBlocks: AgentCodeExecutionBlock[] = [];
+  private readonly artifactsMap = new Map<string, ArtifactStreamPayload>();
+  private latestArtifactEvent: ArtifactStreamPayload | undefined;
   private activeSubagentName: string | null = null;
 
   private accumulatedText = "";
@@ -195,6 +204,12 @@ export class StreamAccumulator {
       return this.handleCodeExecutionResult(
         (parsed.code_execution_result || parsed.codeExecutionResult)!
       );
+    } else if (
+      (parsed.event_type === "artifact_created" ||
+        parsed.event_type === "artifact_updated") &&
+      parsed.artifact
+    ) {
+      return this.handleArtifact(parsed.artifact);
     } else if (parsed.event_type === "error" && parsed.error) {
       return this.handleError(parsed.error);
     } else if (parsed.event_type === "done") {
@@ -208,17 +223,63 @@ export class StreamAccumulator {
   }
 
   /**
+   * Returns all accumulated artifacts, syncing any newly completed content artifacts.
+   */
+  getArtifacts(): ArtifactStreamPayload[] {
+    this.syncContentArtifacts();
+    return Array.from(this.artifactsMap.values());
+  }
+
+  private lastScannedArtifactTextLength = 0;
+
+  private syncContentArtifacts(force = false): void {
+    if (!this.accumulatedText) return;
+    if (!force && this.accumulatedText.length === this.lastScannedArtifactTextLength) {
+      return;
+    }
+    // Fast bail-out: only run regex extraction if candidate delimiters exist
+    if (
+      !force &&
+      !this.accumulatedText.includes("```") &&
+      !this.accumulatedText.includes("<artifact") &&
+      !this.accumulatedText.includes("<antArtifact") &&
+      !this.accumulatedText.includes("<svg") &&
+      !this.accumulatedText.includes("<!DOCTYPE") &&
+      !this.accumulatedText.includes("<html") &&
+      !this.accumulatedText.includes(",") &&
+      !this.accumulatedText.includes("\t")
+    ) {
+      return;
+    }
+    this.lastScannedArtifactTextLength = this.accumulatedText.length;
+    const contentArtifacts = extractArtifactsFromContent(this.accumulatedText);
+    for (const art of contentArtifacts) {
+      const existing = this.artifactsMap.get(art.filename);
+      if (!existing) {
+        this.artifactsMap.set(art.filename, { ...art });
+        this.latestArtifactEvent = { ...art };
+      } else if (!existing.gcsUri && existing.content !== art.content) {
+        existing.content = art.content;
+        existing.title = art.title || existing.title;
+        this.latestArtifactEvent = { ...existing };
+      }
+    }
+  }
+
+  /**
    * The end of a stream that closed without a terminal event.
    */
   finalize(): void {
     this.flushCurrentTextSegment();
     this.accumulatedText = this.finalizedTextPrefix;
+    this.syncContentArtifacts(true);
   }
 
   /**
    * The current message-in-progress as a yieldable result.
    */
   snapshot(): ChatModelRunResult {
+    this.syncContentArtifacts();
     const reasoningTrace = this.buildReasoningTrace();
     return createYieldContent({
       reasoning: formatReasoningTrace(reasoningTrace),
@@ -230,6 +291,8 @@ export class StreamAccumulator {
       retrievedMemories: this.retrievedMemoriesList,
       groundingMetadata: this.latestGroundingMetadata,
       messageInfo: this.getMessageInfo(),
+      artifacts: Array.from(this.artifactsMap.values()),
+      artifactEvent: this.latestArtifactEvent,
     });
   }
 
@@ -267,21 +330,38 @@ export class StreamAccumulator {
     now: number,
     shouldYield: boolean
   ): HandleOutcome {
-    const thought = parsed.thought as string;
+    const thought = (parsed.thought as string) || "";
+    if (!thought.trim()) return "skip";
+
     const last = this.reasoningEntries[this.reasoningEntries.length - 1];
     if (last && last.type === "thought") {
       if (parsed.partial === true) {
         last.text += thought;
       } else if (parsed.partial === false) {
         last.text = thought;
-      } else {
+      } else if (!last.text.includes(thought)) {
         last.text = last.text ? `${last.text}\n\n${thought}` : thought;
       }
     } else {
-      this.reasoningEntries.push({
-        type: "thought",
-        text: thought,
-      });
+      // Check if this thought already exists anywhere in reasoningEntries (e.g. re-emitted after tool calls)
+      const existingThought = this.reasoningEntries.find(
+        (e): e is Extract<StreamReasoningEntry, { type: "thought" }> =>
+          e.type === "thought" &&
+          (e.text.trim() === thought.trim() ||
+            e.text.includes(thought.trim()) ||
+            thought.trim().includes(e.text.trim()))
+      );
+
+      if (existingThought) {
+        if (thought.trim().length > existingThought.text.trim().length) {
+          existingThought.text = thought;
+        }
+      } else {
+        this.reasoningEntries.push({
+          type: "thought",
+          text: thought,
+        });
+      }
     }
 
     if (shouldYield) {
@@ -426,6 +506,13 @@ export class StreamAccumulator {
       });
     }
 
+    if (toolName && tc.args) {
+      const art = extractArtifactFromTool(toolName, tc.args);
+      if (art) {
+        this.handleArtifact(art);
+      }
+    }
+
     return "yield";
   }
 
@@ -526,6 +613,17 @@ export class StreamAccumulator {
       });
     }
 
+    if (toolName && result) {
+      const resObj =
+        typeof result === "object" && result !== null
+          ? (result as Record<string, unknown>)
+          : { output: String(result) };
+      const art = extractArtifactFromTool(toolName, resObj);
+      if (art) {
+        this.handleArtifact(art);
+      }
+    }
+
     return "yield";
   }
 
@@ -577,6 +675,68 @@ export class StreamAccumulator {
         blockId,
       });
     }
+
+    const allImages = Array.from(
+      new Set([...(resultData.generatedImages || []), ...parsedOut.images])
+    );
+    if (allImages.length > 0) {
+      resultData.generatedImages = allImages;
+    }
+
+    const formatImg = (img: string) => {
+      if (
+        !img ||
+        img.startsWith("data:") ||
+        img.startsWith("gs://") ||
+        img.startsWith("http://") ||
+        img.startsWith("https://") ||
+        img.startsWith("/")
+      ) {
+        return img;
+      }
+      return `data:image/png;base64,${img}`;
+    };
+
+    if (parsedOut.savedArtifacts && parsedOut.savedArtifacts.length > 0) {
+      for (let sIdx = 0; sIdx < parsedOut.savedArtifacts.length; sIdx++) {
+        const savedFile = parsedOut.savedArtifacts[sIdx];
+        const mime = inferMimeType(savedFile);
+        const imgData = allImages[sIdx] || allImages[0] || "";
+        this.handleArtifact({
+          filename: savedFile,
+          title: deriveArtifactTitle(savedFile, "Generated Artifact"),
+          mimeType: mime,
+          version: 0,
+          content: mime.startsWith("image/") ? formatImg(imgData) : "",
+          gcsUri: imgData.startsWith("gs://") ? imgData : undefined,
+          isComplete: true,
+        });
+      }
+    } else if (allImages.length > 0) {
+      for (let i = 0; i < allImages.length; i++) {
+        const img = allImages[i];
+        if (img) {
+          const filename = `graph_${i + 1}.png`;
+          this.handleArtifact({
+            filename,
+            title: deriveArtifactTitle(filename, "Generated Plot"),
+            mimeType: "image/png",
+            version: 0,
+            content: formatImg(img),
+            gcsUri: img.startsWith("gs://") ? img : undefined,
+            isComplete: true,
+          });
+        }
+      }
+    }
+
+    return "yield";
+  }
+
+  private handleArtifact(artifact: ArtifactStreamPayload): HandleOutcome {
+    this.finalizeAllSubagents();
+    this.latestArtifactEvent = { ...artifact };
+    this.artifactsMap.set(artifact.filename, { ...artifact });
     return "yield";
   }
 
@@ -619,6 +779,7 @@ export class StreamAccumulator {
       }
     }
     this.accumulatedText = this.finalizedTextPrefix;
+    this.syncContentArtifacts(true);
   }
 
   private finalizeAllSubagents(): void {

@@ -4,7 +4,11 @@ import type {
   ChatModelRunResult,
   ThreadMessage,
 } from "@assistant-ui/react";
-import type { AgentMessage, AgentMessagePart } from "@/types/agent";
+import type {
+  AgentMessage,
+  AgentMessagePart,
+  ArtifactStreamPayload,
+} from "@/types/agent";
 
 import {
   defaultAttachmentStore,
@@ -365,7 +369,8 @@ export function createGeminiChatAdapter(
   getSessionId?: () => string | undefined,
   getAgentId?: () => string | undefined,
   getLocation?: () => string | undefined,
-  getThreadMessages?: () => readonly ThreadMessage[] | undefined
+  getThreadMessages?: () => readonly ThreadMessage[] | undefined,
+  onStreamArtifact?: (artifact: ArtifactStreamPayload) => void
 ): ChatModelAdapter {
   return {
     async *run({
@@ -391,6 +396,21 @@ export function createGeminiChatAdapter(
 
       try {
         const accumulator = new StreamAccumulator(sourceMessages);
+        const emittedArtifactKeys = new Map<string, string>();
+
+        const syncStreamArtifacts = () => {
+          if (!onStreamArtifact) return;
+          for (const art of accumulator.getArtifacts()) {
+            const artKey = `${art.filename}:${art.version}:${art.gcsUri || art.content}`;
+            if (
+              !emittedArtifactKeys.has(art.filename) ||
+              emittedArtifactKeys.get(art.filename) !== artKey
+            ) {
+              emittedArtifactKeys.set(art.filename, artKey);
+              onStreamArtifact(art);
+            }
+          }
+        };
 
         for await (const frame of streamChat({
           messages: formattedMessages,
@@ -413,13 +433,18 @@ export function createGeminiChatAdapter(
           // block — and so still reaches the outer catch as an AbortError.
           try {
             const outcome = accumulator.handle(frame.event);
+            syncStreamArtifacts();
             if (outcome === "skip") continue;
 
-            yield accumulator.snapshot();
+            const snap = accumulator.snapshot();
+            yield snap;
 
             // Terminal event. Returning here closes the transport generator
             // via its `finally`, which is what releases the reader's lock.
-            if (outcome === "final") return;
+            if (outcome === "final") {
+              syncStreamArtifacts();
+              return;
+            }
           } catch (error: unknown) {
             warnMalformedFrame(frame.raw, error);
             continue;
@@ -428,6 +453,7 @@ export function createGeminiChatAdapter(
 
         // The stream closed without a terminal event.
         accumulator.finalize();
+        syncStreamArtifacts();
         yield accumulator.snapshot();
       } catch (err: unknown) {
         if ((err instanceof Error && err.name === "AbortError") || abortSignal?.aborted) {

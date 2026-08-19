@@ -45,11 +45,13 @@ export function GroundingFooter({ metadata, className }: GroundingFooterProps) {
 
       <GoogleSearchWidget searchEntryPoint={metadata.searchEntryPoint} />
 
-      <EnterpriseRagDrawer
-        isOpen={isDrawerOpen}
-        onClose={handleCloseDrawer}
-        chunk={selectedChunk}
-      />
+      {isDrawerOpen && (
+        <EnterpriseRagDrawer
+          isOpen={isDrawerOpen}
+          onClose={handleCloseDrawer}
+          chunk={selectedChunk}
+        />
+      )}
     </div>
   );
 }

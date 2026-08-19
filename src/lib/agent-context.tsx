@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -130,20 +131,19 @@ export function AgentProvider({
     }
   }, [fetchAgents, initialAgents]);
 
-  return (
-    <AgentContext.Provider
-      value={{
-        activeAgent,
-        availableAgents,
-        isLoading,
-        error,
-        setActiveAgent: selectAndPersistAgent,
-        refreshAgents: fetchAgents,
-      }}
-    >
-      {children}
-    </AgentContext.Provider>
+  const value = useMemo<AgentContextValue>(
+    () => ({
+      activeAgent,
+      availableAgents,
+      isLoading,
+      error,
+      setActiveAgent: selectAndPersistAgent,
+      refreshAgents: fetchAgents,
+    }),
+    [activeAgent, availableAgents, isLoading, error, selectAndPersistAgent, fetchAgents]
   );
+
+  return <AgentContext.Provider value={value}>{children}</AgentContext.Provider>;
 }
 
 export function useActiveAgent(): AgentContextValue {

@@ -13,9 +13,12 @@ import {
   getEventToolCalls,
   getEventToolResults,
   isRootWorkflowOutput,
+  isSubagentNode,
 } from "./event-utils";
 import { parseRawSessionEvent } from "./parse-event";
 import { formatReasoningTrace } from "./reasoning-directives";
+import { extractArtifactsFromSessionEvent } from "@/lib/artifacts/artifact-extractor";
+import type { ArtifactStreamPayload } from "@/types/agent";
 
 /**
  * Turn segmentation: groups a flat event list into user/assistant turns,
@@ -70,40 +73,62 @@ export function groupTurnSessionEvents(
     }
 
     if (turn.assistantEvents.length === 1) {
-      result.push(turn.assistantEvents[0]);
-      continue;
+      const singleEvt = { ...turn.assistantEvents[0] };
+      const hasTools =
+        (singleEvt.tool_calls && singleEvt.tool_calls.length > 0) ||
+        Boolean(singleEvt.tool_call) ||
+        getEventToolCalls(singleEvt).length > 0;
+      const hasToolResults =
+        (singleEvt.tool_results && singleEvt.tool_results.length > 0) ||
+        Boolean(singleEvt.tool_result) ||
+        getEventToolResults(singleEvt).length > 0;
+      const hasCode =
+        (singleEvt.codeExecutionBlocks && singleEvt.codeExecutionBlocks.length > 0) ||
+        (singleEvt.code_execution_blocks && singleEvt.code_execution_blocks.length > 0);
+      const hasSubs = singleEvt.subAgents && singleEvt.subAgents.length > 0;
+      const hasTrace = singleEvt.reasoningTrace && singleEvt.reasoningTrace.length > 0;
+      const hasThought = Boolean(singleEvt.thought?.trim());
+
+      if (
+        !hasTools &&
+        !hasToolResults &&
+        !hasCode &&
+        !hasSubs &&
+        !hasTrace &&
+        !hasThought
+      ) {
+        const singleArtifacts = extractArtifactsFromSessionEvent(singleEvt);
+        if (singleArtifacts.length > 0) {
+          singleEvt.artifacts = singleArtifacts;
+        }
+        result.push(singleEvt);
+        continue;
+      }
     }
 
-    let finalIdx = turn.assistantEvents.findIndex((e) =>
-      isRootWorkflowOutput(e.rawEvent)
-    );
+    let finalIdx = -1;
+    for (let i = turn.assistantEvents.length - 1; i >= 0; i--) {
+      if (turn.assistantEvents[i].content?.trim()) {
+        finalIdx = i;
+        break;
+      }
+    }
 
     if (finalIdx === -1) {
-      for (let i = turn.assistantEvents.length - 1; i >= 0; i--) {
-        if (turn.assistantEvents[i].content?.trim()) {
-          finalIdx = i;
-          break;
-        }
-      }
+      finalIdx = turn.assistantEvents.findIndex((e) => isRootWorkflowOutput(e.rawEvent));
     }
 
     if (finalIdx === -1) {
       finalIdx = turn.assistantEvents.length - 1;
     }
 
-    const finalEvent = turn.assistantEvents[finalIdx];
+    const rawFinalEvent = turn.assistantEvents[finalIdx];
+    const finalEvent = { ...rawFinalEvent };
+
     const intermediateEvents = turn.assistantEvents.filter((_, idx) => idx !== finalIdx);
 
-    // Replay builds the trace as data and derives the directive markdown from
-    // it, rather than assembling markdown directly. The two representations
-    // therefore cannot describe different traces, and the values below reach
-    // the renderer unescaped.
-    const reasoningTrace: ReasoningTraceEntry[] = [];
+    // 1. Group subagent activity from intermediate events
     const subAgentsList = [];
-    const usedResultKeys = new Set<string>();
-    const processedCallKeys = new Set<string>();
-
-    // Group intermediate events by subagent identity to avoid one box per chunk
     const subagentsGrouped = new Map<
       string,
       {
@@ -116,18 +141,31 @@ export function groupTurnSessionEvents(
       }
     >();
 
-    for (let i = 0; i < intermediateEvents.length; i++) {
-      const inter = intermediateEvents[i];
-      const author =
-        extractSubagentName(inter.rawEvent as Record<string, unknown> | undefined) ||
-        inter.author ||
-        "sub_agent";
-      const displayName = formatAgentDisplayName(author);
-      const content = inter.content?.trim() || "";
-      const thought = inter.thought?.trim() || "";
+    const genericAuthors = new Set([
+      "agent",
+      "sub_agent",
+      "subagent",
+      "root",
+      "workflow",
+      "model",
+      "assistant",
+      "user",
+    ]);
 
-      if (content || thought) {
-        const existing = subagentsGrouped.get(author);
+    for (const evt of intermediateEvents) {
+      const isSub = isSubagentNode(evt.rawEvent as Record<string, unknown> | undefined);
+      const subName = isSub
+        ? extractSubagentName(evt.rawEvent as Record<string, unknown> | undefined)
+        : evt.author && !genericAuthors.has(evt.author.toLowerCase())
+          ? evt.author
+          : undefined;
+
+      if (isSub || subName) {
+        const agentKey = subName || "subagent";
+        const displayName = formatAgentDisplayName(agentKey);
+        const content = evt.content?.trim() || "";
+        const thought = evt.thought?.trim() || "";
+        const existing = subagentsGrouped.get(agentKey);
         if (existing) {
           if (content && !existing.contentParts.includes(content)) {
             existing.contentParts.push(content);
@@ -136,115 +174,19 @@ export function groupTurnSessionEvents(
             existing.thoughtParts.push(thought);
           }
         } else {
-          subagentsGrouped.set(author, {
-            id: inter.id,
-            agentName: author,
+          subagentsGrouped.set(agentKey, {
+            id: evt.id,
+            agentName: agentKey,
             displayName,
             contentParts: content ? [content] : [],
             thoughtParts: thought ? [thought] : [],
-            timestamp: inter.createTime,
+            timestamp: evt.createTime,
           });
         }
-      }
-
-      const calls = getEventToolCalls(inter);
-      const results = getEventToolResults(inter);
-
-      for (const [callIdx, call] of calls.entries()) {
-        const toolName = call.name || "tool";
-        const argsStr = JSON.stringify(call.args || {}, null, 2);
-        const callKey = `${toolName}-${argsStr}`;
-
-        let matchedResultStr: string | undefined;
-
-        /**
-         * Pair on id when both sides carry one. Matching purely by name — "the
-         * next unused result with this tool's name" — attached results in
-         * arrival order rather than call order, so two parallel calls to the
-         * same tool exchanged results. The streaming path in chat-adapter.ts
-         * applies the same rule, so a conversation renders identically live and
-         * on reload; previously the two heuristics could disagree.
-         *
-         * The name fallback stays for payloads where ids are absent, which is
-         * why the id path is only taken when the result actually has one.
-         */
-        const matchAt = (
-          candidates: ReturnType<typeof getEventToolResults>,
-          eventIdx: number,
-          predicate: (r: (typeof candidates)[number]) => boolean
-        ): string | undefined => {
-          const idx = candidates.findIndex(
-            (r, k) => predicate(r) && !usedResultKeys.has(`${eventIdx}-${k}`)
-          );
-          if (idx === -1) return undefined;
-          usedResultKeys.add(`${eventIdx}-${idx}`);
-          return JSON.stringify(candidates[idx].result || {}, null, 2);
-        };
-
-        const byId = (r: { id?: string }) => Boolean(call.id) && r.id === call.id;
-        const byName = (r: { name?: string; id?: string }) =>
-          r.name === toolName && !(call.id && r.id);
-
-        for (const predicate of [byId, byName]) {
-          if (predicate === byId && !call.id) continue;
-
-          matchedResultStr = matchAt(results, i, predicate);
-          if (matchedResultStr !== undefined) break;
-
-          for (let j = i + 1; j < intermediateEvents.length; j++) {
-            matchedResultStr = matchAt(
-              getEventToolResults(intermediateEvents[j]),
-              j,
-              predicate
-            );
-            if (matchedResultStr !== undefined) break;
-          }
-          if (matchedResultStr !== undefined) break;
-        }
-
-        // The persisted call may have no id — replay pairs by name in that case
-        // — but the renderer needs a stable key per block. Deriving it from the
-        // event and the call's position keeps it stable across re-renders and
-        // distinct between two parallel calls to the same tool.
-        const toolCallId = call.id || `${inter.id}-call-${callIdx}`;
-
-        if (matchedResultStr !== undefined) {
-          processedCallKeys.add(callKey);
-          reasoningTrace.push({
-            type: "tool",
-            toolCallId,
-            toolName,
-            argsJson: argsStr,
-            resultJson: matchedResultStr,
-            status: "complete",
-          });
-        } else if (!processedCallKeys.has(callKey)) {
-          processedCallKeys.add(callKey);
-          reasoningTrace.push({
-            type: "tool",
-            toolCallId,
-            toolName,
-            argsJson: argsStr,
-            status: "complete",
-          });
-        }
-      }
-
-      for (let resIdx = 0; resIdx < results.length; resIdx++) {
-        if (usedResultKeys.has(`${i}-${resIdx}`)) continue;
-        const res = results[resIdx];
-        const toolName = res.name || "tool";
-        const resStr = JSON.stringify(res.result || {}, null, 2);
-        reasoningTrace.push({
-          type: "tool",
-          toolCallId: res.id || `${inter.id}-result-${resIdx}`,
-          toolName,
-          resultJson: resStr,
-          status: "complete",
-        });
       }
     }
 
+    const subagentTraceEntries: ReasoningTraceEntry[] = [];
     for (const sub of subagentsGrouped.values()) {
       const combinedContent = sub.contentParts.join("\n\n").trim();
       const combinedThought = sub.thoughtParts.join("\n\n").trim();
@@ -260,7 +202,7 @@ export function groupTurnSessionEvents(
           timestamp: sub.timestamp,
         });
 
-        reasoningTrace.push({
+        subagentTraceEntries.push({
           type: "subagent",
           id: sub.id,
           displayName: sub.displayName,
@@ -268,17 +210,256 @@ export function groupTurnSessionEvents(
           response: combinedContent,
           status: "complete",
         });
-      } else if (combinedThought) {
-        reasoningTrace.push({ type: "thought", text: combinedThought });
       }
     }
 
-    if (finalEvent.thought?.trim()) {
-      reasoningTrace.push({ type: "thought", text: finalEvent.thought.trim() });
+    // 2. Gather and pair tool calls and results across all events in the turn
+    const callsWithEvent: Array<{
+      eventIdx: number;
+      call: { id?: string; name: string; args: Record<string, unknown> };
+    }> = [];
+    const resultsWithEvent: Array<{
+      eventIdx: number;
+      resIdx: number;
+      result: { id?: string; name: string; result: Record<string, unknown> };
+    }> = [];
+
+    for (let i = 0; i < turn.assistantEvents.length; i++) {
+      const evt = turn.assistantEvents[i];
+      const calls = getEventToolCalls(evt);
+      for (const call of calls) {
+        callsWithEvent.push({ eventIdx: i, call });
+      }
+      const results = getEventToolResults(evt);
+      for (let rIdx = 0; rIdx < results.length; rIdx++) {
+        resultsWithEvent.push({ eventIdx: i, resIdx: rIdx, result: results[rIdx] });
+      }
     }
 
-    const finalEventToolCalls = getEventToolCalls(finalEvent);
-    const finalEventToolResults = getEventToolResults(finalEvent);
+    const usedResultKeys = new Set<string>();
+    const processedCallKeys = new Set<string>();
+    const toolTraceEntries: ReasoningTraceEntry[] = [];
+    const turnToolCalls: Array<{
+      id?: string;
+      name: string;
+      args: Record<string, unknown>;
+    }> = [];
+    const turnToolResults: Array<{
+      id?: string;
+      name: string;
+      result: Record<string, unknown>;
+    }> = [];
+
+    for (const { eventIdx, call } of callsWithEvent) {
+      const toolName = call.name || "tool";
+      const argsStr = JSON.stringify(call.args || {}, null, 2);
+      const callKey = `${toolName}-${argsStr}`;
+      turnToolCalls.push(call);
+
+      let matchedResultStr: string | undefined;
+      let matchedResultObj:
+        { id?: string; name: string; result: Record<string, unknown> } | undefined;
+
+      // Match by ID first
+      if (call.id) {
+        for (const item of resultsWithEvent) {
+          const key = `${item.eventIdx}-${item.resIdx}`;
+          if (item.result.id === call.id && !usedResultKeys.has(key)) {
+            usedResultKeys.add(key);
+            matchedResultStr = JSON.stringify(item.result.result || {}, null, 2);
+            matchedResultObj = item.result;
+            break;
+          }
+        }
+      }
+
+      // Fallback match by name
+      if (matchedResultStr === undefined) {
+        for (const item of resultsWithEvent) {
+          const key = `${item.eventIdx}-${item.resIdx}`;
+          if (
+            item.result.name === toolName &&
+            !(call.id && item.result.id) &&
+            !usedResultKeys.has(key)
+          ) {
+            usedResultKeys.add(key);
+            matchedResultStr = JSON.stringify(item.result.result || {}, null, 2);
+            matchedResultObj = item.result;
+            break;
+          }
+        }
+      }
+
+      if (matchedResultObj) {
+        turnToolResults.push(matchedResultObj);
+      }
+
+      const evtId = turn.assistantEvents[eventIdx]?.id || `evt-${eventIdx}`;
+      const toolCallId = call.id || `${evtId}-call-${toolTraceEntries.length}`;
+
+      if (matchedResultStr !== undefined) {
+        processedCallKeys.add(callKey);
+        toolTraceEntries.push({
+          type: "tool",
+          toolCallId,
+          toolName,
+          argsJson: argsStr,
+          resultJson: matchedResultStr,
+          status: "complete",
+        });
+      } else if (!processedCallKeys.has(callKey)) {
+        processedCallKeys.add(callKey);
+        toolTraceEntries.push({
+          type: "tool",
+          toolCallId,
+          toolName,
+          argsJson: argsStr,
+          status: "complete",
+        });
+      }
+    }
+
+    // Unpaired results
+    for (const item of resultsWithEvent) {
+      const key = `${item.eventIdx}-${item.resIdx}`;
+      if (!usedResultKeys.has(key)) {
+        usedResultKeys.add(key);
+        turnToolResults.push(item.result);
+        const toolName = item.result.name || "tool";
+        const resStr = JSON.stringify(item.result.result || {}, null, 2);
+        const evtId = turn.assistantEvents[item.eventIdx]?.id || `evt-${item.eventIdx}`;
+        toolTraceEntries.push({
+          type: "tool",
+          toolCallId: item.result.id || `${evtId}-result-${item.resIdx}`,
+          toolName,
+          resultJson: resStr,
+          status: "complete",
+        });
+      }
+    }
+
+    // 3. Aggregate code execution blocks
+    const aggregatedCodeBlocks: AgentCodeExecutionBlock[] = [];
+    for (const event of turn.assistantEvents) {
+      const blocks = event.codeExecutionBlocks || event.code_execution_blocks || [];
+      for (const block of blocks) {
+        if (block.code && !block.result) {
+          const existingWithSameCode = aggregatedCodeBlocks.find(
+            (b) => b.code === block.code
+          );
+          if (!existingWithSameCode) {
+            aggregatedCodeBlocks.push({ ...block });
+          }
+        } else if (!block.code && block.result) {
+          const pending = aggregatedCodeBlocks
+            .slice()
+            .reverse()
+            .find((b) => b.code && !b.result);
+          if (pending) {
+            pending.result = block.result;
+            pending.status =
+              block.result.outcome === "OUTCOME_FAILED" ||
+              block.result.outcome === "OUTCOME_DEADLINE_EXCEEDED"
+                ? "error"
+                : "complete";
+          } else if (
+            !aggregatedCodeBlocks.some((b) => b.result?.output === block.result?.output)
+          ) {
+            aggregatedCodeBlocks.push({ ...block });
+          }
+        } else {
+          const existingWithSameCode = aggregatedCodeBlocks.find(
+            (b) => b.code && b.code === block.code
+          );
+          if (existingWithSameCode) {
+            if (block.result) {
+              existingWithSameCode.result = block.result;
+              existingWithSameCode.status = block.status;
+            }
+          } else {
+            const existingIdx = aggregatedCodeBlocks.findIndex((b) => b.id === block.id);
+            if (existingIdx !== -1) {
+              aggregatedCodeBlocks[existingIdx] = { ...block };
+            } else {
+              aggregatedCodeBlocks.push({ ...block });
+            }
+          }
+        }
+      }
+    }
+
+    const codeTraceEntries: ReasoningTraceEntry[] = [];
+    for (const b of aggregatedCodeBlocks) {
+      if (b.status === "running" && b.result) {
+        b.status =
+          b.result.outcome === "OUTCOME_FAILED" ||
+          b.result.outcome === "OUTCOME_DEADLINE_EXCEEDED"
+            ? "error"
+            : "complete";
+      }
+      codeTraceEntries.push({
+        type: "code_execution",
+        block: b,
+      });
+    }
+
+    // 4. Collect and deduplicate thoughts across all events in the turn
+    const rawThoughts: string[] = [];
+    for (const evt of turn.assistantEvents) {
+      if (evt.thought?.trim()) {
+        rawThoughts.push(evt.thought.trim());
+      }
+    }
+
+    const dedupedThoughts: string[] = [];
+    for (const t of rawThoughts) {
+      const trimmed = t.trim();
+      if (!trimmed) continue;
+      const existingIdx = dedupedThoughts.findIndex(
+        (existing) =>
+          existing === trimmed || existing.includes(trimmed) || trimmed.includes(existing)
+      );
+      if (existingIdx !== -1) {
+        if (trimmed.length > dedupedThoughts[existingIdx].length) {
+          dedupedThoughts[existingIdx] = trimmed;
+        }
+      } else {
+        dedupedThoughts.push(trimmed);
+      }
+    }
+
+    // 5. Assemble ordered reasoningTrace:
+    // - Initial deliberation thought (if any) is ALWAYS placed BEFORE actions (tools, subagents, code).
+    // - Actions (tool calls, subagents, code execution) follow in logical order.
+    // - Any subsequent distinct post-action thoughts follow after the actions.
+    const reasoningTrace: ReasoningTraceEntry[] = [];
+    if (dedupedThoughts.length > 0) {
+      reasoningTrace.push({ type: "thought", text: dedupedThoughts[0] });
+    }
+    reasoningTrace.push(...toolTraceEntries);
+    reasoningTrace.push(...subagentTraceEntries);
+    reasoningTrace.push(...codeTraceEntries);
+    if (dedupedThoughts.length > 1) {
+      for (const followUpThought of dedupedThoughts.slice(1)) {
+        reasoningTrace.push({ type: "thought", text: followUpThought });
+      }
+    }
+
+    const unifiedThought =
+      reasoningTrace.length > 0 ? formatReasoningTrace(reasoningTrace) : undefined;
+
+    const codeExecutionBlocks =
+      aggregatedCodeBlocks.length > 0 ? aggregatedCodeBlocks : undefined;
+
+    const turnArtifacts: ArtifactStreamPayload[] = [];
+    for (const evt of turn.assistantEvents) {
+      const arts = extractArtifactsFromSessionEvent(evt);
+      for (const a of arts) {
+        if (!turnArtifacts.some((existing) => existing.filename === a.filename)) {
+          turnArtifacts.push(a);
+        }
+      }
+    }
 
     const allTurnGroundingMetas = [
       ...turn.assistantEvents.map(
@@ -353,58 +534,6 @@ export function groupTurnSessionEvents(
       finishEvent?.finishReason ||
       finishEvent?.finish_reason;
 
-    const aggregatedCodeBlocks: AgentCodeExecutionBlock[] = [];
-    for (const event of turn.assistantEvents) {
-      const blocks = event.codeExecutionBlocks || event.code_execution_blocks || [];
-      for (const block of blocks) {
-        if (block.code && !block.result) {
-          aggregatedCodeBlocks.push({ ...block });
-        } else if (!block.code && block.result) {
-          const pending = aggregatedCodeBlocks
-            .slice()
-            .reverse()
-            .find((b) => b.code && !b.result);
-          if (pending) {
-            pending.result = block.result;
-            pending.status =
-              block.result.outcome === "OUTCOME_FAILED" ||
-              block.result.outcome === "OUTCOME_DEADLINE_EXCEEDED"
-                ? "error"
-                : "complete";
-          } else {
-            aggregatedCodeBlocks.push({ ...block });
-          }
-        } else {
-          const existingIdx = aggregatedCodeBlocks.findIndex((b) => b.id === block.id);
-          if (existingIdx !== -1) {
-            aggregatedCodeBlocks[existingIdx] = { ...block };
-          } else {
-            aggregatedCodeBlocks.push({ ...block });
-          }
-        }
-      }
-    }
-
-    for (const b of aggregatedCodeBlocks) {
-      if (b.status === "running" && b.result) {
-        b.status =
-          b.result.outcome === "OUTCOME_FAILED" ||
-          b.result.outcome === "OUTCOME_DEADLINE_EXCEEDED"
-            ? "error"
-            : "complete";
-      }
-      reasoningTrace.push({
-        type: "code_execution",
-        block: b,
-      });
-    }
-
-    const unifiedThought =
-      reasoningTrace.length > 0 ? formatReasoningTrace(reasoningTrace) : undefined;
-
-    const codeExecutionBlocks =
-      aggregatedCodeBlocks.length > 0 ? aggregatedCodeBlocks : undefined;
-
     result.push({
       id: finalEvent.id,
       name: finalEvent.name,
@@ -421,10 +550,8 @@ export function groupTurnSessionEvents(
         ? { thoughtSignature, thought_signature: thoughtSignature }
         : {}),
       ...(subAgentsList.length > 0 ? { subAgents: subAgentsList } : {}),
-      ...(finalEventToolCalls.length > 0 ? { tool_calls: finalEventToolCalls } : {}),
-      ...(finalEventToolResults.length > 0
-        ? { tool_results: finalEventToolResults }
-        : {}),
+      ...(turnToolCalls.length > 0 ? { tool_calls: turnToolCalls } : {}),
+      ...(turnToolResults.length > 0 ? { tool_results: turnToolResults } : {}),
       ...(finalEvent.tool_call ? { tool_call: finalEvent.tool_call } : {}),
       ...(finalEvent.tool_result ? { tool_result: finalEvent.tool_result } : {}),
       ...(codeExecutionBlocks && codeExecutionBlocks.length > 0
@@ -433,6 +560,7 @@ export function groupTurnSessionEvents(
             code_execution_blocks: codeExecutionBlocks,
           }
         : {}),
+      ...(turnArtifacts.length > 0 ? { artifacts: turnArtifacts } : {}),
       ...(groundingMeta
         ? { groundingMetadata: groundingMeta, grounding_metadata: groundingMeta }
         : {}),

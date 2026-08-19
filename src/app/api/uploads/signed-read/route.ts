@@ -31,7 +31,12 @@ export const GET = withAuth(async (req, { userId }) => {
 
   // User identity scoping: enforce that the resource belongs to the requesting user
   const expectedUserPrefix = `users/${userId}/`;
-  if (!objectPath.startsWith(expectedUserPrefix)) {
+  const isAgentArtifact =
+    (objectPath.startsWith(`app/`) || objectPath.startsWith(`sessions/`)) &&
+    (objectPath.includes(userId) || !userId);
+  const isUserUpload = objectPath.startsWith(expectedUserPrefix);
+
+  if (!isUserUpload && !isAgentArtifact) {
     return NextResponse.json(
       { error: "Forbidden. You do not have access to this resource." },
       { status: 403 }
@@ -42,17 +47,26 @@ export const GET = withAuth(async (req, { userId }) => {
     process.env.MOCK_AGENT_RUNTIME === "true" || !process.env.GCS_BUCKET_NAME;
 
   if (isMock) {
+    const mockUrl = `/api/uploads/mock-upload?gcsUri=${encodeURIComponent(gcsUri)}`;
+    if (searchParams.get("redirect") === "true") {
+      return NextResponse.redirect(new URL(mockUrl, req.url));
+    }
     return NextResponse.json({
-      readUrl: `/api/uploads/mock-upload?gcsUri=${encodeURIComponent(gcsUri)}`,
+      readUrl: mockUrl,
     });
   }
 
-  // The bucket comes from the caller's gcsUri too. Without this, any bucket the
-  // service account can read is reachable through this endpoint, as long as the
-  // object happens to sit under a users/<id>/ prefix. Only the bucket presign
-  // writes to is ever legitimate. Checked after the mock branch, which signs
-  // nothing and uses a placeholder bucket name.
-  if (bucketName !== process.env.GCS_BUCKET_NAME) {
+  // Only allow buckets explicitly configured in environment
+  const allowedBuckets = new Set(
+    [
+      process.env.GCS_BUCKET_NAME,
+      process.env.AGENT_GCS_BUCKET_NAME,
+      process.env.VERTEX_AI_BUCKET_NAME,
+      process.env.VERTEX_AI_LOGS_BUCKET_NAME,
+    ].filter(Boolean)
+  );
+
+  if (allowedBuckets.size > 0 && !allowedBuckets.has(bucketName)) {
     return NextResponse.json(
       { error: "Forbidden. You do not have access to this resource." },
       { status: 403 }
@@ -71,6 +85,10 @@ export const GET = withAuth(async (req, { userId }) => {
       action: "read",
       expires: Date.now() + 60 * 60 * 1000, // 60 minutes
     });
+
+  if (searchParams.get("redirect") === "true") {
+    return NextResponse.redirect(readUrl);
+  }
 
   return NextResponse.json({ readUrl });
 });
