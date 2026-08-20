@@ -1,4 +1,5 @@
 import {
+  A2UIPartData,
   AgentArtifact,
   AgentCodeExecutionBlock,
   AgentFeedbackRequest,
@@ -556,7 +557,59 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
       .flatMap((m) => m.parts || [])
       .find((p) => p.function_response || p.functionResponse);
 
-    // 1. If this is a function response to a prior confirmation request:
+    const a2uiActionPart = [...body.messages]
+      .reverse()
+      .flatMap((m) => m.parts || [])
+      .find((p) => p.type === "a2ui_action" || p.a2uiAction || p.a2ui_action);
+
+    const a2uiActionFromText = lastPrompt.match(/^\[A2UI_ACTION:(.*?)\]$/);
+
+    // 1. If this is an A2UI action submission:
+    if (a2uiActionPart || a2uiActionFromText) {
+      let actionPayload: Record<string, unknown> = {};
+      let actionEvent = "action";
+      let componentId = "";
+
+      if (a2uiActionPart) {
+        const act = (a2uiActionPart.a2uiAction ||
+          a2uiActionPart.a2ui_action ||
+          a2uiActionPart) as Record<string, unknown>;
+        actionEvent = String(act.event || "action");
+        componentId = String(act.componentId || "");
+        actionPayload = (act.payload as Record<string, unknown>) || {};
+      } else if (a2uiActionFromText) {
+        try {
+          const parsed = JSON.parse(a2uiActionFromText[1]);
+          actionEvent = parsed.event || "action";
+          componentId = parsed.componentId || "";
+          actionPayload = parsed.payload || {};
+        } catch {
+          // fallback
+        }
+      }
+
+      yield {
+        event_type: "thought",
+        thought: `Processing A2UI interactive action "${actionEvent}" (component: "${componentId}")...`,
+      };
+      await mockDelay(80, signal);
+
+      const resolutionText = `Processed interactive A2UI action **${actionEvent}**${componentId ? ` on \`${componentId}\`` : ""}. The requested update was applied with payload:\n\n\`\`\`json\n${JSON.stringify(actionPayload, null, 2)}\n\`\`\``;
+
+      const chunks = resolutionText.split(" ");
+      for (const chunk of chunks) {
+        yield {
+          event_type: "content",
+          content: chunk + " ",
+        };
+        await mockDelay(15, signal);
+      }
+
+      yield { event_type: "done" };
+      return;
+    }
+
+    // 2. If this is a function response to a prior confirmation request:
     if (fnResponsePart) {
       const fnResp = fnResponsePart.function_response || fnResponsePart.functionResponse;
       const isConfirmed =
@@ -594,7 +647,7 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
       return;
     }
 
-    // 2. If prompt asks for confirmation or critical action:
+    // 3. If prompt asks for confirmation or critical action:
     const lowerPrompt = lastPrompt.toLowerCase();
     const isConfirmationTrigger =
       lowerPrompt.includes("confirm") ||
@@ -629,6 +682,140 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
         content:
           "This tool operation requires human approval to proceed. Please review and approve or decline above.",
       };
+
+      yield { event_type: "done" };
+      return;
+    }
+
+    // 4. If prompt requests A2UI generative micro-UI:
+    const isA2UITrigger =
+      lowerPrompt.includes("a2ui") ||
+      lowerPrompt.includes("micro-ui") ||
+      lowerPrompt.includes("generative ui") ||
+      lowerPrompt.includes("cluster status") ||
+      lowerPrompt.includes("status card") ||
+      lowerPrompt.includes("deploy form") ||
+      lowerPrompt.includes("scale cluster");
+
+    if (isA2UITrigger) {
+      yield {
+        event_type: "thought",
+        thought: `Generating interactive A2UI micro-component tree for query "${lastPrompt}"...`,
+      };
+      await mockDelay(80, signal);
+
+      const sampleA2UI: A2UIPartData = {
+        version: "0.8",
+        root: {
+          type: "Card",
+          props: {
+            title: "Google Cloud Agent Runtime - Cluster Status",
+            status: "Operational",
+            statusVariant: "success",
+            icon: "⚡",
+          },
+          children: [
+            {
+              type: "Heading",
+              props: { level: 2 },
+              children: "Cluster europe-west1-prod",
+            },
+            {
+              type: "Text",
+              children: "All Reasoning Engine instances and session workers are healthy.",
+            },
+            {
+              type: "StatMetric",
+              props: {
+                label: "Active Invocations",
+                value: "2,840",
+                unit: "req/s",
+                change: "+14%",
+                changeType: "increase",
+              },
+            },
+            {
+              type: "ProgressBar",
+              props: {
+                label: "Memory Utilization",
+                value: 68,
+                variant: "primary",
+              },
+            },
+            {
+              type: "Table",
+              props: {
+                caption: "Active Reasoning Engine Instances",
+                headers: ["Service", "Zone", "Instances", "Status"],
+                rows: [
+                  ["agent-runtime-gateway", "europe-west1-b", "6", "Ready"],
+                  ["session-state-service", "europe-west1-c", "4", "Ready"],
+                  ["citation-rag-service", "europe-west1-b", "2", "Ready"],
+                ],
+              },
+            },
+            {
+              type: "Form",
+              id: "scale_cluster_form",
+              actions: [
+                {
+                  event: "scale_cluster",
+                  payload: { cluster: "europe-west1-prod" },
+                },
+              ],
+              children: [
+                {
+                  type: "TextInput",
+                  props: {
+                    name: "targetReplicas",
+                    label: "Scale Replicas",
+                    defaultValue: "8",
+                    placeholder: "Enter target instance count...",
+                  },
+                },
+                {
+                  type: "SelectDropdown",
+                  props: {
+                    name: "trafficStrategy",
+                    label: "Traffic Strategy",
+                    defaultValue: "canary",
+                    options: [
+                      { label: "Canary (10% gradual)", value: "canary" },
+                      { label: "Blue-Green Instant", value: "blue_green" },
+                      { label: "Rolling Update", value: "rolling" },
+                    ],
+                  },
+                },
+                {
+                  type: "Button",
+                  props: {
+                    label: "Apply Cluster Scaling",
+                    type: "submit",
+                    variant: "primary",
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      };
+
+      yield {
+        event_type: "a2ui",
+        a2ui: sampleA2UI,
+      };
+      await mockDelay(60, signal);
+
+      const explanation =
+        "Here is the interactive cluster dashboard. You can inspect live metrics or submit scaling operations directly using the form below.";
+      const chunks = explanation.split(" ");
+      for (const chunk of chunks) {
+        yield {
+          event_type: "content",
+          content: chunk + " ",
+        };
+        await mockDelay(15, signal);
+      }
 
       yield { event_type: "done" };
       return;

@@ -135,6 +135,21 @@ Use this index to quickly locate specific subsystems and implementations across 
 - [`src/components/artifacts/renderers/svg-diagram-renderer.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/artifacts/renderers/svg-diagram-renderer.tsx): SVG vector diagram renderer with zoom and export.
 - [`src/components/artifacts/renderers/markdown-artifact-renderer.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/artifacts/renderers/markdown-artifact-renderer.tsx): Formatted markdown document renderer.
 
+### A2UI Generative Micro-UI Components
+
+- [`src/components/a2ui/a2ui-message-part.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/a2ui/a2ui-message-part.tsx): Message part container wiring A2UI micro-UIs to assistant-ui thread runtime.
+- [`src/components/a2ui/a2ui-renderer.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/a2ui/a2ui-renderer.tsx): Root recursive component dispatcher rendering catalog nodes.
+- [`src/components/a2ui/a2ui-context.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/a2ui/a2ui-context.tsx): `A2UIProvider` and `useA2UI` hook managing action dispatch and button lock states.
+- [`src/components/a2ui/a2ui-fallback.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/a2ui/a2ui-fallback.tsx): Fallback card preview for unsupported component types.
+- [`src/components/a2ui/catalog/a2ui-card.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/a2ui/catalog/a2ui-card.tsx): Card container with title, icon, status badges, and nested children.
+- [`src/components/a2ui/catalog/a2ui-typography.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/a2ui/catalog/a2ui-typography.tsx): Heading, Text, Badge, and Divider primitives.
+- [`src/components/a2ui/catalog/a2ui-stat-metric.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/a2ui/catalog/a2ui-stat-metric.tsx): StatMetric KPI cards with unit and trend indicators.
+- [`src/components/a2ui/catalog/a2ui-table.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/a2ui/catalog/a2ui-table.tsx): Compact data table with headers and striped rows.
+- [`src/components/a2ui/catalog/a2ui-mini-chart.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/a2ui/catalog/a2ui-mini-chart.tsx): ProgressBar and MiniBarChart components.
+- [`src/components/a2ui/catalog/a2ui-button.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/a2ui/catalog/a2ui-button.tsx): Action button with loading spinners and post-submit locking.
+- [`src/components/a2ui/catalog/a2ui-inputs.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/a2ui/catalog/a2ui-inputs.tsx): TextInput, SelectDropdown, and RadioGroup input controls.
+- [`src/components/a2ui/catalog/a2ui-form.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/a2ui/catalog/a2ui-form.tsx): Form container aggregating input field values on submit.
+
 ### Auth & UI Primitives
 
 - [`src/components/auth/user-avatar-menu.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/components/auth/user-avatar-menu.tsx): User profile dropdown with logout button and drawer triggers.
@@ -145,6 +160,7 @@ Use this index to quickly locate specific subsystems and implementations across 
 
 - [`src/lib/agent-runtime-client.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/agent-runtime-client.ts): Vertex AI Reasoning Engine REST API client, SSE stream handler, and mock store.
 - [`src/lib/adapters/chat-adapter.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/adapters/chat-adapter.ts): `ChatModelAdapter` translating `/api/chat` SSE stream to assistant-ui runtime.
+- [`src/lib/a2ui/a2ui-parser.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/a2ui/a2ui-parser.ts): A2UI tree parser, normalizer, and text flattener with resilient fallbacks.
 - [`src/lib/context-caching/cache-metrics.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/context-caching/cache-metrics.ts): Context caching hit ratio and cost reduction calculations.
 - [`src/lib/session-state/state-context.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/session-state/state-context.tsx): Session state React Context and hooks (`useSessionState`).
 - [`src/lib/session-state/state-diff.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/lib/session-state/state-diff.ts): Structural state delta diffing and type inference.
@@ -156,14 +172,21 @@ Use this index to quickly locate specific subsystems and implementations across 
 
 ### Types & Specs
 
-- [`src/types/agent.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/types/agent.ts): Data contracts for streams, sessions, subagents, grounding metadata, context caching, and session state.
+- [`src/types/agent.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/types/agent.ts): Data contracts for streams, sessions, subagents, grounding metadata, context caching, session state, and A2UI.
+- [`src/types/agent/a2ui.ts`](file:///Users/mblanc/projects/agent-runtime-ui/src/types/agent/a2ui.ts): A2UI component node types, action payloads, and catalog props.
 - [`docs/spec.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/spec.md): Overall application specification and architecture diagram.
+- [`docs/spec-a2ui-generative-ui.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/spec-a2ui-generative-ui.md): Specification for A2UI generative micro-UIs.
 - [`docs/spec-context-caching-and-session-state.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/spec-context-caching-and-session-state.md): Specification for Vertex AI Context Caching & ADK Session State Inspector.
 - [`docs/spec-grounding-citations.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/spec-grounding-citations.md): Specification for Google Search and Enterprise RAG Grounding, citations, and inspection drawer.
 - [`docs/spec-session-service-thread-list.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/spec-session-service-thread-list.md): Detailed specification for session service and sidebar thread list integration.
 
 ### Test Suite
 
+- [`tests/a2ui-parser.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/a2ui-parser.test.ts): Unit tests for A2UI payload parsing, schema normalization, and tree sanitization.
+- [`tests/a2ui-catalog.test.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/tests/a2ui-catalog.test.tsx): Component tests for A2UI catalog primitives (Card, StatMetric, Table, ProgressBar, Button, Form, Inputs).
+- [`tests/a2ui-stream.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/a2ui-stream.test.ts): Integration tests for A2UI SSE streaming accumulation and wire format conversion.
+- [`tests/a2ui-ui.test.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/tests/a2ui-ui.test.tsx): Component tests for `A2UIMessagePart` and action dispatch.
+- [`tests/a2ui-session.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/a2ui-session.test.ts): Integration tests for session history rehydration with A2UI payloads.
 - [`tests/context-caching.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/context-caching.test.ts): Pure calculation unit tests for context cache hit ratio and metrics.
 - [`tests/context-caching-ui.test.tsx`](file:///Users/mblanc/projects/agent-runtime-ui/tests/context-caching-ui.test.tsx): UI component tests for context caching badge and savings popover.
 - [`tests/session-state-api.test.ts`](file:///Users/mblanc/projects/agent-runtime-ui/tests/session-state-api.test.ts): REST API integration tests for `/api/sessions/[sessionId]/state`.

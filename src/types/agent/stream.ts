@@ -7,6 +7,7 @@ import type {
   ExecutableCodeData,
 } from "./message-parts";
 import type { ArtifactStreamPayload } from "./artifacts";
+import type { A2UIPartData } from "./a2ui";
 
 /**
  * A streaming event after normalisation, and the only stream shape that exists
@@ -43,6 +44,7 @@ export interface AgentStreamEvent {
     | "code_execution_result"
     | "artifact_created"
     | "artifact_updated"
+    | "a2ui"
     | "error"
     | "done";
   eventId?: string;
@@ -84,6 +86,9 @@ export interface AgentStreamEvent {
   retrieved_memories?: MemoryRetrievalItem[];
   groundingMetadata?: GroundingMetadata;
   artifact?: ArtifactStreamPayload;
+  a2ui?: A2UIPartData;
+  a2uiData?: A2UIPartData;
+  a2ui_data?: A2UIPartData;
   /**
    * Still dual-spelled *inside*: `AgentUsageMetadata` is shared with
    * `AgentSessionEvent`, which takes it straight from the Sessions REST API in

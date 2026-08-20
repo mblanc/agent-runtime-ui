@@ -28,6 +28,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning className={inter.variable}>
+      <head>
+        <link rel="preconnect" href="https://storage.googleapis.com" crossOrigin="" />
+        <link rel="preconnect" href="https://lh3.googleusercontent.com" crossOrigin="" />
+        <link rel="dns-prefetch" href="https://storage.googleapis.com" />
+        <link rel="dns-prefetch" href="https://lh3.googleusercontent.com" />
+      </head>
       <body className="min-h-screen font-sans bg-[#fdfcfc] text-[#1f1f1f] antialiased dark:bg-[#0c0c0c] dark:text-[#e3e3e3]">
         <ThemeProvider
           attribute="class"

@@ -1,5 +1,6 @@
 import type { ChatModelRunResult } from "@assistant-ui/react";
 import type {
+  A2UIPartData,
   AgentCodeExecutionBlock,
   AgentMessageInfoMetadata,
   ArtifactStreamPayload,
@@ -56,6 +57,7 @@ export interface YieldContentFields {
   messageInfo?: AgentMessageInfoMetadata;
   artifacts?: ArtifactStreamPayload[];
   artifactEvent?: ArtifactStreamPayload;
+  a2ui?: A2UIPartData;
 }
 
 export function createYieldContent({
@@ -70,6 +72,7 @@ export function createYieldContent({
   messageInfo,
   artifacts,
   artifactEvent,
+  a2ui,
 }: YieldContentFields): ChatModelRunResult {
   const hasRequiresAction = (toolCalls || []).some(
     (tc) => tc.status?.type === "requires-action" && tc.result === undefined
@@ -103,6 +106,7 @@ export function createYieldContent({
     (codeExecutionBlocks && codeExecutionBlocks.length > 0) ||
     (artifacts && artifacts.length > 0) ||
     artifactEvent ||
+    a2ui ||
     groundingMetadata ||
     messageInfo
       ? {
@@ -118,6 +122,7 @@ export function createYieldContent({
                 : {}),
               ...(artifacts && artifacts.length > 0 ? { artifacts } : {}),
               ...(artifactEvent ? { artifactEvent } : {}),
+              ...(a2ui ? { a2ui } : {}),
               ...(groundingMetadata ? { groundingMetadata } : {}),
               ...(messageInfo?.invocationId
                 ? { invocationId: messageInfo.invocationId }

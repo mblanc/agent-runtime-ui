@@ -534,6 +534,14 @@ export function groupTurnSessionEvents(
       finishEvent?.finishReason ||
       finishEvent?.finish_reason;
 
+    const a2uiData =
+      finalEvent.a2ui ||
+      finalEvent.a2uiData ||
+      finalEvent.a2ui_data ||
+      turn.assistantEvents.find((e) => e.a2ui || e.a2uiData || e.a2ui_data)?.a2ui ||
+      turn.assistantEvents.find((e) => e.a2ui || e.a2uiData || e.a2ui_data)?.a2uiData ||
+      turn.assistantEvents.find((e) => e.a2ui || e.a2uiData || e.a2ui_data)?.a2ui_data;
+
     result.push({
       id: finalEvent.id,
       name: finalEvent.name,
@@ -561,6 +569,7 @@ export function groupTurnSessionEvents(
           }
         : {}),
       ...(turnArtifacts.length > 0 ? { artifacts: turnArtifacts } : {}),
+      ...(a2uiData ? { a2ui: a2uiData, a2uiData: a2uiData, a2ui_data: a2uiData } : {}),
       ...(groundingMeta
         ? { groundingMetadata: groundingMeta, grounding_metadata: groundingMeta }
         : {}),

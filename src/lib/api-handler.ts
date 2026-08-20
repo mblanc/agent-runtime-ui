@@ -12,6 +12,10 @@ export const NO_STORE_HEADERS = {
   "Cache-Control": "no-store, no-cache, max-age=0, must-revalidate",
 } as const;
 
+export const STALE_WHILE_REVALIDATE_CACHE_HEADERS = {
+  "Cache-Control": "private, max-age=60, stale-while-revalidate=300",
+} as const;
+
 export interface ResolveAgentTargetOptions {
   /**
    * Accept `?reasoningEngineId=` as an alias for `?agentId=` in the query

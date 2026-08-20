@@ -1,5 +1,6 @@
 import type { ChatModelRunResult, ThreadMessage } from "@assistant-ui/react";
 import type {
+  A2UIPartData,
   AgentActionsDelta,
   AgentCodeExecutionBlock,
   AgentMessageInfoMetadata,
@@ -24,6 +25,7 @@ import {
   extractArtifactFromTool,
   extractArtifactsFromContent,
 } from "@/lib/artifacts/artifact-extractor";
+import { parseA2UIPayload, extractA2UIFromContent } from "@/lib/a2ui/a2ui-parser";
 import { formatAgentDisplayName } from "@/lib/utils";
 import { formatReasoningTrace } from "@/lib/agent-runtime/reasoning-directives";
 
@@ -104,6 +106,7 @@ export class StreamAccumulator {
   private readonly toolCallsMap = new Map<string, ToolCallYieldItem>();
   private readonly retrievedMemoriesList: MemoryRetrievalItem[] = [];
   private latestGroundingMetadata: GroundingMetadata | undefined;
+  private a2uiData: A2UIPartData | undefined;
 
   private lastStreamYieldTime = 0;
   private isTerminal = false;
@@ -172,6 +175,14 @@ export class StreamAccumulator {
       ]);
     }
 
+    const a2uiPayload = parsed.a2ui || parsed.a2uiData || parsed.a2ui_data;
+    if (a2uiPayload) {
+      const parsedA2UI = parseA2UIPayload(a2uiPayload);
+      if (parsedA2UI) {
+        this.a2uiData = parsedA2UI;
+      }
+    }
+
     const now = Date.now();
     const isHighFrequencyPartial = parsed.partial === true;
     const shouldYield =
@@ -210,12 +221,14 @@ export class StreamAccumulator {
       parsed.artifact
     ) {
       return this.handleArtifact(parsed.artifact);
+    } else if (parsed.event_type === "a2ui") {
+      return this.handleA2UI(parsed);
     } else if (parsed.event_type === "error" && parsed.error) {
       return this.handleError(parsed.error);
     } else if (parsed.event_type === "done") {
       this.completeTerminalState();
       return "final";
-    } else if (extractedMeta) {
+    } else if (extractedMeta || a2uiPayload) {
       return "yield";
     }
 
@@ -246,7 +259,6 @@ export class StreamAccumulator {
       !this.accumulatedText.includes("<svg") &&
       !this.accumulatedText.includes("<!DOCTYPE") &&
       !this.accumulatedText.includes("<html") &&
-      !this.accumulatedText.includes(",") &&
       !this.accumulatedText.includes("\t")
     ) {
       return;
@@ -281,10 +293,25 @@ export class StreamAccumulator {
   snapshot(): ChatModelRunResult {
     this.syncContentArtifacts();
     const reasoningTrace = this.buildReasoningTrace();
+
+    let displayText = this.accumulatedText;
+    if (
+      this.accumulatedText.includes("---a2ui_JSON---") ||
+      this.accumulatedText.includes("```a2ui") ||
+      this.accumulatedText.includes("```json:a2ui") ||
+      this.accumulatedText.includes("<!-- a2ui_start -->")
+    ) {
+      const extracted = extractA2UIFromContent(this.accumulatedText);
+      if (extracted.a2ui) {
+        this.a2uiData = extracted.a2ui;
+        displayText = extracted.cleanText;
+      }
+    }
+
     return createYieldContent({
       reasoning: formatReasoningTrace(reasoningTrace),
       reasoningTrace,
-      text: this.accumulatedText,
+      text: displayText,
       toolCalls: Array.from(this.toolCallsMap.values()),
       codeExecutionBlocks: this.codeExecutionBlocks.map((b) => ({ ...b })),
       eventId: this.latestEventId,
@@ -293,6 +320,7 @@ export class StreamAccumulator {
       messageInfo: this.getMessageInfo(),
       artifacts: Array.from(this.artifactsMap.values()),
       artifactEvent: this.latestArtifactEvent,
+      a2ui: this.a2uiData,
     });
   }
 
@@ -622,6 +650,10 @@ export class StreamAccumulator {
       if (art) {
         this.handleArtifact(art);
       }
+      const a2ui = parseA2UIPayload(result);
+      if (a2ui) {
+        this.a2uiData = a2ui;
+      }
     }
 
     return "yield";
@@ -738,6 +770,16 @@ export class StreamAccumulator {
     this.latestArtifactEvent = { ...artifact };
     this.artifactsMap.set(artifact.filename, { ...artifact });
     return "yield";
+  }
+
+  private handleA2UI(event: AgentStreamEvent): HandleOutcome {
+    const payload = event.a2ui || event.a2uiData || event.a2ui_data || event.content;
+    const parsed = parseA2UIPayload(payload);
+    if (parsed) {
+      this.a2uiData = parsed;
+      return "yield";
+    }
+    return "skip";
   }
 
   /**

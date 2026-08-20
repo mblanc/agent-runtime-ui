@@ -8,6 +8,7 @@ import type { ReasoningTraceEntry, SubAgentExecution } from "./messages";
 import type { GroundingMetadata } from "./grounding";
 import type { AgentActionsDelta, AgentNodeInfo, AgentUsageMetadata } from "./metadata";
 import type { ArtifactStreamPayload } from "./artifacts";
+import type { A2UIPartData } from "./a2ui";
 
 /**
  * Which agent, in which region, a request is addressed to.
@@ -102,6 +103,9 @@ export interface AgentSessionEvent {
   actions?: AgentActionsDelta;
   artifacts?: ArtifactStreamPayload[];
   artifact?: ArtifactStreamPayload;
+  a2ui?: A2UIPartData;
+  a2uiData?: A2UIPartData;
+  a2ui_data?: A2UIPartData;
   finishReason?: string;
   finish_reason?: string;
   timestamp?: number | string;

@@ -152,15 +152,8 @@ export function ArtifactProvider({
       } else if (!activeSessionId && !initialArtifacts) {
         setArtifacts([]);
       }
-    } else if (
-      !initialArtifacts &&
-      activeSessionId &&
-      artifacts.length === 0 &&
-      !isLoading
-    ) {
-      fetchArtifacts(activeSessionId);
     }
-  }, [activeSessionId, fetchArtifacts, initialArtifacts, artifacts.length, isLoading]);
+  }, [activeSessionId, fetchArtifacts, initialArtifacts]);
 
   const activeArtifact = useMemo(() => {
     if (!activeArtifactId) return null;

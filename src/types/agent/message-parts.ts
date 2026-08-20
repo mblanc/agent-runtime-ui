@@ -1,4 +1,5 @@
 import type { GroundingMetadata } from "./grounding";
+import type { A2UIPartData, AgentA2UIActionPayload } from "./a2ui";
 
 export interface GcsFileDataPart {
   file_data: {
@@ -43,7 +44,9 @@ export interface BaseAgentMessagePart {
     | "function_response"
     | "executable_code"
     | "code_execution_result"
-    | "code_execution_block";
+    | "code_execution_block"
+    | "a2ui"
+    | "a2ui_action";
   text?: string;
   thought?: boolean;
   file_data?: {
@@ -94,6 +97,11 @@ export interface BaseAgentMessagePart {
   codeExecutionResult?: CodeExecutionResultData;
   code_execution_block?: AgentCodeExecutionBlock;
   codeExecutionBlock?: AgentCodeExecutionBlock;
+  a2ui?: A2UIPartData;
+  a2uiData?: A2UIPartData;
+  a2ui_data?: A2UIPartData;
+  a2uiAction?: AgentA2UIActionPayload;
+  a2ui_action?: AgentA2UIActionPayload;
 }
 
 export interface AgentTextPart extends BaseAgentMessagePart {
@@ -166,6 +174,18 @@ export interface AgentCodeExecutionBlockPart extends BaseAgentMessagePart {
   codeExecutionBlock?: AgentCodeExecutionBlock;
 }
 
+export interface AgentA2UIPart extends BaseAgentMessagePart {
+  type?: "a2ui";
+  a2ui?: A2UIPartData;
+  a2uiData?: A2UIPartData;
+}
+
+export interface AgentA2UIActionPart extends BaseAgentMessagePart {
+  type?: "a2ui_action";
+  a2uiAction?: AgentA2UIActionPayload;
+  a2ui_action?: AgentA2UIActionPayload;
+}
+
 export type AgentMessagePart = BaseAgentMessagePart;
 
 export function isTextPart(part: AgentMessagePart): part is AgentTextPart {
@@ -212,6 +232,14 @@ export function isCodeExecutionBlockPart(
   part: AgentMessagePart
 ): part is AgentCodeExecutionBlockPart {
   return Boolean(part.code_execution_block || part.codeExecutionBlock);
+}
+
+export function isA2UIPart(part: AgentMessagePart): part is AgentA2UIPart {
+  return part.type === "a2ui" || Boolean(part.a2ui || part.a2uiData || part.a2ui_data);
+}
+
+export function isA2UIActionPart(part: AgentMessagePart): part is AgentA2UIActionPart {
+  return part.type === "a2ui_action" || Boolean(part.a2uiAction || part.a2ui_action);
 }
 
 export function normalizeAgentMessagePart(
@@ -322,6 +350,26 @@ export function normalizeAgentMessagePart(
 
   if (typeof raw.image === "string") {
     return { type: "image", image: raw.image };
+  }
+
+  const a2uiPayload = (raw.a2ui || raw.a2uiData || raw.a2ui_data) as
+    A2UIPartData | undefined;
+  if (a2uiPayload || raw.type === "a2ui") {
+    const data = a2uiPayload || (raw as unknown as A2UIPartData);
+    return {
+      type: "a2ui",
+      a2ui: data,
+      a2uiData: data,
+    };
+  }
+
+  const a2uiAction = (raw.a2uiAction || raw.a2ui_action) as
+    AgentA2UIActionPayload | undefined;
+  if (a2uiAction || raw.type === "a2ui_action") {
+    return {
+      type: "a2ui_action",
+      a2uiAction: a2uiAction || (raw.payload as AgentA2UIActionPayload),
+    };
   }
 
   return { type: "text", text: String(raw.text || JSON.stringify(raw)) };

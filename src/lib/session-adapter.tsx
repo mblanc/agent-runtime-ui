@@ -21,6 +21,7 @@ import { useAui } from "@assistant-ui/store";
 import { withAgentTarget } from "@/lib/api-client";
 import { isLocalSessionId } from "@/lib/agent-runtime/event-utils";
 import type { AgentTarget } from "@/types/agent";
+import { extractA2UIFromContent } from "@/lib/a2ui/a2ui-parser";
 
 interface SessionApiItem {
   id: string;
@@ -41,7 +42,8 @@ function mergeCustomMetadata(
   metadata: { custom?: Record<string, unknown> },
   reasoningTrace: unknown[] | undefined,
   codeExecutionBlocks: unknown[] | undefined,
-  artifacts?: unknown[] | undefined
+  artifacts?: unknown[] | undefined,
+  a2ui?: unknown | undefined
 ): Record<string, unknown> {
   const custom = { ...(metadata.custom || {}) };
   if (reasoningTrace) custom.reasoningTrace = reasoningTrace;
@@ -50,6 +52,9 @@ function mergeCustomMetadata(
   }
   if (artifacts && !custom.artifacts) {
     custom.artifacts = artifacts;
+  }
+  if (a2ui && !custom.a2ui) {
+    custom.a2ui = a2ui;
   }
   return {
     ...metadata,
@@ -66,7 +71,7 @@ export function formatRemoteMessagesToThreadMessages(
     }
     const parts: Array<Record<string, unknown>> = [];
     const thoughtStr = typeof m.thought === "string" ? m.thought.trim() : "";
-    const contentStr = typeof m.content === "string" ? m.content.trim() : "";
+    let contentStr = typeof m.content === "string" ? m.content.trim() : "";
 
     // The structured trace behind `thought`. This side of the pipe is typed as
     // `Record<string, unknown>` because it is raw JSON off the session API, so
@@ -80,6 +85,25 @@ export function formatRemoteMessagesToThreadMessages(
         ? (m.code_execution_blocks as unknown[])
         : undefined;
     const artifacts = Array.isArray(m.artifacts) ? m.artifacts : undefined;
+    let a2ui =
+      m.a2ui ||
+      m.a2uiData ||
+      m.a2ui_data ||
+      (m.metadata as { custom?: { a2ui?: unknown } })?.custom?.a2ui;
+
+    if (
+      contentStr &&
+      (contentStr.includes("---a2ui_JSON---") ||
+        contentStr.includes("```a2ui") ||
+        contentStr.includes("```json:a2ui") ||
+        contentStr.includes("<!-- a2ui_start -->"))
+    ) {
+      const extracted = extractA2UIFromContent(contentStr);
+      if (extracted.a2ui) {
+        a2ui = a2ui || extracted.a2ui;
+        contentStr = extracted.cleanText;
+      }
+    }
 
     if (thoughtStr) {
       parts.push({ type: "reasoning", text: thoughtStr });
@@ -176,7 +200,8 @@ export function formatRemoteMessagesToThreadMessages(
         },
         reasoningTrace,
         codeExecutionBlocks,
-        artifacts
+        artifacts,
+        a2ui
       ),
     } as unknown as ThreadMessageLike;
   });

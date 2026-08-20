@@ -141,6 +141,7 @@ export function toAgentMessages(
         const tokenMatch = part.text.match(
           /^\[TOOL_CONFIRMATION_RESPONSE:(.*?):(.*?):(true|false)\]$/
         );
+        const a2uiMatch = part.text.match(/^\[A2UI_ACTION:(.*?)\]$/);
         if (tokenMatch) {
           const [, callId, callName, boolStr] = tokenMatch;
           const isConf = boolStr === "true";
@@ -153,10 +154,39 @@ export function toAgentMessages(
             function_response: respData,
             functionResponse: respData,
           });
+        } else if (a2uiMatch) {
+          try {
+            const actionPayload = JSON.parse(a2uiMatch[1]);
+            if (actionPayload && typeof actionPayload === "object") {
+              parts.push({
+                type: "a2ui_action",
+                a2uiAction: actionPayload,
+                a2ui_action: actionPayload,
+              });
+            } else {
+              text += part.text;
+              parts.push({ text: part.text });
+            }
+          } catch {
+            text += part.text;
+            parts.push({ text: part.text });
+          }
         } else {
           text += part.text;
           parts.push({ text: part.text });
         }
+      } else if (
+        (part as { type?: string }).type === "a2ui_action" ||
+        (part as { a2uiAction?: unknown }).a2uiAction
+      ) {
+        const actionPayload =
+          (part as { a2uiAction?: unknown }).a2uiAction ||
+          (part as { payload?: unknown }).payload;
+        parts.push({
+          type: "a2ui_action",
+          a2uiAction: actionPayload as Record<string, unknown> & { event: string },
+          a2ui_action: actionPayload as Record<string, unknown> & { event: string },
+        });
       } else if (part.type === "image") {
         const imgPart = part as { image?: string; filename?: string };
         const imgUrl = imgPart.image || "";

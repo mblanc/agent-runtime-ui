@@ -31,13 +31,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { VersionSelector } from "./version-selector";
+import { cn } from "@/lib/utils";
 import { HtmlIframeRenderer } from "./renderers/html-iframe-renderer";
 import { CodeArtifactRenderer } from "./renderers/code-artifact-renderer";
 import { CsvTableRenderer } from "./renderers/csv-table-renderer";
 import { SvgDiagramRenderer } from "./renderers/svg-diagram-renderer";
 import { MarkdownArtifactRenderer } from "./renderers/markdown-artifact-renderer";
 import { ImageArtifactRenderer } from "./renderers/image-artifact-renderer";
-import { cn } from "@/lib/utils";
 
 export const ArtifactsCanvas: FC = () => {
   const {

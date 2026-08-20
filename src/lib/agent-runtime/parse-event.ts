@@ -12,6 +12,7 @@ import { extractGroundingMetadata } from "@/lib/grounding/citation-parser";
 import { parseCodeExecutionOutput } from "@/lib/code-execution/output-parser";
 import { extractToolCall, extractToolResult, safeParseJson } from "./event-utils";
 import { extractArtifactsFromSessionEvent } from "@/lib/artifacts/artifact-extractor";
+import { parseA2UIPayload, extractA2UIFromContent } from "@/lib/a2ui/a2ui-parser";
 
 /**
  * Defensive parsing of a single untyped Vertex session event.
@@ -662,6 +663,33 @@ export function parseRawSessionEvent(
       ? rawTimestamp
       : undefined;
 
+  const a2uiRaw =
+    root.a2ui ||
+    root.a2uiData ||
+    root.a2ui_data ||
+    config.a2ui ||
+    config.a2uiData ||
+    rawEvent.a2ui ||
+    rawEvent.a2uiData ||
+    rawEvent.a2ui_data;
+  let parsedA2UI = a2uiRaw ? parseA2UIPayload(a2uiRaw) : undefined;
+  let cleanContent = content;
+
+  if (content && typeof content === "string") {
+    if (
+      content.includes("---a2ui_JSON---") ||
+      content.includes("```a2ui") ||
+      content.includes("```json:a2ui") ||
+      content.includes("<!-- a2ui_start -->")
+    ) {
+      const extracted = extractA2UIFromContent(content);
+      if (extracted.a2ui) {
+        parsedA2UI = parsedA2UI || extracted.a2ui;
+        cleanContent = extracted.cleanText;
+      }
+    }
+  }
+
   return {
     id,
     name: nameStr || undefined,
@@ -673,7 +701,7 @@ export function parseRawSessionEvent(
     ...(modelVersionStr
       ? { modelVersion: modelVersionStr, model_version: modelVersionStr }
       : {}),
-    content,
+    content: cleanContent,
     ...(thought ? { thought } : {}),
     ...(thoughtSigStr
       ? { thoughtSignature: thoughtSigStr, thought_signature: thoughtSigStr }
@@ -687,6 +715,9 @@ export function parseRawSessionEvent(
           codeExecutionBlocks: parsedCodeBlocks,
           code_execution_blocks: parsedCodeBlocks,
         }
+      : {}),
+    ...(parsedA2UI
+      ? { a2ui: parsedA2UI, a2uiData: parsedA2UI, a2ui_data: parsedA2UI }
       : {}),
     ...(groundingMeta
       ? { groundingMetadata: groundingMeta, grounding_metadata: groundingMeta }

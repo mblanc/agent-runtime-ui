@@ -1,304 +1,373 @@
-# Implementation Plan: Agent Platform Artifacts Service & Live Workspace Canvas
+# Implementation Plan: A2UI (Agent-to-UI / Generative UI Streaming)
 
-## 1. Overview
+## Overview
 
-This plan details the implementation of a Google Gemini-styled **Side-by-Side Artifacts Workspace Canvas** in the `agent-runtime-ui` application. The feature showcases the **Agent Platform Artifacts Service** (`BaseArtifactService` / `GcsArtifactService` / `InMemoryArtifactService` from ADK), transforming conversational chat into a collaborative workspace with live sandboxed previews, multi-format renderers (HTML apps, CSV data tables, SVG diagrams, Shiki code, Markdown), version scrubbing (`v0` → `v1` → `v2`), REST hydration on thread switching, and instant asset export.
-
----
-
-## 2. Architecture Decisions & Standards
-
-- **Dual-Layer Discovery**:
-  - **Push (Live SSE Stream)**: `event_type: "artifact_created"` and `"artifact_updated"` stream events trigger zero-latency auto-open of the canvas and incremental streaming preview.
-  - **Pull (REST API Hydration)**: `GET /api/sessions/[sessionId]/artifacts` and `GET /api/sessions/[sessionId]/artifacts/[filename]?version=N` hydrate the artifact shelf and version history on page load or thread switch.
-- **Sandboxed Security**:
-  - HTML/JS preview runs strictly inside an isolated `<iframe>` configured with `sandbox="allow-scripts allow-forms allow-modals allow-popups"`. No raw script execution on the parent origin.
-- **Split-Pane Layout**:
-  - Flexible split-pane container with draggable divider, collapsible toggle (`Cmd/Ctrl + \` / `Escape`), full-screen maximization, and local storage ratio persistence.
-- **Strict Typing & Zero Database**:
-  - 100% strict TypeScript types in `src/types/agent/artifacts.ts` without `any`.
-  - Fully stateless BFF with session ownership verification (`isSessionOwnedBy`, `requireSessionOwner`) and mock mode support (`MOCK_AGENT_RUNTIME=true`).
+Implement the **A2UI Protocol** (`application/json+a2ui`) in `agent-runtime-ui`, enabling Google Cloud ADK agents to stream structured JSON UI component trees that render native interactive cards, form controls, metric grids, and mini-charts directly inside chat messages, with two-way interactive action dispatch back to the agent session.
 
 ---
 
-## 3. Dependency Graph
+## Architecture Decisions
 
-```text
-src/types/agent/artifacts.ts
-    │
-    ├── src/lib/agent-runtime/mock/mock-store.ts & mock-provider.ts
-    │       │
-    │       ├── src/app/api/sessions/[sessionId]/artifacts/ (BFF Routes)
-    │       │
-    │       └── src/lib/adapters/stream-accumulator.ts (SSE Stream Ingestion)
-    │               │
-    │               └── src/lib/artifacts/artifact-context.tsx (Client State Store)
-    │                       │
-    │                       ├── src/components/artifacts/renderers/ (Multi-format Renderers)
-    │                       │       │
-    │                       │       └── src/components/artifacts/artifacts-canvas.tsx (Split-Pane UI)
-    │                       │
-    │                       ├── src/components/artifacts/artifacts-shelf-button.tsx (Header Badge)
-    │                       │
-    │                       └── src/components/artifacts/artifact-message-chip.tsx (In-chat Trigger)
-    │                               │
-    │                               └── src/app/page.tsx (Split Layout Integration)
+1. **Wire Format & Data Contracts (`src/types/agent/a2ui.ts`)**:
+   - Deliver A2UI payloads inside `AgentMessagePart` with `type: "a2ui"` or `a2uiData: A2UIPartData`.
+   - Adhere strictly to the recursive `A2UIComponentNode` contract (`type`, `id`, `props`, `children`, `actions`).
+   - Support `application/json+a2ui` payload parsing from SSE events, tool results, and session history events.
+
+2. **Action Dispatch Protocol (`A2UIContext` & `/api/chat`)**:
+   - Interacting with an A2UI component (button click, form submit) locks the component into a `submitted` / `disabled` state with an inline status indicator to prevent duplicate submissions.
+   - The action dispatches a structured user turn over `/api/chat` with `{ role: "user", content: "Action: ...", parts: [{ a2uiAction: { componentId, event, payload } }] }`.
+
+3. **Component Catalog & Graceful Fallback (`src/components/a2ui/`)**:
+   - Built with Tailwind CSS and Radix UI primitives (`@radix-ui/react-select`, `@radix-ui/react-radio-group`), styled after Google Gemini design tokens.
+   - Any unrecognized component type renders an `A2UIFallback` structured card rather than throwing errors.
+
+4. **Stream Accumulator & Mock Parity**:
+   - `StreamAccumulator` folds A2UI stream events and exposes them via `createYieldContent`.
+   - `MockAgentRuntimeProvider` provides realistic mock prompts (e.g., _"Show me the deployment approval card"_, _"Show server metrics"_) and handles action resumption turns offline.
+
+---
+
+## Dependency Graph
+
+```
+Phase 1: Types & Parser Foundation
+  ├── Task 1: A2UI TypeScript Contracts & Type Guards
+  └── Task 2: A2UI Tree Parser & Normalizer with Fallbacks
+        │
+Phase 2: Component Catalog Primitives
+  ├── Task 3: A2UI Context, Card Container & Typography Components
+  ├── Task 4: A2UI Metrics, Badges, Table & Mini-Charts
+  └── Task 5: A2UI Form Controls, Inputs & Action Buttons
+        │
+Phase 3: Runtime Streaming & Message Integration
+  ├── Task 6: StreamAccumulator & ChatAdapter A2UI Ingestion
+  └── Task 7: GeminiMessage A2UI Mounting & Action Dispatch Wiring
+        │
+Phase 4: Mock Engine & Backend Action Handling
+  ├── Task 8: Mock Provider A2UI Triggers & Action Resumption
+  └── Task 9: Multi-Turn Session Persistence for A2UI Parts
+        │
+Phase 5: Quality Gates & Verification
+  └── Task 10: End-to-End Test Suite, E2E Scenarios & Docs Update
 ```
 
 ---
 
-## 4. Phased Task List
+## Task List
 
-### Phase 1: Data Contracts & Mock Store Foundation
+### Phase 1: Foundation & Data Contracts
 
-#### Task 1: Artifact Domain Types & Stream Event Extension
+#### Task 1: A2UI TypeScript Contracts & Type Guards
 
-- **Description:** Define strict data types for artifacts, versions, MIME types, and extend the stream event schema with artifact payloads.
-- **Acceptance Criteria:**
-  - [ ] `src/types/agent/artifacts.ts` exports `ArtifactMimeType`, `ArtifactVersion`, `AgentArtifact`, `ArtifactStreamPayload`, `AgentArtifactListResponse`, `AgentArtifactResponse`.
-  - [ ] `src/types/agent/stream.ts` extends `AgentStreamEvent` with `"artifact_created" | "artifact_updated"` in `event_type` and `artifact?: ArtifactStreamPayload`.
-  - [ ] Barrel file `src/types/agent.ts` re-exports `* from "./agent/artifacts"`.
-- **Verification:**
-  - [ ] `bun run check` succeeds with zero type errors.
-- **Dependencies:** None
-- **Files likely touched:**
-  - `src/types/agent/artifacts.ts` (new)
-  - `src/types/agent/stream.ts`
-  - `src/types/agent.ts`
-- **Estimated Scope:** S (3 files)
+**Description:** Define strict TypeScript interfaces for A2UI components, action payloads, part data, and message part extensions in `src/types/agent/a2ui.ts` and barrel re-export in `src/types/agent.ts`.
 
-#### Task 2: Artifacts Mock Store, Provider Interface & Stream Triggers
+**Acceptance criteria:**
 
-- **Description:** Extend `IAgentRuntimeProvider` with `listArtifacts` and `getArtifact`, implement in-memory mock store with sample multi-version artifacts (HTML, CSV, SVG, Python), and add mock streaming event generator triggers for artifact requests.
-- **Acceptance Criteria:**
-  - [ ] `IAgentRuntimeProvider` defines `listArtifacts` and `getArtifact` methods.
-  - [ ] `mockArtifactsStore` in `mock-store.ts` contains realistic sample artifacts with version histories (`sales_dashboard.html`, `quarterly_revenue.csv`, `system_architecture.svg`, `pipeline_script.py`).
-  - [ ] `MockAgentRuntimeProvider` implements `listArtifacts`, `getArtifact`, and streams `artifact_created`/`artifact_updated` events when prompted with artifact keywords.
-  - [ ] Store unit tests in `tests/artifacts-store.test.ts` verify artifact listing, version filtering, and version retrieval.
-- **Verification:**
-  - [ ] `bun test tests/artifacts-store.test.ts` passes all tests.
-  - [ ] `bun run check` succeeds.
-- **Dependencies:** Task 1
-- **Files likely touched:**
-  - `src/lib/agent-runtime/types.ts`
-  - `src/lib/agent-runtime/mock/mock-store.ts`
-  - `src/lib/agent-runtime/mock/mock-provider.ts`
-  - `tests/artifacts-store.test.ts` (new)
-- **Estimated Scope:** M (4 files)
+- [ ] `A2UIComponentType`, `A2UIAction`, `A2UIComponentNode`, `A2UIPartData`, and `AgentA2UIActionPart` defined with zero `any`.
+- [ ] `isA2UIPart` type guard implemented in `src/types/agent/message-parts.ts`.
+- [ ] Re-exported cleanly via `src/types/agent.ts`.
+
+**Verification:**
+
+- [ ] `bun run check` succeeds without type errors.
+
+**Dependencies:** None  
+**Files likely touched:**
+
+- `src/types/agent/a2ui.ts` (new)
+- `src/types/agent/message-parts.ts`
+- `src/types/agent.ts`
+
+**Estimated scope:** Small (3 files)
 
 ---
 
-### Checkpoint 1: Foundation & Store Verification
+#### Task 2: A2UI Tree Parser & Normalizer with Fallbacks
 
-- [ ] TypeScript typecheck passes (`bun run check`).
-- [ ] Store unit tests pass (`bun test tests/artifacts-store.test.ts`).
-- [ ] No regression across existing test suite (`bun run test`).
+**Description:** Implement `parseA2UIPayload` and recursive tree validation utilities to safely parse raw JSON strings and objects into validated `A2UIPartData` structures.
 
----
+**Acceptance criteria:**
 
-### Phase 2: BFF REST API Endpoints
+- [ ] Safely parses JSON strings, arrays of nodes, single nodes, and nested trees.
+- [ ] Returns sanitized `A2UIPartData` with default fallbacks for missing `type` or malformed `children`.
+- [ ] Unit tests cover valid, malformed, deeply nested, and empty payloads.
 
-#### Task 3: Artifacts BFF REST API Routes with Session Ownership
+**Verification:**
 
-- **Description:** Implement `GET /api/sessions/[sessionId]/artifacts` (list artifacts) and `GET /api/sessions/[sessionId]/artifacts/[filename]` (get specific artifact/version) with authentication and session ownership checks.
-- **Acceptance Criteria:**
-  - [ ] `GET /api/sessions/[sessionId]/artifacts` returns `{ artifacts: AgentArtifact[] }` for authenticated session owner, returns empty array for local session IDs, and handles 401/403/404 appropriately.
-  - [ ] `GET /api/sessions/[sessionId]/artifacts/[filename]` supports `?version=N` query param and returns `{ artifact: AgentArtifact, selectedVersion: ArtifactVersion }`.
-  - [ ] Integration tests in `tests/artifacts-api.test.ts` verify authenticated access, unauthorized rejection, 404 for missing artifacts, and version filtering.
-- **Verification:**
-  - [ ] `bun test tests/artifacts-api.test.ts` passes all tests.
-  - [ ] `bun run check && bun run lint` succeeds.
-- **Dependencies:** Task 1, Task 2
-- **Files likely touched:**
-  - `src/app/api/sessions/[sessionId]/artifacts/route.ts` (new)
-  - `src/app/api/sessions/[sessionId]/artifacts/[filename]/route.ts` (new)
-  - `tests/artifacts-api.test.ts` (new)
-- **Estimated Scope:** M (3 files)
+- [ ] Tests pass: `bun run test tests/a2ui-parser.test.ts`
+- [ ] Type check passes: `bun run check`
+
+**Dependencies:** Task 1  
+**Files likely touched:**
+
+- `src/lib/a2ui/a2ui-parser.ts` (new)
+- `tests/a2ui-parser.test.ts` (new)
+
+**Estimated scope:** Small (2 files)
 
 ---
 
-### Checkpoint 2: REST API Routes Verified
+### Checkpoint: Foundation
 
-- [ ] REST API integration tests pass with 100% assertions satisfied.
-- [ ] Session ownership and authentication guards confirmed fail-closed.
-
----
-
-### Phase 3: Streaming Ingestion & Client State Management
-
-#### Task 4: Stream Accumulator & Chat Adapter Artifact Ingestion
-
-- **Description:** Update `StreamAccumulator` and `yield-content.ts` to ingest `artifact_created` and `artifact_updated` stream events, attaching accumulated artifact metadata to message run results.
-- **Acceptance Criteria:**
-  - [ ] `StreamAccumulator.handle()` processes `artifact_created` and `artifact_updated` events, updating live artifact tracking.
-  - [ ] `createYieldContent` attaches `artifacts` and latest artifact event metadata to message metadata `custom.artifacts`.
-  - [ ] Unit tests in `tests/artifacts-stream.test.ts` verify event accumulation, version tracking, and snapshot yield.
-- **Verification:**
-  - [ ] `bun test tests/artifacts-stream.test.ts` passes all tests.
-  - [ ] `bun run check` succeeds.
-- **Dependencies:** Task 1, Task 2
-- **Files likely touched:**
-  - `src/lib/adapters/stream-accumulator.ts`
-  - `src/lib/adapters/yield-content.ts`
-  - `tests/artifacts-stream.test.ts` (new)
-- **Estimated Scope:** M (3 files)
-
-#### Task 5: Artifacts Context & State Hook (`useArtifacts`)
-
-- **Description:** Implement `ArtifactProvider` and `useArtifacts` hook providing complete canvas state (`isOpen`, `activeArtifact`, `selectedVersion`, `activeTab`, `splitRatio`, `isFullscreen`, `isLoading`, `error`) and actions.
-- **Acceptance Criteria:**
-  - [ ] `ArtifactProvider` manages artifact collection, active selection, version scrubbing, tab state, split ratio, and fullscreen mode.
-  - [ ] Automatically hydrates session artifacts via `/api/sessions/[sessionId]/artifacts` when `activeSessionId` changes.
-  - [ ] Persists split ratio to `localStorage` (default `0.5`).
-  - [ ] Exposes methods: `openArtifact`, `closeCanvas`, `toggleCanvas`, `selectVersion`, `setActiveTab`, `setSplitRatio`, `toggleFullscreen`, `ingestStreamArtifact`, `refreshArtifacts`.
-  - [ ] Unit tests in `tests/artifacts-context.test.tsx` verify state transitions, session switching hydration, and version switching.
-- **Verification:**
-  - [ ] `bun test tests/artifacts-context.test.tsx` passes all tests.
-  - [ ] `bun run check` succeeds.
-- **Dependencies:** Task 1, Task 3, Task 4
-- **Files likely touched:**
-  - `src/lib/artifacts/artifact-context.tsx` (new)
-  - `tests/artifacts-context.test.tsx` (new)
-- **Estimated Scope:** S (2 files)
+- [ ] `bun run check` passes
+- [ ] `bun run test tests/a2ui-parser.test.ts` passes
 
 ---
 
-### Checkpoint 3: Stream Processing & Context State Verified
+### Phase 2: Component Catalog Primitives
 
-- [ ] Stream accumulator and context state tests pass cleanly.
-- [ ] Session switching properly refreshes and isolates artifacts.
+#### Task 3: A2UI Context, Card Container & Typography Components
 
----
+**Description:** Create `A2UIContext` for action dispatch and state tracking, root `A2UIRenderer`, `A2UIFallback`, `A2UICard`, `A2UIHeading`, `A2UIText`, `A2UIBadge`, and `A2UIDivider`.
 
-### Phase 4: Multi-Format Renderers & Utilities
+**Acceptance criteria:**
 
-#### Task 6: Sandboxed HTML Iframe & Shiki Code Renderers
+- [ ] `A2UIContext` tracks submitted component states and provides `onAction` dispatch callback.
+- [ ] `A2UIRenderer` recursively dispatches component nodes to catalog components.
+- [ ] `A2UICard` renders header, title, badge, and body container with Gemini styling tokens.
+- [ ] Unknown node types render `A2UIFallback` with sanitized JSON preview.
 
-- **Description:** Implement safe sandboxed iframe renderer for HTML/JS web applications and Shiki-highlighted code renderer for Python, TypeScript, JSON, and text.
-- **Acceptance Criteria:**
-  - [ ] `HtmlIframeRenderer` renders content in an `<iframe>` with `sandbox="allow-scripts allow-forms allow-modals allow-popups"`, responsive container, loading state, and error boundary.
-  - [ ] `CodeArtifactRenderer` renders syntax-highlighted code via `react-shiki` supporting dark/light mode, line numbers, and a copy button.
-  - [ ] Component tests in `tests/artifacts-renderers.test.tsx` verify iframe sandboxing, copy action, and theme switching.
-- **Verification:**
-  - [ ] `bun test tests/artifacts-renderers.test.tsx` passes.
-  - [ ] `bun run check && bun run lint` succeeds.
-- **Dependencies:** Task 1
-- **Files likely touched:**
-  - `src/components/artifacts/renderers/html-iframe-renderer.tsx` (new)
-  - `src/components/artifacts/renderers/code-artifact-renderer.tsx` (new)
-  - `tests/artifacts-renderers.test.tsx` (new)
-- **Estimated Scope:** M (3 files)
+**Verification:**
 
-#### Task 7: CSV Data Table, SVG Diagram & Markdown Renderers
+- [ ] Tests pass: `bun run test tests/a2ui-catalog.test.tsx`
+- [ ] Type check passes: `bun run check`
 
-- **Description:** Implement client-side CSV table parser and viewer with search/sort/pagination, interactive SVG diagram viewer with pan/zoom controls, and formatted Markdown previewer.
-- **Acceptance Criteria:**
-  - [ ] `csv-parser.ts` safely parses CSV string into headers and rows.
-  - [ ] `CsvTableRenderer` displays searchable, sortable, paginated data table with export to CSV/JSON.
-  - [ ] `SvgDiagramRenderer` safely renders SVG diagrams with pan, zoom in/out, reset zoom, and download controls.
-  - [ ] `MarkdownArtifactRenderer` renders markdown documents using `MarkdownText` / GFM pipeline.
-  - [ ] Component tests in `tests/artifacts-renderers-extra.test.tsx` verify CSV parsing/sorting and SVG pan/zoom controls.
-- **Verification:**
-  - [ ] `bun test tests/artifacts-renderers.test.tsx tests/artifacts-renderers-extra.test.tsx` passes.
-  - [ ] `bun run check && bun run lint` succeeds.
-- **Dependencies:** Task 1, Task 6
-- **Files likely touched:**
-  - `src/lib/artifacts/csv-parser.ts` (new)
-  - `src/components/artifacts/renderers/csv-table-renderer.tsx` (new)
-  - `src/components/artifacts/renderers/svg-diagram-renderer.tsx` (new)
-  - `src/components/artifacts/renderers/markdown-artifact-renderer.tsx` (new)
-  - `tests/artifacts-renderers-extra.test.tsx` (new)
-- **Estimated Scope:** M (5 files)
+**Dependencies:** Task 2  
+**Files likely touched:**
+
+- `src/components/a2ui/a2ui-context.tsx` (new)
+- `src/components/a2ui/a2ui-renderer.tsx` (new)
+- `src/components/a2ui/a2ui-fallback.tsx` (new)
+- `src/components/a2ui/catalog/a2ui-card.tsx` (new)
+- `src/components/a2ui/catalog/a2ui-typography.tsx` (new)
+
+**Estimated scope:** Medium (5 files)
 
 ---
 
-### Checkpoint 4: All Multi-Format Renderers Verified
+#### Task 4: A2UI Metrics, Badges, Table & Mini-Charts
 
-- [ ] All 5 renderers render their respective MIME types accurately.
-- [ ] Iframe sandboxing verified safe against arbitrary parent-window script access.
+**Description:** Implement `A2UIStatMetric`, `A2UITable`, `A2UIProgressBar`, and `A2UIMiniBarChart` lightweight SVG components.
 
----
+**Acceptance criteria:**
 
-### Phase 5: Split-Pane Canvas, Header Shelf, Inline Triggers & Page Integration
+- [ ] `A2UIStatMetric` renders key-value cards with optional change percentage pills (`+12%`, `-5%`).
+- [ ] `A2UITable` renders compact, accessible tables with column headers and striped/hover rows.
+- [ ] `A2UIProgressBar` and `A2UIMiniBarChart` render clean SVG visuals with theme support.
 
-#### Task 8: Version Selector & Split-Pane Canvas Container
+**Verification:**
 
-- **Description:** Implement `VersionSelector` dropdown and main `ArtifactsCanvas` split-pane container with header controls, tab switcher (`Preview`, `Code`, `Data`), action bar (`Download`, `Copy`, `Maximize`, `Close`), resize divider, and keyboard shortcuts (`Escape`, `Cmd/Ctrl + \`).
-- **Acceptance Criteria:**
-  - [ ] `VersionSelector` displays current version badge, version history dropdown with timestamps, byte sizes, and version switching.
-  - [ ] `ArtifactsCanvas` mounts the top control bar, tab switcher, renderer dispatcher, and action footer.
-  - [ ] Keyboard listeners: `Escape` closes canvas, `Cmd/Ctrl + \` toggles canvas.
-  - [ ] Draggable split divider adjusts width ratio smoothly.
-  - [ ] Component tests in `tests/artifacts-canvas.test.tsx` verify open/close, tab switching, version selection, and keyboard triggers.
-- **Verification:**
-  - [ ] `bun test tests/artifacts-canvas.test.tsx` passes.
-  - [ ] `bun run check && bun run lint` succeeds.
-- **Dependencies:** Task 5, Task 6, Task 7
-- **Files likely touched:**
-  - `src/components/artifacts/version-selector.tsx` (new)
-  - `src/components/artifacts/artifacts-canvas.tsx` (new)
-  - `tests/artifacts-canvas.test.tsx` (new)
-- **Estimated Scope:** M (3 files)
+- [ ] Tests pass: `bun run test tests/a2ui-catalog.test.tsx`
+- [ ] Type check passes: `bun run check`
 
-#### Task 9: Top Bar Artifact Shelf & Inline Chat Message Chip
+**Dependencies:** Task 3  
+**Files likely touched:**
 
-- **Description:** Implement `ArtifactsShelfButton` for top navigation bar with artifact count badge and dropdown, and `ArtifactMessageChip` for inline chat message triggers.
-- **Acceptance Criteria:**
-  - [ ] `ArtifactsShelfButton` displays `[ 📁 N Artifacts ]` with badge count and dropdown list to open any session artifact; hidden or disabled when count is 0.
-  - [ ] `ArtifactMessageChip` displays `[📄 filename • vN]` inside chat messages when an artifact is created/updated; clicking it opens canvas to that artifact and version.
-  - [ ] `src/components/assistant-ui/gemini-message.tsx` detects artifact stream events/metadata and renders `ArtifactMessageChip`.
-  - [ ] Component tests in `tests/artifacts-triggers.test.tsx` verify shelf badge and inline message chip click interactions.
-- **Verification:**
-  - [ ] `bun test tests/artifacts-triggers.test.tsx` passes.
-  - [ ] `bun run check && bun run lint` succeeds.
-- **Dependencies:** Task 5, Task 8
-- **Files likely touched:**
-  - `src/components/artifacts/artifacts-shelf-button.tsx` (new)
-  - `src/components/artifacts/artifact-message-chip.tsx` (new)
-  - `src/components/assistant-ui/gemini-message.tsx`
-  - `tests/artifacts-triggers.test.tsx` (new)
-- **Estimated Scope:** M (4 files)
+- `src/components/a2ui/catalog/a2ui-stat-metric.tsx` (new)
+- `src/components/a2ui/catalog/a2ui-table.tsx` (new)
+- `src/components/a2ui/catalog/a2ui-mini-chart.tsx` (new)
+- `tests/a2ui-catalog.test.tsx` (new)
 
-#### Task 10: Full Split-Pane Page Integration & End-to-End Verification
-
-- **Description:** Wire `ArtifactProvider`, `ArtifactsShelfButton`, and `ArtifactsCanvas` into `src/app/page.tsx` split layout. Ensure keyboard shortcuts, session switching hydration, and mock streaming auto-open work end-to-end.
-- **Acceptance Criteria:**
-  - [ ] `src/app/page.tsx` integrates `ArtifactProvider`, `ArtifactsShelfButton` in top header, and `ArtifactsCanvas` in split-pane container.
-  - [ ] Auto-opens canvas on stream artifact arrival.
-  - [ ] Full preflight gate (`bun run preflight`: check, lint, test) passes with 100% clean status.
-  - [ ] End-to-end test in `tests/artifacts-e2e.test.tsx` verifies full flow (prompt -> stream artifact -> auto-open canvas -> version switch -> export).
-- **Verification:**
-  - [ ] `bun run preflight` passes completely.
-- **Dependencies:** Tasks 1-9
-- **Files likely touched:**
-  - `src/app/page.tsx`
-  - `tests/artifacts-e2e.test.tsx` (new)
-  - `AGENTS.md` (index update)
-- **Estimated Scope:** M (3 files)
+**Estimated scope:** Medium (4 files)
 
 ---
 
-### Checkpoint 5: Complete Implementation & Preflight Gate
+#### Task 5: A2UI Form Controls, Inputs & Action Buttons
 
-- [ ] `bun run check` passes with 0 type errors.
-- [ ] `bun run lint` passes with 0 ESLint warnings/errors.
-- [ ] `bun run test` passes all tests across entire suite.
-- [ ] `bun run preflight` runs cleanly.
+**Description:** Implement `A2UIForm`, `A2UITextInput`, `A2UISelectDropdown`, `A2UIRadioGroup`, and `A2UIButton` with interactive state management and submission locking.
+
+**Acceptance criteria:**
+
+- [ ] `A2UIButton` renders primary, outline, and destructive variants; shows loading spinner while dispatching; disables on submit.
+- [ ] `A2UIForm` collects values from child inputs and dispatches aggregated payload on submit.
+- [ ] `A2UITextInput`, `A2UISelectDropdown`, and `A2UIRadioGroup` bind state to form context or standalone action triggers.
+
+**Verification:**
+
+- [ ] Tests pass: `bun run test tests/a2ui-catalog.test.tsx`
+- [ ] Type check passes: `bun run check`
+
+**Dependencies:** Task 3, Task 4  
+**Files likely touched:**
+
+- `src/components/a2ui/catalog/a2ui-button.tsx` (new)
+- `src/components/a2ui/catalog/a2ui-form.tsx` (new)
+- `src/components/a2ui/catalog/a2ui-inputs.tsx` (new)
+- `tests/a2ui-catalog.test.tsx`
+
+**Estimated scope:** Medium (4 files)
 
 ---
 
-## 5. Risks and Mitigations
+### Checkpoint: Component Catalog
 
-| Risk                                                                | Impact | Mitigation                                                                                                                               |
-| ------------------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Script execution in untrusted HTML artifacts escaping into host DOM | High   | Use strict `sandbox="allow-scripts allow-forms allow-modals allow-popups"` without `allow-same-origin` or `allow-top-navigation`.        |
-| Split-pane resizing causing layout thrashing or scroll jumping      | Medium | Use pure CSS flexbox split with min/max bounds (30% to 70%), requestAnimationFrame on mouse drag, and overflow containment.              |
-| Large CSV datasets causing UI freeze during client-side parsing     | Medium | Implement lightweight line-by-line parsing with row count limits (e.g. 5,000 max preview rows) and pagination (25/50/100 rows per page). |
-| Out-of-sync version history when switching sessions                 | Medium | Clear and re-hydrate artifacts state on `activeSessionId` change in `ArtifactProvider`.                                                  |
-| Breaking changes in assistant-ui message metadata structure         | Low    | Attach artifact event payloads under namespaced `custom.artifacts` / `custom.artifactEvent` metadata fields.                             |
+- [ ] All catalog unit and component tests pass (`tests/a2ui-catalog.test.tsx`)
+- [ ] `bun run check` and `bun run lint` pass
 
 ---
 
-## 6. Open Questions
+### Phase 3: Runtime Streaming & Message Integration
 
-- None blocking: The architecture adheres to existing patterns established by Memory and Session State modules in `agent-runtime-ui`.
+#### Task 6: StreamAccumulator & ChatAdapter A2UI Ingestion
+
+**Description:** Extend `StreamAccumulator` and `createYieldContent` to parse incoming `application/json+a2ui` SSE parts, tool outputs, and custom stream events, carrying A2UI payload trees in the snapshot metadata.
+
+**Acceptance criteria:**
+
+- [ ] `StreamAccumulator` detects and accumulates `a2ui` stream parts without breaking text/thought streaming.
+- [ ] `createYieldContent` includes `a2ui` data in message metadata.
+- [ ] `toAgentMessages` in `chat-adapter.ts` formats outgoing `a2uiAction` user turns into structured agent wire turns.
+
+**Verification:**
+
+- [ ] Tests pass: `bun run test tests/a2ui-stream.test.ts tests/stream-accumulator.test.ts`
+- [ ] Type check passes: `bun run check`
+
+**Dependencies:** Task 2  
+**Files likely touched:**
+
+- `src/lib/adapters/stream-accumulator.ts`
+- `src/lib/adapters/yield-content.ts`
+- `src/lib/adapters/chat-adapter.ts`
+- `tests/a2ui-stream.test.ts` (new)
+
+**Estimated scope:** Medium (4 files)
+
+---
+
+#### Task 7: GeminiMessage A2UI Mounting & Action Dispatch Wiring
+
+**Description:** Mount `A2UIRenderer` inside `src/components/assistant-ui/gemini-message.tsx` wrapped in `A2UIProvider` that connects action dispatches to the assistant-ui composer/runtime.
+
+**Acceptance criteria:**
+
+- [ ] Assistant messages containing `a2ui` parts render the interactive widget inline below or alongside markdown text.
+- [ ] Clicking buttons or submitting forms triggers the action dispatch handler, locks the component, and appends a user turn to the active thread.
+- [ ] User messages display a clean summary chip when representing an A2UI action response (similar to HITL confirmations).
+
+**Verification:**
+
+- [ ] Tests pass: `bun run test tests/a2ui-ui.test.tsx`
+- [ ] Type check passes: `bun run check`
+
+**Dependencies:** Task 5, Task 6  
+**Files likely touched:**
+
+- `src/components/assistant-ui/gemini-message.tsx`
+- `src/components/a2ui/a2ui-message-part.tsx` (new)
+- `tests/a2ui-ui.test.tsx` (new)
+
+**Estimated scope:** Small (3 files)
+
+---
+
+### Checkpoint: Runtime & Message Integration
+
+- [ ] Stream accumulation and message rendering tests pass
+- [ ] Interactive action dispatches trigger user turns in mock tests
+
+---
+
+### Phase 4: Mock Engine & Backend Action Handling
+
+#### Task 8: Mock Provider A2UI Triggers & Action Resumption
+
+**Description:** Add mock scenarios in `MockAgentRuntimeProvider` that emit A2UI component trees (e.g. Cloud Run deployment approval card, database configuration form, cluster metrics) and handle action response turns.
+
+**Acceptance criteria:**
+
+- [ ] Prompt _"Show me the deployment approval card"_ yields an A2UI deployment card with buttons.
+- [ ] Prompt _"Show cluster metrics"_ yields an A2UI stat metric and mini-chart widget.
+- [ ] Dispatching `submit_approval` or form actions resumes the stream with confirmation text in mock mode.
+
+**Verification:**
+
+- [ ] Tests pass: `bun run test tests/a2ui-mock.test.ts`
+- [ ] Type check passes: `bun run check`
+
+**Dependencies:** Task 6, Task 7  
+**Files likely touched:**
+
+- `src/lib/agent-runtime/mock/mock-provider.ts`
+- `src/lib/agent-runtime/mock/mock-store.ts`
+- `tests/a2ui-mock.test.ts` (new)
+
+**Estimated scope:** Small (3 files)
+
+---
+
+#### Task 9: Multi-Turn Session Persistence for A2UI Parts
+
+**Description:** Ensure that session event loading and rehydration (`/api/sessions/[sessionId]`) correctly restores A2UI component trees in historical turns.
+
+**Acceptance criteria:**
+
+- [ ] Historical session turns with `application/json+a2ui` parts rehydrate and render A2UI widgets with submitted/disabled state.
+- [ ] Event normalizer in `session-service.ts` converts stored A2UI events into `AgentMessagePart`.
+
+**Verification:**
+
+- [ ] Tests pass: `bun run test tests/sessions-api.test.ts tests/event-normalizer.test.ts`
+- [ ] Type check passes: `bun run check`
+
+**Dependencies:** Task 8  
+**Files likely touched:**
+
+- `src/lib/agent-runtime/services/session-service.ts`
+- `src/lib/agent-runtime/event-normalizer.ts`
+- `tests/a2ui-session-history.test.ts` (new)
+
+**Estimated scope:** Small (3 files)
+
+---
+
+### Phase 5: Quality Gates & Verification
+
+#### Task 10: Full Quality Gate Preflight, E2E Test & Docs Sync
+
+**Description:** Run comprehensive quality gates, add Playwright E2E test for A2UI card interaction, and update documentation.
+
+**Acceptance criteria:**
+
+- [ ] `bun run preflight` passes (format + check + lint + all unit/component tests).
+- [ ] Playwright E2E test in `tests/e2e/a2ui-interaction.spec.ts` verifies interactive card rendering and approval click in mock mode.
+- [ ] `docs/features.md` updated to mark A2UI as **Now (Available Today)**.
+
+**Verification:**
+
+- [ ] `bun run preflight` passes with zero errors
+- [ ] `bun run test:e2e` passes
+
+**Dependencies:** Tasks 1-9  
+**Files likely touched:**
+
+- `tests/e2e/a2ui-interaction.spec.ts` (new)
+- `docs/features.md`
+- `AGENTS.md`
+
+**Estimated scope:** Small (3 files)
+
+---
+
+## Checkpoint: Complete
+
+- [ ] All 10 tasks complete with passing tests
+- [ ] `bun run preflight` passes cleanly
+- [ ] Interactive demo verified in browser
+
+---
+
+## Risks and Mitigations
+
+| Risk                                                                                      | Impact | Mitigation                                                                                                   |
+| :---------------------------------------------------------------------------------------- | :----: | :----------------------------------------------------------------------------------------------------------- |
+| **Malformed JSON in Stream**: LLM or engine streams partial or invalid A2UI JSON          |  Med   | Safe parser (`parseA2UIPayload`) with graceful fallback to `A2UIFallback` card view; never crashes stream.   |
+| **Double Submission**: User rapidly clicks action buttons or submits forms multiple times |  High  | Immediate optimistic lock in `A2UIContext` disabling inputs/buttons upon first click with loading indicator. |
+| **Arbitrary JS Injection**: Untrusted payloads attempting script execution                |  High  | Strict component whitelist; zero `eval`, `dangerouslySetInnerHTML`, or unsandboxed iframes.                  |
+| **Stream Performance / Jank**: Re-rendering deep component trees on every token delta     |  Low   | Memoize catalog components and decouple A2UI part accumulation from text stream throttling (25ms barrier).   |
+
+---
+
+## Open Questions
+
+- None. The specification in [`docs/spec-a2ui-generative-ui.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/spec-a2ui-generative-ui.md) provides complete schema and UX requirements.

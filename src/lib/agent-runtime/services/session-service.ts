@@ -13,8 +13,14 @@ const sessionTargetCache = new TtlCache<{ agentId: string; location?: string }>(
   5 * 60_000
 );
 
+const sessionLookupCache = new TtlCache<AgentSession>(15_000);
+
 export function clearSessionTargetCache(): void {
   sessionTargetCache.clear();
+}
+
+export function clearSessionLookupCache(): void {
+  sessionLookupCache.clear();
 }
 
 /**
@@ -253,6 +259,12 @@ export class VertexAiSessionService {
       }
     }
 
+    const lookupCacheKey = `${targetEngineId || ""}:${targetLocation || ""}:${sessionId}`;
+    if (process.env.NODE_ENV !== "test") {
+      const cachedSession = sessionLookupCache.get(lookupCacheKey);
+      if (cachedSession) return cachedSession;
+    }
+
     try {
       const endpoint = await this.getSessionEndpoint(
         sessionId,
@@ -301,6 +313,9 @@ export class VertexAiSessionService {
               agentId: probe.value.agentId,
               location: probe.value.location,
             });
+            if (process.env.NODE_ENV !== "test") {
+              sessionLookupCache.set(lookupCacheKey, probe.value.session);
+            }
             return probe.value.session;
           }
         }
@@ -320,6 +335,9 @@ export class VertexAiSessionService {
           agentId: targetEngineId,
           location: targetLocation,
         });
+      }
+      if (process.env.NODE_ENV !== "test") {
+        sessionLookupCache.set(lookupCacheKey, session);
       }
       return session;
     } catch (err: unknown) {
@@ -529,6 +547,10 @@ export class VertexAiSessionService {
         const errText = await response.text();
         throw new Error(`Failed to delete session (${response.status}): ${errText}`);
       }
+
+      sessionLookupCache.delete(
+        `${customEngineId || ""}:${customLocation || ""}:${sessionId}`
+      );
     } catch (err: unknown) {
       console.error("Error deleting session on Agent Runtime:", err);
       throw err;

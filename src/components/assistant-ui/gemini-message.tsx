@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { useState, memo } from "react";
 import type {
+  A2UIPartData,
   ArtifactStreamPayload,
   GroundingMetadata,
   MemoryRetrievalItem,
@@ -43,6 +44,7 @@ import { GroundingFooter } from "@/components/grounding/grounding-footer";
 import { GroundingProvider } from "@/components/grounding/grounding-context";
 import { StateDeltaChip } from "@/components/session-state/state-delta-chip";
 import { ArtifactChip } from "@/components/artifacts/artifact-chip";
+import { A2UIMessagePart } from "@/components/a2ui/a2ui-message-part";
 
 const MESSAGE_GROUP_BY = groupPartByType({
   reasoning: ["group-reasoning"],
@@ -102,6 +104,24 @@ function AssistantMessageArtifacts() {
       ))}
     </div>
   );
+}
+
+function AssistantMessageA2UI() {
+  const a2ui = useAuiState(
+    (s: {
+      message?: {
+        metadata?: {
+          custom?: {
+            a2ui?: A2UIPartData;
+          };
+        };
+      };
+    }) => ("message" in s ? s.message?.metadata?.custom?.a2ui : undefined)
+  );
+
+  if (!a2ui) return null;
+
+  return <A2UIMessagePart data={a2ui} />;
 }
 
 /**
@@ -192,6 +212,7 @@ function ChatMessageImpl() {
                       const match = part.text.match(
                         /^\[TOOL_CONFIRMATION_RESPONSE:(.*?):(.*?):(true|false)\]$/
                       );
+                      const a2uiMatch = part.text.match(/^\[A2UI_ACTION:(.*?)\]$/);
                       if (match) {
                         const [, , toolName, boolStr] = match;
                         const isApproved = boolStr === "true";
@@ -206,18 +227,39 @@ function ChatMessageImpl() {
                           </div>
                         );
                       }
+                      if (a2uiMatch) {
+                        try {
+                          const actionObj = JSON.parse(a2uiMatch[1]);
+                          if (actionObj && typeof actionObj === "object") {
+                            return (
+                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground py-0.5">
+                                <span className="font-medium">
+                                  ⚡ Action: {String(actionObj.event || "action")}
+                                </span>
+                                {actionObj.componentId && (
+                                  <span className="font-mono text-[11px] opacity-70">
+                                    ({String(actionObj.componentId)})
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          }
+                        } catch {
+                          // fallback
+                        }
+                      }
                       return <p className="whitespace-pre-wrap">{part.text}</p>;
                     }
                     case "image":
                       return (
-                        <div className="my-1.5 overflow-hidden rounded-2xl border border-[#e3e3e3] bg-muted/20 dark:border-[#3c4043] max-w-sm min-h-[120px] flex items-center justify-center">
+                        <div className="my-1.5 overflow-hidden rounded-2xl border border-[#e3e3e3] bg-muted/20 dark:border-[#3c4043] max-w-sm aspect-video relative flex items-center justify-center">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={part.image}
                             alt={part.filename || "Attached image"}
                             loading="lazy"
                             decoding="async"
-                            className="max-h-72 w-full object-contain rounded-2xl"
+                            className="h-full w-full object-contain rounded-2xl"
                           />
                         </div>
                       );
@@ -307,14 +349,14 @@ function ChatMessageImpl() {
                       return <MarkdownText />;
                     case "image":
                       return (
-                        <div className="my-2 overflow-hidden rounded-2xl border border-[#e3e3e3] bg-muted/20 dark:border-[#3c4043] max-w-md min-h-[140px] flex items-center justify-center">
+                        <div className="my-2 overflow-hidden rounded-2xl border border-[#e3e3e3] bg-muted/20 dark:border-[#3c4043] max-w-md aspect-video relative flex items-center justify-center">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={part.image}
                             alt={part.filename || "Assistant image"}
                             loading="lazy"
                             decoding="async"
-                            className="max-h-80 w-full object-contain rounded-2xl"
+                            className="h-full w-full object-contain rounded-2xl"
                           />
                         </div>
                       );
@@ -356,6 +398,9 @@ function ChatMessageImpl() {
 
             {/* Agent Platform Workspace Artifacts */}
             <AssistantMessageArtifacts />
+
+            {/* A2UI Generative Micro-UIs */}
+            <AssistantMessageA2UI />
 
             {/* ADK Session State Delta Chip */}
             <StateDeltaChip />
