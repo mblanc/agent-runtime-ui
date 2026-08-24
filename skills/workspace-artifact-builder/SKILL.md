@@ -70,6 +70,7 @@ This skill unlocks four dedicated artifact generation tools:
 ## 4. Instructions for Artifact Output
 
 When responding to the user:
+
 1. Call the appropriate tool (`build_html_artifact`, `generate_svg_diagram`, `export_csv_dataset`, or `create_code_artifact`).
 2. Provide a concise chat summary explaining what was created and highlight key features or controls in the canvas.
-3. If generating code blocks directly in chat markdown, tag them with the filename (e.g. ```` ```html:dashboard.html ```` or ```` ```svg:architecture.svg ````) so the canvas automatically extracts them as versioned artifacts.
+3. If generating code blocks directly in chat markdown, tag them with the filename (e.g. ` ```html:dashboard.html ` or ` ```svg:architecture.svg `) so the canvas automatically extracts them as versioned artifacts.

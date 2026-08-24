@@ -6,13 +6,13 @@ The `agent-runtime-ui` Workspace Canvas supports specialized visual renderers ba
 
 ## 1. Supported Renderers
 
-| Renderer | File Extensions | MIME Type | Key Features |
-| :--- | :--- | :--- | :--- |
-| **HTML Iframe Sandbox** | `.html`, `.htm` | `text/html` | Sandboxed execution, Tailwind CSS, Alpine.js, Chart.js, Lucide icons |
-| **SVG Vector Canvas** | `.svg` | `image/svg+xml` | Pan, zoom, grid background, PNG/SVG download |
-| **CSV Data Table** | `.csv`, `.tsv` | `text/csv`, `text/tab-separated-values` | Instant search, multi-column sort, pagination, copy |
-| **Code Syntax Highlighter** | `.py`, `.ts`, `.js`, `.sql`, `.yaml`, `.json` | `text/x-*`, `application/json` | Shiki engine, line numbers, one-click copy |
-| **Markdown Document** | `.md`, `.markdown` | `text/markdown` | GFM tables, GitHub alerts, inline math, mermaid diagrams |
+| Renderer                    | File Extensions                               | MIME Type                               | Key Features                                                         |
+| :-------------------------- | :-------------------------------------------- | :-------------------------------------- | :------------------------------------------------------------------- |
+| **HTML Iframe Sandbox**     | `.html`, `.htm`                               | `text/html`                             | Sandboxed execution, Tailwind CSS, Alpine.js, Chart.js, Lucide icons |
+| **SVG Vector Canvas**       | `.svg`                                        | `image/svg+xml`                         | Pan, zoom, grid background, PNG/SVG download                         |
+| **CSV Data Table**          | `.csv`, `.tsv`                                | `text/csv`, `text/tab-separated-values` | Instant search, multi-column sort, pagination, copy                  |
+| **Code Syntax Highlighter** | `.py`, `.ts`, `.js`, `.sql`, `.yaml`, `.json` | `text/x-*`, `application/json`          | Shiki engine, line numbers, one-click copy                           |
+| **Markdown Document**       | `.md`, `.markdown`                            | `text/markdown`                         | GFM tables, GitHub alerts, inline math, mermaid diagrams             |
 
 ---
 
@@ -21,18 +21,19 @@ The `agent-runtime-ui` Workspace Canvas supports specialized visual renderers ba
 When generating `.html` artifacts:
 
 1. **Include CDN Styles & Scripts**:
+
    ```html
    <!DOCTYPE html>
    <html lang="en">
-   <head>
-     <meta charset="UTF-8">
-     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-     <script src="https://cdn.tailwindcss.com"></script>
-     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-   </head>
-   <body class="bg-slate-50 text-slate-900 font-sans p-6">
-     <!-- App content -->
-   </body>
+     <head>
+       <meta charset="UTF-8" />
+       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+       <script src="https://cdn.tailwindcss.com"></script>
+       <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+     </head>
+     <body class="bg-slate-50 text-slate-900 font-sans p-6">
+       <!-- App content -->
+     </body>
    </html>
    ```
 
