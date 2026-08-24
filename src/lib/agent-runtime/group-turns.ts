@@ -18,6 +18,12 @@ import {
 import { parseRawSessionEvent } from "./parse-event";
 import { formatReasoningTrace } from "./reasoning-directives";
 import { extractArtifactsFromSessionEvent } from "@/lib/artifacts/artifact-extractor";
+import {
+  isLoadSkillTool,
+  isSearchSkillsTool,
+  parseLoadedSkillPayload,
+  parseSearchSkillsPayload,
+} from "@/lib/skills/skill-parser";
 import type { ArtifactStreamPayload } from "@/types/agent";
 
 /**
@@ -297,7 +303,37 @@ export function groupTurnSessionEvents(
       const evtId = turn.assistantEvents[eventIdx]?.id || `evt-${eventIdx}`;
       const toolCallId = call.id || `${evtId}-call-${toolTraceEntries.length}`;
 
-      if (matchedResultStr !== undefined) {
+      if (isLoadSkillTool(toolName)) {
+        processedCallKeys.add(callKey);
+        const skill = parseLoadedSkillPayload(call.args, matchedResultObj?.result);
+        if (skill) {
+          toolTraceEntries.push({
+            type: "skill_loaded",
+            skill,
+            status: "complete",
+            toolCallId,
+          });
+        } else {
+          toolTraceEntries.push({
+            type: "tool",
+            toolCallId,
+            toolName,
+            argsJson: argsStr,
+            resultJson: matchedResultStr,
+            status: "complete",
+          });
+        }
+      } else if (isSearchSkillsTool(toolName)) {
+        processedCallKeys.add(callKey);
+        const search = parseSearchSkillsPayload(call.args, matchedResultObj?.result);
+        toolTraceEntries.push({
+          type: "skill_search",
+          query: search?.query || "skills",
+          matches: search?.matches,
+          status: "complete",
+          toolCallId,
+        });
+      } else if (matchedResultStr !== undefined) {
         processedCallKeys.add(callKey);
         toolTraceEntries.push({
           type: "tool",
@@ -328,13 +364,44 @@ export function groupTurnSessionEvents(
         const toolName = item.result.name || "tool";
         const resStr = JSON.stringify(item.result.result || {}, null, 2);
         const evtId = turn.assistantEvents[item.eventIdx]?.id || `evt-${item.eventIdx}`;
-        toolTraceEntries.push({
-          type: "tool",
-          toolCallId: item.result.id || `${evtId}-result-${item.resIdx}`,
-          toolName,
-          resultJson: resStr,
-          status: "complete",
-        });
+        const toolCallId = item.result.id || `${evtId}-result-${item.resIdx}`;
+
+        if (isLoadSkillTool(toolName)) {
+          const skill = parseLoadedSkillPayload(undefined, item.result.result);
+          if (skill) {
+            toolTraceEntries.push({
+              type: "skill_loaded",
+              skill,
+              status: "complete",
+              toolCallId,
+            });
+          } else {
+            toolTraceEntries.push({
+              type: "tool",
+              toolCallId,
+              toolName,
+              resultJson: resStr,
+              status: "complete",
+            });
+          }
+        } else if (isSearchSkillsTool(toolName)) {
+          const search = parseSearchSkillsPayload(undefined, item.result.result);
+          toolTraceEntries.push({
+            type: "skill_search",
+            query: search?.query || "skills",
+            matches: search?.matches,
+            status: "complete",
+            toolCallId,
+          });
+        } else {
+          toolTraceEntries.push({
+            type: "tool",
+            toolCallId,
+            toolName,
+            resultJson: resStr,
+            status: "complete",
+          });
+        }
       }
     }
 

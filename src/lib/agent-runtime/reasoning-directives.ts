@@ -158,7 +158,27 @@ export function formatReasoningTrace(entries: readonly ReasoningTraceEntry[]): s
       parts.push(
         `:::code_execution[Python Sandbox]{status="${entry.block.status}"}\n\`\`\`python\n${entry.block.code || ""}\n\`\`\`\n:::`
       );
-    } else {
+    } else if (entry.type === "skill_loaded") {
+      const skill = entry.skill;
+      const status = entry.status || "complete";
+      const verStr = skill.version
+        ? ` version="${sanitizeAttributeValue(skill.version)}"`
+        : "";
+      const toolsStr =
+        skill.tools && skill.tools.length > 0
+          ? ` tools="${sanitizeAttributeValue(skill.tools.join(","))}"`
+          : "";
+      const body = skill.description || `Loaded skill: ${skill.skillName}`;
+      parts.push(
+        `:::skill[${sanitizeDirectiveName(skill.skillName)}]{status="${status}"${verStr}${toolsStr}}\n${sanitizeDirectiveBody(body)}\n:::`
+      );
+    } else if (entry.type === "skill_search") {
+      const status = entry.status || "complete";
+      const body = `Searched skill registry for: "${entry.query}"`;
+      parts.push(
+        `:::skill_search[${sanitizeDirectiveName(entry.query)}]{status="${status}"}\n${sanitizeDirectiveBody(body)}\n:::`
+      );
+    } else if (entry.type === "tool") {
       parts.push(formatToolDirective(entry));
     }
   }

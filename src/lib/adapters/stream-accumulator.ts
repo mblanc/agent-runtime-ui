@@ -26,6 +26,12 @@ import {
   extractArtifactsFromContent,
 } from "@/lib/artifacts/artifact-extractor";
 import { parseA2UIPayload, extractA2UIFromContent } from "@/lib/a2ui/a2ui-parser";
+import {
+  isLoadSkillTool,
+  isSearchSkillsTool,
+  parseLoadedSkillPayload,
+  parseSearchSkillsPayload,
+} from "@/lib/skills/skill-parser";
 import { formatAgentDisplayName } from "@/lib/utils";
 import { formatReasoningTrace } from "@/lib/agent-runtime/reasoning-directives";
 
@@ -64,7 +70,13 @@ interface SubagentStreamItem {
 // at yield time. Inlining the fields here would mean maintaining two
 // copies of a mutating record.
 type StreamReasoningEntry =
-  | Extract<ReasoningTraceEntry, { type: "thought" } | { type: "tool" }>
+  | Extract<
+      ReasoningTraceEntry,
+      | { type: "thought" }
+      | { type: "tool" }
+      | { type: "skill_loaded" }
+      | { type: "skill_search" }
+    >
   | { type: "subagent"; agentName: string }
   | { type: "code_execution"; blockId: string };
 
@@ -525,13 +537,42 @@ export class StreamAccumulator {
     });
 
     if (isNewCall) {
-      this.reasoningEntries.push({
-        type: "tool",
-        toolCallId,
-        toolName,
-        argsJson: JSON.stringify(tc.args || {}, null, 2),
-        status: isReqAction ? "requires-action" : "running",
-      });
+      if (isLoadSkillTool(toolName)) {
+        const skill = parseLoadedSkillPayload(tc.args, undefined);
+        if (skill) {
+          this.reasoningEntries.push({
+            type: "skill_loaded",
+            skill,
+            status: isReqAction ? "requires-action" : "running",
+            toolCallId,
+          });
+        } else {
+          this.reasoningEntries.push({
+            type: "tool",
+            toolCallId,
+            toolName,
+            argsJson: JSON.stringify(tc.args || {}, null, 2),
+            status: isReqAction ? "requires-action" : "running",
+          });
+        }
+      } else if (isSearchSkillsTool(toolName)) {
+        const search = parseSearchSkillsPayload(tc.args, undefined);
+        this.reasoningEntries.push({
+          type: "skill_search",
+          query: search?.query || "skills",
+          matches: search?.matches,
+          status: isReqAction ? "requires-action" : "running",
+          toolCallId,
+        });
+      } else {
+        this.reasoningEntries.push({
+          type: "tool",
+          toolCallId,
+          toolName,
+          argsJson: JSON.stringify(tc.args || {}, null, 2),
+          status: isReqAction ? "requires-action" : "running",
+        });
+      }
     }
 
     if (toolName && tc.args) {
@@ -618,27 +659,93 @@ export class StreamAccumulator {
       }
     }
 
-    const existingToolEntry = matchedCallId
+    const callId = matchedCallId || rawId;
+    const existingEntry = callId
       ? this.reasoningEntries.find(
-          (e) => e.type === "tool" && e.toolCallId === matchedCallId
+          (e) =>
+            ("toolCallId" in e && e.toolCallId === callId) ||
+            (e.type === "tool" && e.toolCallId === callId)
         )
       : undefined;
 
-    if (existingToolEntry && existingToolEntry.type === "tool") {
-      // Set fields rather than rewriting rendered markdown.
-      existingToolEntry.resultJson = resStr;
-      existingToolEntry.status = "complete";
+    if (isLoadSkillTool(toolName)) {
+      const tc = callId ? this.toolCallsMap.get(callId) : undefined;
+      const skill = parseLoadedSkillPayload(tc?.args, result);
+      if (skill) {
+        if (existingEntry && existingEntry.type === "skill_loaded") {
+          existingEntry.skill = { ...existingEntry.skill, ...skill };
+          existingEntry.status = "complete";
+        } else if (existingEntry && existingEntry.type === "tool") {
+          const idx = this.reasoningEntries.indexOf(existingEntry);
+          if (idx !== -1) {
+            this.reasoningEntries[idx] = {
+              type: "skill_loaded",
+              skill,
+              status: "complete",
+              toolCallId: callId,
+            };
+          }
+        } else {
+          this.reasoningEntries.push({
+            type: "skill_loaded",
+            skill,
+            status: "complete",
+            toolCallId: callId,
+          });
+        }
+      } else if (existingEntry && existingEntry.type === "tool") {
+        existingEntry.resultJson = resStr;
+        existingEntry.status = "complete";
+      }
+    } else if (isSearchSkillsTool(toolName)) {
+      const tc = callId ? this.toolCallsMap.get(callId) : undefined;
+      const search = parseSearchSkillsPayload(tc?.args, result);
+      if (search) {
+        if (existingEntry && existingEntry.type === "skill_search") {
+          existingEntry.query = search.query || existingEntry.query;
+          existingEntry.matches = search.matches;
+          existingEntry.status = "complete";
+        } else if (existingEntry && existingEntry.type === "tool") {
+          const idx = this.reasoningEntries.indexOf(existingEntry);
+          if (idx !== -1) {
+            this.reasoningEntries[idx] = {
+              type: "skill_search",
+              query: search.query,
+              matches: search.matches,
+              status: "complete",
+              toolCallId: callId,
+            };
+          }
+        } else {
+          this.reasoningEntries.push({
+            type: "skill_search",
+            query: search.query,
+            matches: search.matches,
+            status: "complete",
+            toolCallId: callId,
+          });
+        }
+      } else if (existingEntry && existingEntry.type === "tool") {
+        existingEntry.resultJson = resStr;
+        existingEntry.status = "complete";
+      }
     } else {
-      this.reasoningEntries.push({
-        type: "tool",
-        toolCallId:
-          matchedCallId ||
-          rawId ||
-          `result_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-        toolName,
-        resultJson: resStr,
-        status: "complete",
-      });
+      if (existingEntry && existingEntry.type === "tool") {
+        // Set fields rather than rewriting rendered markdown.
+        existingEntry.resultJson = resStr;
+        existingEntry.status = "complete";
+      } else {
+        this.reasoningEntries.push({
+          type: "tool",
+          toolCallId:
+            matchedCallId ||
+            rawId ||
+            `result_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          toolName,
+          resultJson: resStr,
+          status: "complete",
+        });
+      }
     }
 
     if (toolName && result) {
@@ -813,6 +920,10 @@ export class StreamAccumulator {
     for (const entry of this.reasoningEntries) {
       if (entry.type === "tool" && entry.status === "running") {
         entry.status = "complete";
+      } else if (entry.type === "skill_loaded" && entry.status === "running") {
+        entry.status = "complete";
+      } else if (entry.type === "skill_search" && entry.status === "running") {
+        entry.status = "complete";
       }
     }
     for (const block of this.codeExecutionBlocks) {
@@ -903,6 +1014,21 @@ export class StreamAccumulator {
       } else if (entry.type === "code_execution") {
         const block = this.codeExecutionBlocks.find((b) => b.id === entry.blockId);
         if (block) trace.push({ type: "code_execution", block: { ...block } });
+      } else if (entry.type === "skill_loaded") {
+        trace.push({
+          type: "skill_loaded",
+          skill: { ...entry.skill },
+          status: entry.status,
+          toolCallId: entry.toolCallId,
+        });
+      } else if (entry.type === "skill_search") {
+        trace.push({
+          type: "skill_search",
+          query: entry.query,
+          matches: entry.matches ? [...entry.matches] : undefined,
+          status: entry.status,
+          toolCallId: entry.toolCallId,
+        });
       } else {
         // Copied, not referenced. Tool entries are mutated in place as
         // results arrive, so handing out the live object would make an

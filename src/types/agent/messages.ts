@@ -1,4 +1,5 @@
 import type { AgentCodeExecutionBlock, AgentMessagePart } from "./message-parts";
+import type { LoadedSkillMetadata, SkillSearchMatch } from "./skills";
 
 export interface AgentMessage {
   role: "user" | "model" | "assistant" | "system";
@@ -73,4 +74,17 @@ export type ReasoningTraceEntry =
   | {
       type: "code_execution";
       block: AgentCodeExecutionBlock;
+    }
+  | {
+      type: "skill_loaded";
+      skill: LoadedSkillMetadata;
+      status?: "running" | "requires-action" | "complete" | "error" | string;
+      toolCallId?: string;
+    }
+  | {
+      type: "skill_search";
+      query: string;
+      matches?: SkillSearchMatch[];
+      status?: "running" | "requires-action" | "complete" | "error" | string;
+      toolCallId?: string;
     };
