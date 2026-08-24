@@ -14,9 +14,14 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import type { ToolCallMessagePartProps } from "@assistant-ui/react";
-
-import { useAui } from "@assistant-ui/react";
+import { useAui, type ToolCallMessagePartProps } from "@assistant-ui/react";
+import {
+  isLoadSkillTool,
+  isSearchSkillsTool,
+  parseLoadedSkillPayload,
+  parseSearchSkillsPayload,
+} from "@/lib/skills/skill-parser";
+import { SkillLoadedBadge, SearchSkillsPill } from "@/components/skills";
 
 export interface ToolFallbackProps {
   toolCallId?: string;
@@ -309,6 +314,42 @@ export function ToolFallback({
       setIsSubmitting(false);
     }
   };
+
+  const loadedSkill = useMemo(() => {
+    if (isLoadSkillTool(targetToolInfo.name || toolName)) {
+      return parseLoadedSkillPayload(targetToolInfo.args || parsedArgs || args, result);
+    }
+    return null;
+  }, [targetToolInfo, toolName, parsedArgs, args, result]);
+
+  const searchSkills = useMemo(() => {
+    if (isSearchSkillsTool(targetToolInfo.name || toolName)) {
+      return parseSearchSkillsPayload(targetToolInfo.args || parsedArgs || args, result);
+    }
+    return null;
+  }, [targetToolInfo, toolName, parsedArgs, args, result]);
+
+  if (loadedSkill) {
+    return (
+      <SkillLoadedBadge
+        skill={loadedSkill}
+        status={status.type}
+        defaultOpen={defaultOpen}
+        className={className}
+      />
+    );
+  }
+
+  if (searchSkills) {
+    return (
+      <SearchSkillsPill
+        query={searchSkills.query}
+        matches={searchSkills.matches}
+        status={status.type}
+        className={className}
+      />
+    );
+  }
 
   return (
     <div

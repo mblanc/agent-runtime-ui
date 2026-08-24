@@ -1,54 +1,58 @@
-# Implementation Plan: A2UI (Agent-to-UI / Generative UI Streaming)
+# Implementation Plan: Skill Ingestion Visualizer & Metadata Inspector
 
 ## Overview
 
-Implement the **A2UI Protocol** (`application/json+a2ui`) in `agent-runtime-ui`, enabling Google Cloud ADK agents to stream structured JSON UI component trees that render native interactive cards, form controls, metric grids, and mini-charts directly inside chat messages, with two-way interactive action dispatch back to the agent session.
+Implement the **Skill Ingestion Visualizer & Metadata Inspector** in `agent-runtime-ui`, detecting when Google Cloud ADK agents dynamically discover and mount remote skills from the Google Cloud Skill Registry (`adk.dev/integrations/skills-registry/`) via `search_skills` and `load_skill` tools. The UI replaces raw JSON tool dumps with a styled Gemini capability badge (`[ 🧩 Skill Loaded: name vX.Y ]`) and expandable metadata inspector card within the agent's thinking trace, displaying human-readable descriptions, authors, licenses, and unlocked tool chips.
 
 ---
 
 ## Architecture Decisions
 
-1. **Wire Format & Data Contracts (`src/types/agent/a2ui.ts`)**:
-   - Deliver A2UI payloads inside `AgentMessagePart` with `type: "a2ui"` or `a2uiData: A2UIPartData`.
-   - Adhere strictly to the recursive `A2UIComponentNode` contract (`type`, `id`, `props`, `children`, `actions`).
-   - Support `application/json+a2ui` payload parsing from SSE events, tool results, and session history events.
+1. **Wire Format & Data Contracts (`src/types/agent/skills.ts`)**:
+   - Define `LoadedSkillMetadata`, `SkillSearchMatch`, and `SkillStreamEventPayload` adhering to the ADK Skill Registry spec.
+   - Extend `ReasoningTraceEntry` in `src/types/agent/messages.ts` with `{ type: "skill_loaded"; skill: LoadedSkillMetadata; status: "running" | "complete" }` and `{ type: "skill_search"; query: string; matches?: SkillSearchMatch[]; status: "running" | "complete" }` so that thinking traces handle dynamic skill ingestion natively as structured data.
 
-2. **Action Dispatch Protocol (`A2UIContext` & `/api/chat`)**:
-   - Interacting with an A2UI component (button click, form submit) locks the component into a `submitted` / `disabled` state with an inline status indicator to prevent duplicate submissions.
-   - The action dispatches a structured user turn over `/api/chat` with `{ role: "user", content: "Action: ...", parts: [{ a2uiAction: { componentId, event, payload } }] }`.
+2. **Resilient Payload Parser (`src/lib/skills/skill-parser.ts`)**:
+   - Normalize both `snake_case` (ADK/Python tool convention: `skill_name`, `instructions_snippet`, `unlocked_tools`) and `camelCase` (`skillName`, `instructionsSnippet`, `tools`).
+   - Extract skill metadata from either `tool_call.args`, `tool_result.result`, or structured session events.
+   - Provide graceful fallback: if a `load_skill` event lacks extended metadata, render available fields cleanly without crashing the stream or session history.
 
-3. **Component Catalog & Graceful Fallback (`src/components/a2ui/`)**:
-   - Built with Tailwind CSS and Radix UI primitives (`@radix-ui/react-select`, `@radix-ui/react-radio-group`), styled after Google Gemini design tokens.
-   - Any unrecognized component type renders an `A2UIFallback` structured card rather than throwing errors.
+3. **Gemini Design System UI Components (`src/components/skills/`)**:
+   - `SkillLoadedBadge`: Compact purple/indigo pill (`bg-purple-500/10 text-purple-700 dark:text-purple-300`) with jigsaw puzzle icon (`🧩` / `Boxes` / `Sparkles`), skill display name, version tag, and toggle trigger.
+   - `SkillMetadataCard`: Rich card displaying description snippet from `SKILL.md` frontmatter, author, license, revision ID, and interactive tool chips for all unlocked tools.
+   - `SearchSkillsPill`: Subtle indicator showing registry queries (e.g. _"🔍 Searched Skill Registry for: 'bigquery optimization'"_) with match count.
 
-4. **Stream Accumulator & Mock Parity**:
-   - `StreamAccumulator` folds A2UI stream events and exposes them via `createYieldContent`.
-   - `MockAgentRuntimeProvider` provides realistic mock prompts (e.g., _"Show me the deployment approval card"_, _"Show server metrics"_) and handles action resumption turns offline.
+4. **Stream Accumulator & Session Rehydration**:
+   - `StreamAccumulator` intercepts `load_skill` and `search_skills` tool calls and results, assembling structured `skill_loaded` and `skill_search` reasoning entries.
+   - `groupTurnSessionEvents` and `parseRawSessionEvent` rehydrate skill metadata during multi-turn session history replay.
+   - `ToolFallback` routes `load_skill` and `search_skills` tool calls outside reasoning to the specialized badge.
+
+5. **Mock Provider Parity (`src/lib/agent-runtime/mock/mock-provider.ts`)**:
+   - Provide an offline mock scenario (e.g. queries for _"BigQuery"_, _"load skill"_, or _"skill registry"_) that emits `search_skills` and `load_skill` events with full metadata for `bigquery-analyzer` v2.1.0.
 
 ---
 
 ## Dependency Graph
 
 ```
-Phase 1: Types & Parser Foundation
-  ├── Task 1: A2UI TypeScript Contracts & Type Guards
-  └── Task 2: A2UI Tree Parser & Normalizer with Fallbacks
+Phase 1: Foundation & Data Contracts
+  ├── Task 1: Skill Ingestion TypeScript Contracts & Type Guards
+  └── Task 2: Skill Payload Parser & Normalizer with Fallbacks
         │
-Phase 2: Component Catalog Primitives
-  ├── Task 3: A2UI Context, Card Container & Typography Components
-  ├── Task 4: A2UI Metrics, Badges, Table & Mini-Charts
-  └── Task 5: A2UI Form Controls, Inputs & Action Buttons
+Phase 2: UI Components (Badges & Metadata Card)
+  ├── Task 3: Skill Loaded Badge & Metadata Card Components
+  └── Task 4: Search Skills Pill & Component Test Suite
         │
-Phase 3: Runtime Streaming & Message Integration
-  ├── Task 6: StreamAccumulator & ChatAdapter A2UI Ingestion
-  └── Task 7: GeminiMessage A2UI Mounting & Action Dispatch Wiring
+Phase 3: Reasoning Trace & Tool Integration
+  ├── Task 5: Reasoning Trace & Tool Fallback Skill Routing
+  └── Task 6: StreamAccumulator & ChatAdapter Skill Stream Ingestion
         │
-Phase 4: Mock Engine & Backend Action Handling
-  ├── Task 8: Mock Provider A2UI Triggers & Action Resumption
-  └── Task 9: Multi-Turn Session Persistence for A2UI Parts
+Phase 4: Mock Provider & Multi-Turn History Replay
+  ├── Task 7: Mock Provider Skill Ingestion Triggers & Scenarios
+  └── Task 8: Session History Rehydration & Turn Grouping for Skills
         │
 Phase 5: Quality Gates & Verification
-  └── Task 10: End-to-End Test Suite, E2E Scenarios & Docs Update
+  └── Task 9: Full Quality Gate Preflight, E2E Test & Docs Sync
 ```
 
 ---
@@ -57,51 +61,52 @@ Phase 5: Quality Gates & Verification
 
 ### Phase 1: Foundation & Data Contracts
 
-#### Task 1: A2UI TypeScript Contracts & Type Guards
+#### Task 1: Skill Ingestion TypeScript Contracts & Type Guards
 
-**Description:** Define strict TypeScript interfaces for A2UI components, action payloads, part data, and message part extensions in `src/types/agent/a2ui.ts` and barrel re-export in `src/types/agent.ts`.
+**Description:** Define strict TypeScript interfaces for loaded skills, search matches, and skill event payloads in `src/types/agent/skills.ts`. Extend `ReasoningTraceEntry` in `src/types/agent/messages.ts` and barrel re-export through `src/types/agent.ts`.
 
 **Acceptance criteria:**
 
-- [ ] `A2UIComponentType`, `A2UIAction`, `A2UIComponentNode`, `A2UIPartData`, and `AgentA2UIActionPart` defined with zero `any`.
-- [ ] `isA2UIPart` type guard implemented in `src/types/agent/message-parts.ts`.
-- [ ] Re-exported cleanly via `src/types/agent.ts`.
+- [ ] `LoadedSkillMetadata`, `SkillSearchMatch`, and `SkillStreamEventPayload` defined with strict types and zero `any`.
+- [ ] `ReasoningTraceEntry` extended to support `skill_loaded` and `skill_search` entries.
+- [ ] Barrel re-exported cleanly via `src/types/agent.ts`.
 
 **Verification:**
 
-- [ ] `bun run check` succeeds without type errors.
+- [ ] `bun run check` succeeds with zero TypeScript errors.
 
 **Dependencies:** None  
 **Files likely touched:**
 
-- `src/types/agent/a2ui.ts` (new)
-- `src/types/agent/message-parts.ts`
+- `src/types/agent/skills.ts` (new)
+- `src/types/agent/messages.ts`
 - `src/types/agent.ts`
 
 **Estimated scope:** Small (3 files)
 
 ---
 
-#### Task 2: A2UI Tree Parser & Normalizer with Fallbacks
+#### Task 2: Skill Payload Parser & Normalizer with Fallbacks
 
-**Description:** Implement `parseA2UIPayload` and recursive tree validation utilities to safely parse raw JSON strings and objects into validated `A2UIPartData` structures.
+**Description:** Implement `src/lib/skills/skill-parser.ts` to parse and normalize tool arguments and results from `load_skill` and `search_skills` tool events, handling both snake_case and camelCase keys, missing fields, and raw JSON strings.
 
 **Acceptance criteria:**
 
-- [ ] Safely parses JSON strings, arrays of nodes, single nodes, and nested trees.
-- [ ] Returns sanitized `A2UIPartData` with default fallbacks for missing `type` or malformed `children`.
-- [ ] Unit tests cover valid, malformed, deeply nested, and empty payloads.
+- [ ] `parseLoadedSkillPayload(args, result)` safely extracts `LoadedSkillMetadata` from snake_case (`skill_name`, `instructions_snippet`, `unlocked_tools`) and camelCase (`skillName`, `instructionsSnippet`, `tools`).
+- [ ] `parseSearchSkillsPayload(args, result)` extracts query and search match list.
+- [ ] `isLoadSkillTool(toolName)` and `isSearchSkillsTool(toolName)` identify skill tool names.
+- [ ] Unit tests in `tests/skills-parser.test.ts` verify valid, partial, and malformed payloads without throwing.
 
 **Verification:**
 
-- [ ] Tests pass: `bun run test tests/a2ui-parser.test.ts`
+- [ ] Tests pass: `bun run test tests/skills-parser.test.ts`
 - [ ] Type check passes: `bun run check`
 
 **Dependencies:** Task 1  
 **Files likely touched:**
 
-- `src/lib/a2ui/a2ui-parser.ts` (new)
-- `tests/a2ui-parser.test.ts` (new)
+- `src/lib/skills/skill-parser.ts` (new)
+- `tests/skills-parser.test.ts` (new)
 
 **Estimated scope:** Small (2 files)
 
@@ -109,265 +114,234 @@ Phase 5: Quality Gates & Verification
 
 ### Checkpoint: Foundation
 
-- [ ] `bun run check` passes
-- [ ] `bun run test tests/a2ui-parser.test.ts` passes
+- [ ] All parser unit tests pass (`bun run test tests/skills-parser.test.ts`)
+- [ ] TypeScript typecheck passes (`bun run check`)
 
 ---
 
-### Phase 2: Component Catalog Primitives
+### Phase 2: UI Components (Badges & Metadata Card)
 
-#### Task 3: A2UI Context, Card Container & Typography Components
+#### Task 3: Skill Loaded Badge & Metadata Card Components
 
-**Description:** Create `A2UIContext` for action dispatch and state tracking, root `A2UIRenderer`, `A2UIFallback`, `A2UICard`, `A2UIHeading`, `A2UIText`, `A2UIBadge`, and `A2UIDivider`.
+**Description:** Build `SkillLoadedBadge` and `SkillMetadataCard` in `src/components/skills/` using Tailwind CSS and Radix UI primitives, following Google Gemini design tokens with purple/indigo capability styling.
 
 **Acceptance criteria:**
 
-- [ ] `A2UIContext` tracks submitted component states and provides `onAction` dispatch callback.
-- [ ] `A2UIRenderer` recursively dispatches component nodes to catalog components.
-- [ ] `A2UICard` renders header, title, badge, and body container with Gemini styling tokens.
-- [ ] Unknown node types render `A2UIFallback` with sanitized JSON preview.
+- [ ] `SkillLoadedBadge` renders compact pill with puzzle icon (`🧩`), skill name, version badge (`v2.1.0`), status indicator (running spinner or completed check), and expand button.
+- [ ] `SkillMetadataCard` renders description from `SKILL.md` frontmatter, author, license, revision ID, and interactive chips for unlocked tools.
+- [ ] Expanding/collapsing badge shows/hides the metadata card smoothly.
 
 **Verification:**
 
-- [ ] Tests pass: `bun run test tests/a2ui-catalog.test.tsx`
-- [ ] Type check passes: `bun run check`
+- [ ] `bun run check` succeeds with zero TypeScript errors.
 
-**Dependencies:** Task 2  
+**Dependencies:** Task 1, Task 2  
 **Files likely touched:**
 
-- `src/components/a2ui/a2ui-context.tsx` (new)
-- `src/components/a2ui/a2ui-renderer.tsx` (new)
-- `src/components/a2ui/a2ui-fallback.tsx` (new)
-- `src/components/a2ui/catalog/a2ui-card.tsx` (new)
-- `src/components/a2ui/catalog/a2ui-typography.tsx` (new)
+- `src/components/skills/skill-metadata-card.tsx` (new)
+- `src/components/skills/skill-loaded-badge.tsx` (new)
+- `src/components/skills/index.ts` (new)
 
-**Estimated scope:** Medium (5 files)
+**Estimated scope:** Medium (3 files)
 
 ---
 
-#### Task 4: A2UI Metrics, Badges, Table & Mini-Charts
+#### Task 4: Search Skills Pill & UI Component Tests
 
-**Description:** Implement `A2UIStatMetric`, `A2UITable`, `A2UIProgressBar`, and `A2UIMiniBarChart` lightweight SVG components.
+**Description:** Build `SearchSkillsPill` in `src/components/skills/` to display registry searches, and create a comprehensive component test suite in `tests/skills-ui.test.tsx`.
 
 **Acceptance criteria:**
 
-- [ ] `A2UIStatMetric` renders key-value cards with optional change percentage pills (`+12%`, `-5%`).
-- [ ] `A2UITable` renders compact, accessible tables with column headers and striped/hover rows.
-- [ ] `A2UIProgressBar` and `A2UIMiniBarChart` render clean SVG visuals with theme support.
+- [ ] `SearchSkillsPill` renders search query and match count pill (e.g. _"🔍 Searched Skill Registry for: 'bigquery optimization'"_).
+- [ ] `tests/skills-ui.test.tsx` tests `SkillLoadedBadge`, `SkillMetadataCard`, and `SearchSkillsPill` for rendering, expanding, and edge cases (missing version/author/tools).
 
 **Verification:**
 
-- [ ] Tests pass: `bun run test tests/a2ui-catalog.test.tsx`
-- [ ] Type check passes: `bun run check`
+- [ ] Tests pass: `bun run test tests/skills-ui.test.tsx`
+- [ ] Lint passes: `bun run lint`
 
 **Dependencies:** Task 3  
 **Files likely touched:**
 
-- `src/components/a2ui/catalog/a2ui-stat-metric.tsx` (new)
-- `src/components/a2ui/catalog/a2ui-table.tsx` (new)
-- `src/components/a2ui/catalog/a2ui-mini-chart.tsx` (new)
-- `tests/a2ui-catalog.test.tsx` (new)
+- `src/components/skills/search-skills-pill.tsx` (new)
+- `tests/skills-ui.test.tsx` (new)
 
-**Estimated scope:** Medium (4 files)
+**Estimated scope:** Small (2 files)
 
 ---
 
-#### Task 5: A2UI Form Controls, Inputs & Action Buttons
+### Checkpoint: UI Components
 
-**Description:** Implement `A2UIForm`, `A2UITextInput`, `A2UISelectDropdown`, `A2UIRadioGroup`, and `A2UIButton` with interactive state management and submission locking.
+- [ ] Component test suite passes (`bun run test tests/skills-ui.test.tsx`)
+- [ ] Type check and lint pass clean (`bun run check && bun run lint`)
+
+---
+
+### Phase 3: Reasoning Trace & Tool Integration
+
+#### Task 5: Reasoning Trace & Tool Fallback Skill Routing
+
+**Description:** Update `src/components/assistant-ui/reasoning.tsx`, `src/lib/agent-runtime/reasoning-directives.ts`, and `src/components/assistant-ui/tool-fallback.tsx` to render specialized skill badges for `skill_loaded` and `skill_search` entries.
 
 **Acceptance criteria:**
 
-- [ ] `A2UIButton` renders primary, outline, and destructive variants; shows loading spinner while dispatching; disables on submit.
-- [ ] `A2UIForm` collects values from child inputs and dispatches aggregated payload on submit.
-- [ ] `A2UITextInput`, `A2UISelectDropdown`, and `A2UIRadioGroup` bind state to form context or standalone action triggers.
+- [ ] `ReasoningTraceBlocks` renders `SkillLoadedBadge` for `skill_loaded` trace entries and `SearchSkillsPill` for `skill_search` entries.
+- [ ] `reasoning-directives.ts` supports formatting skill directives for string fallback representation.
+- [ ] `ToolFallback` routes `load_skill` and `search_skills` tool parts to `SkillLoadedBadge` and `SearchSkillsPill`.
 
 **Verification:**
 
-- [ ] Tests pass: `bun run test tests/a2ui-catalog.test.tsx`
+- [ ] Tests pass: `bun run test tests/components.test.tsx`
 - [ ] Type check passes: `bun run check`
 
 **Dependencies:** Task 3, Task 4  
 **Files likely touched:**
 
-- `src/components/a2ui/catalog/a2ui-button.tsx` (new)
-- `src/components/a2ui/catalog/a2ui-form.tsx` (new)
-- `src/components/a2ui/catalog/a2ui-inputs.tsx` (new)
-- `tests/a2ui-catalog.test.tsx`
+- `src/components/assistant-ui/reasoning.tsx`
+- `src/lib/agent-runtime/reasoning-directives.ts`
+- `src/components/assistant-ui/tool-fallback.tsx`
 
-**Estimated scope:** Medium (4 files)
-
----
-
-### Checkpoint: Component Catalog
-
-- [ ] All catalog unit and component tests pass (`tests/a2ui-catalog.test.tsx`)
-- [ ] `bun run check` and `bun run lint` pass
+**Estimated scope:** Medium (3 files)
 
 ---
 
-### Phase 3: Runtime Streaming & Message Integration
+#### Task 6: StreamAccumulator & ChatAdapter Skill Stream Ingestion
 
-#### Task 6: StreamAccumulator & ChatAdapter A2UI Ingestion
-
-**Description:** Extend `StreamAccumulator` and `createYieldContent` to parse incoming `application/json+a2ui` SSE parts, tool outputs, and custom stream events, carrying A2UI payload trees in the snapshot metadata.
+**Description:** Update `StreamAccumulator` in `src/lib/adapters/stream-accumulator.ts` to detect `load_skill` and `search_skills` tool events and assemble `skill_loaded` and `skill_search` reasoning entries. Write stream integration tests.
 
 **Acceptance criteria:**
 
-- [ ] `StreamAccumulator` detects and accumulates `a2ui` stream parts without breaking text/thought streaming.
-- [ ] `createYieldContent` includes `a2ui` data in message metadata.
-- [ ] `toAgentMessages` in `chat-adapter.ts` formats outgoing `a2uiAction` user turns into structured agent wire turns.
+- [ ] `StreamAccumulator` intercepts `tool_call` and `tool_result` for `load_skill`, creating a `skill_loaded` entry in `reasoningEntries` and updating it upon completion.
+- [ ] `StreamAccumulator` intercepts `search_skills`, creating a `skill_search` entry with parsed query and matches.
+- [ ] `tests/skills-stream.test.ts` validates streaming sequences of `search_skills` and `load_skill` yielding proper reasoning trace snapshots.
 
 **Verification:**
 
-- [ ] Tests pass: `bun run test tests/a2ui-stream.test.ts tests/stream-accumulator.test.ts`
+- [ ] Tests pass: `bun run test tests/skills-stream.test.ts`
 - [ ] Type check passes: `bun run check`
 
-**Dependencies:** Task 2  
+**Dependencies:** Task 2, Task 5  
 **Files likely touched:**
 
 - `src/lib/adapters/stream-accumulator.ts`
-- `src/lib/adapters/yield-content.ts`
-- `src/lib/adapters/chat-adapter.ts`
-- `tests/a2ui-stream.test.ts` (new)
+- `tests/skills-stream.test.ts` (new)
 
-**Estimated scope:** Medium (4 files)
+**Estimated scope:** Medium (2 files)
 
 ---
 
-#### Task 7: GeminiMessage A2UI Mounting & Action Dispatch Wiring
+### Checkpoint: Reasoning & Streaming
 
-**Description:** Mount `A2UIRenderer` inside `src/components/assistant-ui/gemini-message.tsx` wrapped in `A2UIProvider` that connects action dispatches to the assistant-ui composer/runtime.
+- [ ] Stream integration tests pass (`bun run test tests/skills-stream.test.ts`)
+- [ ] Type check passes (`bun run check`)
+
+---
+
+### Phase 4: Mock Provider & Multi-Turn History Replay
+
+#### Task 7: Mock Provider Skill Ingestion Triggers & Scenarios
+
+**Description:** Add a skill registry loading scenario in `MockAgentRuntimeProvider` (`src/lib/agent-runtime/mock/mock-provider.ts`) triggered by prompts referencing skills, BigQuery SQL optimization, or registry.
 
 **Acceptance criteria:**
 
-- [ ] Assistant messages containing `a2ui` parts render the interactive widget inline below or alongside markdown text.
-- [ ] Clicking buttons or submitting forms triggers the action dispatch handler, locks the component, and appends a user turn to the active thread.
-- [ ] User messages display a clean summary chip when representing an A2UI action response (similar to HITL confirmations).
+- [ ] Prompt containing "bigquery", "skill", or "registry" triggers `search_skills` and `load_skill` tool events with realistic metadata (`bigquery-analyzer` v2.1.0, author "Google Cloud", tools `["bigquery_execute_query", "bigquery_explain_plan", "bigquery_cost_estimate"]`).
+- [ ] Stream yields thinking thoughts, skill badge events, and generated optimized SQL response.
+- [ ] Mock client test validates the skill loading flow offline.
 
 **Verification:**
 
-- [ ] Tests pass: `bun run test tests/a2ui-ui.test.tsx`
-- [ ] Type check passes: `bun run check`
+- [ ] Tests pass: `bun run test tests/agent-client.test.ts`
+- [ ] Manual check in mock mode works end-to-end.
 
-**Dependencies:** Task 5, Task 6  
-**Files likely touched:**
-
-- `src/components/assistant-ui/gemini-message.tsx`
-- `src/components/a2ui/a2ui-message-part.tsx` (new)
-- `tests/a2ui-ui.test.tsx` (new)
-
-**Estimated scope:** Small (3 files)
-
----
-
-### Checkpoint: Runtime & Message Integration
-
-- [ ] Stream accumulation and message rendering tests pass
-- [ ] Interactive action dispatches trigger user turns in mock tests
-
----
-
-### Phase 4: Mock Engine & Backend Action Handling
-
-#### Task 8: Mock Provider A2UI Triggers & Action Resumption
-
-**Description:** Add mock scenarios in `MockAgentRuntimeProvider` that emit A2UI component trees (e.g. Cloud Run deployment approval card, database configuration form, cluster metrics) and handle action response turns.
-
-**Acceptance criteria:**
-
-- [ ] Prompt _"Show me the deployment approval card"_ yields an A2UI deployment card with buttons.
-- [ ] Prompt _"Show cluster metrics"_ yields an A2UI stat metric and mini-chart widget.
-- [ ] Dispatching `submit_approval` or form actions resumes the stream with confirmation text in mock mode.
-
-**Verification:**
-
-- [ ] Tests pass: `bun run test tests/a2ui-mock.test.ts`
-- [ ] Type check passes: `bun run check`
-
-**Dependencies:** Task 6, Task 7  
+**Dependencies:** Task 6  
 **Files likely touched:**
 
 - `src/lib/agent-runtime/mock/mock-provider.ts`
-- `src/lib/agent-runtime/mock/mock-store.ts`
-- `tests/a2ui-mock.test.ts` (new)
+- `tests/agent-client.test.ts`
 
-**Estimated scope:** Small (3 files)
+**Estimated scope:** Small (2 files)
 
 ---
 
-#### Task 9: Multi-Turn Session Persistence for A2UI Parts
+#### Task 8: Session History Rehydration & Turn Grouping for Skills
 
-**Description:** Ensure that session event loading and rehydration (`/api/sessions/[sessionId]`) correctly restores A2UI component trees in historical turns.
+**Description:** Update `groupTurnSessionEvents` and `parseRawSessionEvent` to preserve and rehydrate skill tool calls and metadata during multi-turn session history loading.
 
 **Acceptance criteria:**
 
-- [ ] Historical session turns with `application/json+a2ui` parts rehydrate and render A2UI widgets with submitted/disabled state.
-- [ ] Event normalizer in `session-service.ts` converts stored A2UI events into `AgentMessagePart`.
+- [ ] `parseRawSessionEvent` and `groupTurnSessionEvents` rehydrate `skill_loaded` and `skill_search` entries into `reasoningTrace`.
+- [ ] Replayed session history renders the `SkillLoadedBadge` and `SearchSkillsPill` identically to live streaming.
+- [ ] `tests/skills-session.test.ts` tests session event history rehydration with skill tool events.
 
 **Verification:**
 
-- [ ] Tests pass: `bun run test tests/sessions-api.test.ts tests/event-normalizer.test.ts`
+- [ ] Tests pass: `bun run test tests/skills-session.test.ts`
 - [ ] Type check passes: `bun run check`
 
-**Dependencies:** Task 8  
+**Dependencies:** Task 5, Task 7  
 **Files likely touched:**
 
-- `src/lib/agent-runtime/services/session-service.ts`
-- `src/lib/agent-runtime/event-normalizer.ts`
-- `tests/a2ui-session-history.test.ts` (new)
+- `src/lib/agent-runtime/group-turns.ts`
+- `src/lib/agent-runtime/parse-event.ts`
+- `tests/skills-session.test.ts` (new)
 
-**Estimated scope:** Small (3 files)
+**Estimated scope:** Medium (3 files)
+
+---
+
+### Checkpoint: Backend & Mock
+
+- [ ] Session history and mock tests pass (`bun run test tests/skills-session.test.ts tests/agent-client.test.ts`)
+- [ ] Type check passes (`bun run check`)
 
 ---
 
 ### Phase 5: Quality Gates & Verification
 
-#### Task 10: Full Quality Gate Preflight, E2E Test & Docs Sync
+#### Task 9: Full Quality Gate Preflight, E2E Test & Docs Sync
 
-**Description:** Run comprehensive quality gates, add Playwright E2E test for A2UI card interaction, and update documentation.
+**Description:** Create E2E / integration test scenario for skill visualizer, verify full test suite, linting, formatting, and update documentation.
 
 **Acceptance criteria:**
 
-- [ ] `bun run preflight` passes (format + check + lint + all unit/component tests).
-- [ ] Playwright E2E test in `tests/e2e/a2ui-interaction.spec.ts` verifies interactive card rendering and approval click in mock mode.
-- [ ] `docs/features.md` updated to mark A2UI as **Now (Available Today)**.
+- [ ] `bun run check` passes with 0 TypeScript errors.
+- [ ] `bun run lint` passes with 0 ESLint warnings/errors.
+- [ ] `bun run test` passes all unit, component, and stream integration tests.
+- [ ] `AGENTS.md` index updated with new skill components and utilities.
 
 **Verification:**
 
-- [ ] `bun run preflight` passes with zero errors
-- [ ] `bun run test:e2e` passes
+- [ ] Full quality gate passes: `bun run preflight`
 
-**Dependencies:** Tasks 1-9  
+**Dependencies:** Tasks 1-8  
 **Files likely touched:**
 
-- `tests/e2e/a2ui-interaction.spec.ts` (new)
-- `docs/features.md`
+- `tests/e2e/skills.spec.ts` (new) or integration test
 - `AGENTS.md`
 
-**Estimated scope:** Small (3 files)
+**Estimated scope:** Small (2 files)
 
 ---
 
-## Checkpoint: Complete
+### Checkpoint: Complete
 
-- [ ] All 10 tasks complete with passing tests
-- [ ] `bun run preflight` passes cleanly
-- [ ] Interactive demo verified in browser
+- [ ] `bun run preflight` passes 100% cleanly
+- [ ] All success criteria from `docs/spec-skill-ingestion.md` verified
 
 ---
 
 ## Risks and Mitigations
 
-| Risk                                                                                      | Impact | Mitigation                                                                                                   |
-| :---------------------------------------------------------------------------------------- | :----: | :----------------------------------------------------------------------------------------------------------- |
-| **Malformed JSON in Stream**: LLM or engine streams partial or invalid A2UI JSON          |  Med   | Safe parser (`parseA2UIPayload`) with graceful fallback to `A2UIFallback` card view; never crashes stream.   |
-| **Double Submission**: User rapidly clicks action buttons or submits forms multiple times |  High  | Immediate optimistic lock in `A2UIContext` disabling inputs/buttons upon first click with loading indicator. |
-| **Arbitrary JS Injection**: Untrusted payloads attempting script execution                |  High  | Strict component whitelist; zero `eval`, `dangerouslySetInnerHTML`, or unsandboxed iframes.                  |
-| **Stream Performance / Jank**: Re-rendering deep component trees on every token delta     |  Low   | Memoize catalog components and decouple A2UI part accumulation from text stream throttling (25ms barrier).   |
+| Risk                                                                          | Impact | Mitigation                                                                                             |
+| ----------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------ |
+| ADK tool response format variations (snake_case vs camelCase, nested objects) | Medium | Resilient normalizer in `skill-parser.ts` handles all key variants with sensible defaults              |
+| Large instructions snippet causing layout shifts in thinking trace            | Low    | Collapsible / truncated instructions preview inside `SkillMetadataCard`                                |
+| Multiple skills loaded in a single turn                                       | Low    | `ReasoningTraceBlocks` and `StreamAccumulator` key skill entries uniquely by skill name / tool call ID |
+| Missing metadata in raw tool payloads                                         | Low    | Graceful fallback to basic skill name badge or generic tool card                                       |
 
 ---
 
 ## Open Questions
 
-- None. The specification in [`docs/spec-a2ui-generative-ui.md`](file:///Users/mblanc/projects/agent-runtime-ui/docs/spec-a2ui-generative-ui.md) provides complete schema and UX requirements.
+- None. The specification in `docs/spec-skill-ingestion.md` and ADK tool contracts are unambiguous and verified against the existing architecture.

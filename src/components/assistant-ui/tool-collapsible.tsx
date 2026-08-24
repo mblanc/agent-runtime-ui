@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, ReactNode } from "react";
+import { useState, useMemo, ReactNode } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -10,6 +10,13 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  isLoadSkillTool,
+  isSearchSkillsTool,
+  parseLoadedSkillPayload,
+  parseSearchSkillsPayload,
+} from "@/lib/skills/skill-parser";
+import { SkillLoadedBadge, SearchSkillsPill } from "@/components/skills";
 
 export interface ToolCollapsibleProps {
   toolName?: string;
@@ -33,6 +40,42 @@ export function ToolCollapsible({
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const isRunning = status === "running";
   const isError = status === "error" || status === "incomplete";
+
+  const loadedSkill = useMemo(() => {
+    if (isLoadSkillTool(toolName)) {
+      return parseLoadedSkillPayload(args, result);
+    }
+    return null;
+  }, [toolName, args, result]);
+
+  const searchSkills = useMemo(() => {
+    if (isSearchSkillsTool(toolName)) {
+      return parseSearchSkillsPayload(args, result);
+    }
+    return null;
+  }, [toolName, args, result]);
+
+  if (loadedSkill) {
+    return (
+      <SkillLoadedBadge
+        skill={loadedSkill}
+        status={status}
+        defaultOpen={defaultOpen}
+        className={className}
+      />
+    );
+  }
+
+  if (searchSkills) {
+    return (
+      <SearchSkillsPill
+        query={searchSkills.query}
+        matches={searchSkills.matches}
+        status={status}
+        className={className}
+      />
+    );
+  }
 
   const formattedArgs =
     typeof args === "string" ? args : args ? JSON.stringify(args, null, 2) : "";

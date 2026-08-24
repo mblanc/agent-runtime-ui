@@ -821,17 +821,142 @@ export class MockAgentRuntimeProvider implements IAgentRuntimeProvider {
       return;
     }
 
-    // 3. Check for multimodal attachments
+    // 5. Check for multimodal attachments
     const fileDataParts = lastUserMsg?.parts?.filter((p) => p.file_data || p.fileData);
-    const hasAttachments = fileDataParts && fileDataParts.length > 0;
+    const hasAttachments = Boolean(fileDataParts && fileDataParts.length > 0);
     const fileUris = hasAttachments
-      ? fileDataParts
+      ? fileDataParts!
           .map(
             (p) => p.file_data?.file_uri || p.fileData?.file_uri || p.fileData?.fileUri
           )
           .filter(Boolean)
           .join(", ")
       : "";
+
+    // 6. If prompt requests skill loading or references skill registry:
+    const isSkillTrigger =
+      lowerPrompt.includes("skill") ||
+      lowerPrompt.includes("skills") ||
+      lowerPrompt.includes("registry") ||
+      lowerPrompt.includes("bigquery optimization") ||
+      lowerPrompt.includes("bigquery-analyzer") ||
+      lowerPrompt.includes("load_skill");
+
+    if (isSkillTrigger && !hasAttachments && !isConfirmationTrigger && !isA2UITrigger) {
+      yield {
+        event_type: "thought",
+        thought: `Analyzing request "${lastPrompt}" and searching Google Cloud Skill Registry for specialized skills...`,
+      };
+      await mockDelay(60, signal);
+
+      yield {
+        event_type: "tool_call",
+        tool_call: {
+          id: "call_search_skills_1",
+          name: "search_skills",
+          args: {
+            query: "bigquery optimization",
+          },
+          status: "complete",
+        },
+      };
+      await mockDelay(60, signal);
+
+      yield {
+        event_type: "tool_result",
+        tool_result: {
+          id: "call_search_skills_1",
+          name: "search_skills",
+          result: {
+            matches: [
+              {
+                skill_name: "bigquery-analyzer",
+                description:
+                  "Optimizes and audits BigQuery SQL queries, slot usage, and partition filters.",
+                version: "2.1.0",
+              },
+            ],
+          },
+        },
+      };
+      await mockDelay(60, signal);
+
+      yield {
+        event_type: "thought",
+        thought: `Mounting remote skill "bigquery-analyzer" (v2.1.0) to load query optimization tools and guidelines...`,
+      };
+      await mockDelay(60, signal);
+
+      yield {
+        event_type: "tool_call",
+        tool_call: {
+          id: "call_load_skill_1",
+          name: "load_skill",
+          args: {
+            skill_name: "bigquery-analyzer",
+            version: "2.1.0",
+          },
+          status: "complete",
+        },
+      };
+      await mockDelay(80, signal);
+
+      yield {
+        event_type: "tool_result",
+        tool_result: {
+          id: "call_load_skill_1",
+          name: "load_skill",
+          result: {
+            name: "bigquery-analyzer",
+            version: "2.1.0",
+            description:
+              "Optimizes and audits BigQuery SQL queries, slot usage, and partition filters.",
+            author: "Google Cloud",
+            license: "Apache-2.0",
+            tools: ["bigquery_exec", "explain_sql", "estimate_cost"],
+            instructions_snippet:
+              "Always verify partition pruning on DATE or TIMESTAMP columns before executing full table scans.",
+          },
+        },
+      };
+      await mockDelay(80, signal);
+
+      yield {
+        event_type: "thought",
+        thought: `Skill "bigquery-analyzer" mounted successfully. Tools unlocked: [bigquery_exec, explain_sql, estimate_cost]. Optimizing target query...`,
+      };
+      await mockDelay(60, signal);
+
+      const skillResponse =
+        `I have loaded the **BigQuery Analyzer** skill (v2.1.0) from the Google Cloud Skill Registry.\n\n` +
+        `### Unlocked Capabilities\n` +
+        `- **Tools:** \`bigquery_exec\`, \`explain_sql\`, \`estimate_cost\`\n` +
+        `- **Optimization Rule:** Partition filter verified against date column \`event_date\`.\n\n` +
+        `\`\`\`sql\n` +
+        `-- Optimized BigQuery Query with Partition Pruning\n` +
+        `SELECT\n` +
+        `  user_id,\n` +
+        `  COUNT(event_id) AS total_events,\n` +
+        `  SUM(revenue_usd) AS total_revenue\n` +
+        `FROM \`my-gcp-project.analytics.events_partitioned\`\n` +
+        `WHERE event_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)\n` +
+        `GROUP BY user_id\n` +
+        `ORDER BY total_revenue DESC\n` +
+        `LIMIT 100;\n` +
+        `\`\`\``;
+
+      const chunks = skillResponse.split(" ");
+      for (const chunk of chunks) {
+        yield {
+          event_type: "content",
+          content: chunk + " ",
+        };
+        await mockDelay(15, signal);
+      }
+
+      yield { event_type: "done" };
+      return;
+    }
 
     // Simulated thought event
     // 4. Memory Bank Retrieval: Retrieve relevant memories for the user

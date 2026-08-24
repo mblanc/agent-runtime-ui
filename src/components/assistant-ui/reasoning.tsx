@@ -9,6 +9,7 @@ import { ToolCollapsible } from "./tool-collapsible";
 import { ThoughtCollapsible } from "./thought-collapsible";
 import { ThoughtSignatureBadge } from "./thought-signature-badge";
 import { CodeExecutionCard } from "@/components/code-execution";
+import { SkillLoadedBadge, SearchSkillsPill } from "@/components/skills";
 
 export {
   SubAgentCollapsible,
@@ -16,6 +17,8 @@ export {
   ThoughtCollapsible,
   ThoughtSignatureBadge,
   CodeExecutionCard,
+  SkillLoadedBadge,
+  SearchSkillsPill,
 };
 
 interface ReasoningRootProps {
@@ -473,6 +476,28 @@ export function ReasoningTraceBlocks({
               key={`code-${entry.block.id || idx}`}
               block={entry.block}
               defaultOpen={defaultOpen ?? false}
+            />
+          );
+        }
+
+        if (entry.type === "skill_loaded") {
+          return (
+            <SkillLoadedBadge
+              key={`skill-${entry.skill.skillName}-${entry.toolCallId || idx}`}
+              skill={entry.skill}
+              status={entry.status}
+              defaultOpen={defaultOpen ?? false}
+            />
+          );
+        }
+
+        if (entry.type === "skill_search") {
+          return (
+            <SearchSkillsPill
+              key={`skill-search-${entry.query}-${entry.toolCallId || idx}`}
+              query={entry.query}
+              matches={entry.matches}
+              status={entry.status}
             />
           );
         }
