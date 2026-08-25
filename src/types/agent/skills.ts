@@ -13,6 +13,8 @@ export interface LoadedSkillMetadata {
   license?: string;
   tools?: string[];
   instructionsSnippet?: string;
+  error?: string;
+  errorCode?: string;
 }
 
 export interface SkillSearchMatch {

@@ -21,6 +21,22 @@ export function SkillMetadataCard({ skill, className }: SkillMetadataCardProps) 
       )}
       data-testid="skill-metadata-card"
     >
+      {/* Error Banner */}
+      {skill.error && (
+        <div className="mb-2.5 rounded-lg border border-rose-200 bg-rose-50/90 p-2 text-rose-950 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
+          <div className="flex items-center gap-1.5 font-semibold text-[11px] text-rose-700 dark:text-rose-300">
+            <span>
+              {skill.errorCode
+                ? `Registry Error (${skill.errorCode})`
+                : "Skill Ingestion Error"}
+            </span>
+          </div>
+          <p className="mt-1 font-mono text-[11px] leading-relaxed text-rose-900/90 dark:text-rose-200/90">
+            {skill.error}
+          </p>
+        </div>
+      )}
+
       {/* Description */}
       {skill.description && (
         <p className="mb-2.5 font-medium text-[#3c4043] dark:text-[#c4c7c5]">

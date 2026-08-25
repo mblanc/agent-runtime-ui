@@ -81,10 +81,24 @@ export function parseLoadedSkillPayload(
     parsedArgs.skillName ||
     parsedArgs.name;
 
-  const skillName = typeof skillNameRaw === "string" ? skillNameRaw.trim() : "";
+  const errorRaw = parsedResult.error || parsedResult.message;
+  const error = typeof errorRaw === "string" ? errorRaw.trim() : undefined;
+
+  const errorCodeRaw = parsedResult.error_code || parsedResult.errorCode;
+  const errorCode = typeof errorCodeRaw === "string" ? errorCodeRaw.trim() : undefined;
+
+  let skillName = typeof skillNameRaw === "string" ? skillNameRaw.trim() : "";
+
+  if (!skillName && error) {
+    const match = error.match(/skill\s+['"]([^'"]+)['"]/i);
+    if (match && match[1]) {
+      skillName = match[1].trim();
+    }
+  }
 
   if (
     !skillName &&
+    !error &&
     Object.keys(parsedArgs).length === 0 &&
     Object.keys(parsedResult).length === 0
   ) {
@@ -171,6 +185,8 @@ export function parseLoadedSkillPayload(
     ...(license ? { license } : {}),
     ...(tools && tools.length > 0 ? { tools } : {}),
     ...(instructionsSnippet ? { instructionsSnippet } : {}),
+    ...(error ? { error } : {}),
+    ...(errorCode ? { errorCode } : {}),
   };
 }
 
