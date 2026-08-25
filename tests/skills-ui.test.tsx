@@ -82,6 +82,25 @@ describe("Skill Ingestion UI Components", () => {
       render(<SkillLoadedBadge skill={sampleSkill} status="running" />);
       expect(screen.getByText("Loading...")).toBeDefined();
     });
+
+    it("renders error state when status is error or skill.error is present", () => {
+      const errorSkill: LoadedSkillMetadata = {
+        skillName: "private-workspace-artifact-builder",
+        error:
+          "Failed to fetch skill 'private-workspace-artifact-builder' from registry: Skill 'private-workspace-artifact-builder' does not contain zipped filesystem.",
+        errorCode: "REGISTRY_ERROR",
+      };
+
+      render(<SkillLoadedBadge skill={errorSkill} status="error" defaultOpen={true} />);
+      expect(screen.getByText("Skill Load Failed:")).toBeDefined();
+      expect(screen.getByText("Error")).toBeDefined();
+      expect(screen.getByText("Registry Error (REGISTRY_ERROR)")).toBeDefined();
+      expect(
+        screen.getByText(
+          "Failed to fetch skill 'private-workspace-artifact-builder' from registry: Skill 'private-workspace-artifact-builder' does not contain zipped filesystem."
+        )
+      ).toBeDefined();
+    });
   });
 
   describe("SearchSkillsPill", () => {

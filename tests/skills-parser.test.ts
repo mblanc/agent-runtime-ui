@@ -99,6 +99,39 @@ describe("Skill Parser & Normalizer", () => {
       });
     });
 
+    it("parses error payload from registry failure", () => {
+      const args = { name: "private-workspace-artifact-builder" };
+      const result = {
+        error:
+          "Failed to fetch skill 'private-workspace-artifact-builder' from registry: Skill 'private-workspace-artifact-builder' does not contain zipped filesystem.",
+        error_code: "REGISTRY_ERROR",
+      };
+
+      const parsed = parseLoadedSkillPayload(args, result);
+      expect(parsed).toEqual({
+        skillName: "private-workspace-artifact-builder",
+        error:
+          "Failed to fetch skill 'private-workspace-artifact-builder' from registry: Skill 'private-workspace-artifact-builder' does not contain zipped filesystem.",
+        errorCode: "REGISTRY_ERROR",
+      });
+    });
+
+    it("extracts skillName from error message string when args name is missing", () => {
+      const result = {
+        error:
+          "Failed to fetch skill 'private-workspace-artifact-builder' from registry: Skill 'private-workspace-artifact-builder' does not contain zipped filesystem.",
+        error_code: "REGISTRY_ERROR",
+      };
+
+      const parsed = parseLoadedSkillPayload({}, result);
+      expect(parsed).toEqual({
+        skillName: "private-workspace-artifact-builder",
+        error:
+          "Failed to fetch skill 'private-workspace-artifact-builder' from registry: Skill 'private-workspace-artifact-builder' does not contain zipped filesystem.",
+        errorCode: "REGISTRY_ERROR",
+      });
+    });
+
     it("returns null on empty input", () => {
       expect(parseLoadedSkillPayload(undefined, undefined)).toBeNull();
       expect(parseLoadedSkillPayload({}, {})).toBeNull();
